@@ -18,6 +18,7 @@
     <properties>
         <java.version>21</java.version>
         <spring-boot.version>3.4.1</spring-boot.version>
+        <mybatis-plus.version>3.5.7</mybatis-plus.version>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -33,11 +34,18 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-boot-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
     <!-- 子模块 -->
     <modules>
+        <module>gak-common</module>
+        <module>gak-framework</module>
         <module>gak-modules</module>
         <module>gak-start</module>
     </modules>

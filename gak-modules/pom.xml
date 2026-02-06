@@ -18,12 +18,7 @@
     <description>业务模块聚合层</description>
 
     <modules>
-        <!-- 例如 -->
-        <!--
-        <module>gak-system</module>
-        <module>gak-auth</module>
-        <module>gak-flow</module>
-        -->
+        <module>gak-user</module>
     </modules>
 
 </project>

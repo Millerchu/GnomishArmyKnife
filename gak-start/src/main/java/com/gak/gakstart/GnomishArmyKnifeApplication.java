@@ -1,5 +1,6 @@
 package com.gak.gakstart;
 
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -8,6 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 侏儒军刀 · 自用万花筒应用
  */
 @SpringBootApplication(scanBasePackages = "com.gak")
+@MapperScan("com.gak.**.mapper")
 public class GnomishArmyKnifeApplication {
 
     public static void main(String[] args) {

@@ -21,6 +21,18 @@
     <description>GAK 启动模块</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-framework</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-user</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Web 项目一般直接用 web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
