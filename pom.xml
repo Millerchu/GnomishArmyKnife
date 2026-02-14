@@ -18,7 +18,8 @@
     <properties>
         <java.version>21</java.version>
         <spring-boot.version>3.4.1</spring-boot.version>
-        <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <mybatis-plus.version>3.5.9</mybatis-plus.version>
+        <mybatis-spring.version>3.0.3</mybatis-spring.version>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -38,6 +39,11 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-boot-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mybatis</groupId>
+                <artifactId>mybatis-spring</artifactId>
+                <version>${mybatis-spring.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
