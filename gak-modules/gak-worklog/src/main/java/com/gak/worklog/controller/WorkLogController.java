@@ -87,10 +87,12 @@ public class WorkLogController {
      */
     @GetMapping
     public List<WorkLogResponse> list(
-            @RequestParam Long userId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam(required = false) String typeCode) {
+            @RequestParam("userId") Long userId,
+            @RequestParam(value = "startDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(value = "endDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(value = "typeCode", required = false) String typeCode) {
         return workLogService.list(userId, startDate, endDate, typeCode);
     }
 
@@ -103,8 +105,9 @@ public class WorkLogController {
      */
     @GetMapping("/weekly-brief")
     public List<WeeklyWorkLogBriefResponse> listWeeklyBrief(
-            @RequestParam Long userId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate refDate) {
+            @RequestParam("userId") Long userId,
+            @RequestParam(value = "refDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate refDate) {
         return workLogService.listWeeklyBrief(userId, refDate);
     }
 }

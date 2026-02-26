@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     log_date DATE NOT NULL,
     location VARCHAR(64),
     project_code VARCHAR(128),
-    work_item TEXT NOT NULL,
+    content TEXT NOT NULL,
     zentao_no VARCHAR(255),
     person_day NUMERIC(4, 1) NOT NULL,
     overtime_hours NUMERIC(4, 1),
