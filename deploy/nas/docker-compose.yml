@@ -1,0 +1,44 @@
+services:
+  gak-app:
+    image: gak-app:1.0.0
+    container_name: gak-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - JAVA_OPTS=${JAVA_OPTS:-"-Xms256m -Xmx768m"}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - SPRING_SQL_INIT_MODE=${SPRING_SQL_INIT_MODE:-always}
+    networks:
+      - gak-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gak-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - gak-net
+
+networks:
+  gak-net:
+    driver: bridge
