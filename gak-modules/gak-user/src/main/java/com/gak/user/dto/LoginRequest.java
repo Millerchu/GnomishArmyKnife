@@ -14,10 +14,16 @@ public class LoginRequest {
     private String username;
 
     /**
-     * 明文密码。
+     * 前端加密后的密码（Base64 编码）。
      */
     @NotBlank
-    private String password;
+    private String encryptedPassword;
+
+    /**
+     * 登录验证码。
+     */
+    @NotBlank
+    private String captcha;
 
     public String getUsername() {
         return username;
@@ -27,11 +33,19 @@ public class LoginRequest {
         this.username = username;
     }
 
-    public String getPassword() {
-        return password;
+    public String getEncryptedPassword() {
+        return encryptedPassword;
     }
 
-    public void setPassword(String password) {
-        this.password = password;
+    public void setEncryptedPassword(String encryptedPassword) {
+        this.encryptedPassword = encryptedPassword;
+    }
+
+    public String getCaptcha() {
+        return captcha;
+    }
+
+    public void setCaptcha(String captcha) {
+        this.captcha = captcha;
     }
 }
