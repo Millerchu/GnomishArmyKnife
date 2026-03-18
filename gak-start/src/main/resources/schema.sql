@@ -3,6 +3,43 @@ CREATE TABLE IF NOT EXISTS gak_user (
     username VARCHAR(64) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20),
+    email VARCHAR(100),
+    role_code VARCHAR(20) NOT NULL DEFAULT 'USER',
+    status VARCHAR(20) NOT NULL DEFAULT 'ENABLED',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    force_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+    last_login_time TIMESTAMP,
+    remark VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS email VARCHAR(100);
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS role_code VARCHAR(20) NOT NULL DEFAULT 'USER';
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ENABLED';
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS last_login_time TIMESTAMP;
+ALTER TABLE gak_user ADD COLUMN IF NOT EXISTS remark VARCHAR(255);
+
+UPDATE gak_user SET role_code = 'USER' WHERE role_code IS NULL;
+UPDATE gak_user SET status = 'ENABLED' WHERE status IS NULL;
+UPDATE gak_user SET enabled = TRUE WHERE enabled IS NULL;
+UPDATE gak_user SET force_change_password = FALSE WHERE force_change_password IS NULL;
+
+CREATE TABLE IF NOT EXISTS gak_password_memo (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    site_name VARCHAR(64) NOT NULL,
+    site_url VARCHAR(255) NOT NULL,
+    username VARCHAR(100),
+    password_ciphertext TEXT NOT NULL,
+    password_nonce VARCHAR(64) NOT NULL,
+    registered_phone VARCHAR(20),
+    registered_email VARCHAR(100),
+    remark VARCHAR(255),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
@@ -36,3 +73,4 @@ CREATE TABLE IF NOT EXISTS gak_work_log_type (
 
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
+CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
