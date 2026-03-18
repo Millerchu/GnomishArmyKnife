@@ -3,6 +3,7 @@ package com.gak.user.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.framework.exception.BusinessException;
 import com.gak.user.dto.AuthResponse;
+import com.gak.user.dto.ChangePasswordRequest;
 import com.gak.user.dto.LoginRequest;
 import com.gak.user.dto.RegisterRequest;
 import com.gak.user.dto.UserResponse;
@@ -95,5 +96,32 @@ public class UserService {
         String token = UUID.randomUUID().toString();
         UserResponse response = new UserResponse(user.getId(), user.getUsername(), user.getDisplayName());
         return new AuthResponse(token, response);
+    }
+
+    /**
+     * 用户修改密码。
+     *
+     * @param request 修改密码请求
+     */
+    @Transactional
+    public void changePassword(ChangePasswordRequest request) {
+        String oldPlainPassword = passwordCryptoService.decrypt(request.getOldEncryptedPassword());
+        String newPlainPassword = passwordCryptoService.decrypt(request.getNewEncryptedPassword());
+        if (oldPlainPassword.equals(newPlainPassword)) {
+            throw new BusinessException("PASSWORD_UNCHANGED", "新密码不能与原密码相同");
+        }
+
+        QueryWrapper<User> wrapper = new QueryWrapper<>();
+        wrapper.eq("username", request.getUsername());
+        User user = userMapper.selectOne(wrapper);
+        if (user == null || !passwordEncoder.matches(oldPlainPassword, user.getPasswordHash())) {
+            throw new BusinessException("AUTH_INVALID", "用户名或原密码错误");
+        }
+
+        User updatedUser = new User();
+        updatedUser.setId(user.getId());
+        updatedUser.setPasswordHash(passwordEncoder.encode(newPlainPassword));
+        updatedUser.setUpdatedAt(LocalDateTime.now());
+        userMapper.updateById(updatedUser);
     }
 }

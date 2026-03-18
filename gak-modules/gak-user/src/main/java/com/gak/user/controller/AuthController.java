@@ -2,6 +2,7 @@ package com.gak.user.controller;
 
 import com.gak.user.dto.AuthResponse;
 import com.gak.user.dto.CaptchaResponse;
+import com.gak.user.dto.ChangePasswordRequest;
 import com.gak.user.dto.LoginRequest;
 import com.gak.user.dto.PublicKeyResponse;
 import com.gak.user.dto.RegisterRequest;
@@ -90,6 +91,16 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request, HttpSession session) {
         return userService.login(request, session, LOGIN_CAPTCHA_SESSION_KEY);
+    }
+
+    /**
+     * 用户修改密码接口。
+     *
+     * @param request 修改密码请求体
+     */
+    @PostMapping("/change-password")
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        userService.changePassword(request);
     }
 
     private String generateCaptcha() {
