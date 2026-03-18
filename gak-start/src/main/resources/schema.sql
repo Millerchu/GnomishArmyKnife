@@ -44,6 +44,29 @@ CREATE TABLE IF NOT EXISTS gak_password_memo (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_wow_character (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    character_name VARCHAR(32) NOT NULL,
+    class_name VARCHAR(24) NOT NULL,
+    spec_name VARCHAR(24),
+    race_name VARCHAR(24) NOT NULL,
+    realm_name VARCHAR(32) NOT NULL,
+    faction VARCHAR(16) NOT NULL,
+    level INTEGER NOT NULL,
+    item_level INTEGER NOT NULL,
+    mythic_best_level INTEGER,
+    mythic_dungeon_name VARCHAR(32),
+    mythic_score INTEGER,
+    profession_primary VARCHAR(32),
+    profession_secondary VARCHAR(32),
+    note VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+ALTER TABLE gak_wow_character ADD COLUMN IF NOT EXISTS mythic_dungeon_name VARCHAR(32);
+
 CREATE TABLE IF NOT EXISTS gak_work_log (
     id BIGINT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -74,3 +97,4 @@ CREATE TABLE IF NOT EXISTS gak_work_log_type (
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wow_character_owner_sort ON gak_wow_character (owner_user_id, item_level DESC, mythic_score DESC);

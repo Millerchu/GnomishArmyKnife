@@ -21,6 +21,7 @@
         <module>gak-user</module>
         <module>gak-worklog</module>
         <module>gak-password-memo</module>
+        <module>gak-wow-character</module>
     </modules>
 
 </project>
