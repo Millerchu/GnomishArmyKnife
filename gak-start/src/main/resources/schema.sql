@@ -121,9 +121,141 @@ CREATE TABLE IF NOT EXISTS gak_work_log_type (
     UNIQUE (work_log_id, type_code)
     );
 
+CREATE TABLE IF NOT EXISTS gak_system_app (
+    id BIGINT PRIMARY KEY,
+    app_code VARCHAR(64) NOT NULL,
+    app_name VARCHAR(64) NOT NULL,
+    route_path VARCHAR(128) NOT NULL,
+    category VARCHAR(64),
+    icon_type VARCHAR(16) NOT NULL DEFAULT 'TEXT',
+    icon_text VARCHAR(32),
+    icon_url VARCHAR(255),
+    security_level VARCHAR(20) NOT NULL,
+    encryption_mode VARCHAR(20) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_no INTEGER NOT NULL DEFAULT 0,
+    description VARCHAR(255),
+    remark VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_user_app_permission (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    app_id BIGINT NOT NULL,
+    app_code VARCHAR(64) NOT NULL,
+    granted BOOLEAN NOT NULL DEFAULT TRUE,
+    granted_by BIGINT,
+    granted_at TIMESTAMP,
+    remark VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_permission_audit_log (
+    id BIGINT PRIMARY KEY,
+    operator_user_id BIGINT,
+    target_user_id BIGINT,
+    action_type VARCHAR(32) NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    trace_id VARCHAR(64),
+    ip VARCHAR(64),
+    user_agent VARCHAR(255),
+    created_at TIMESTAMP NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wow_character_owner_sort ON gak_wow_character (owner_user_id, item_level DESC, mythic_score DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_step_task_sort ON gak_todo_item_step (task_id, sort_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_system_app_code ON gak_system_app (app_code);
+CREATE INDEX IF NOT EXISTS idx_system_app_enabled_sort ON gak_system_app (enabled, sort_no, id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_app_permission_user_code ON gak_user_app_permission (user_id, app_code);
+CREATE INDEX IF NOT EXISTS idx_user_app_permission_user_granted ON gak_user_app_permission (user_id, granted, app_code);
+CREATE INDEX IF NOT EXISTS idx_permission_audit_target_created ON gak_permission_audit_log (target_user_id, created_at DESC);
+
+INSERT INTO gak_system_app (
+    id, app_code, app_name, route_path, category, icon_type, icon_text, icon_url,
+    security_level, encryption_mode, enabled, sort_no, description, remark, created_at, updated_at
+) VALUES
+    (2001, 'APP_CALCULATOR', '计算器', '/calculator', '效率工具', 'TEXT', '计算', NULL, 'PUBLIC', 'NONE', TRUE, 10, '日常数值计算与公式换算。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2002, 'APP_WORK_LOG', '工作日志', '/work-log', '办公协作', 'TEXT', '日志', NULL, 'INTERNAL', 'FIELD', TRUE, 20, '记录每日工作内容、工时与项目投入。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2003, 'APP_PASSWORD_MEMO', '密码备忘录', '/password-memo', '安全工具', 'TEXT', '密码', NULL, 'CONFIDENTIAL', 'END_TO_END', TRUE, 30, '集中管理账号密码并做受控查看。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'TEXT', '待办', NULL, 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'TEXT', '油耗', NULL, 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'TEXT', '魔兽', NULL, 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'TEXT', '账单', NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'TEXT', '经验', NULL, 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'TEXT', '软件', NULL, 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'TEXT', '健康', NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (app_code) DO UPDATE SET
+    app_name = EXCLUDED.app_name,
+    route_path = EXCLUDED.route_path,
+    category = EXCLUDED.category,
+    icon_type = EXCLUDED.icon_type,
+    icon_text = EXCLUDED.icon_text,
+    icon_url = EXCLUDED.icon_url,
+    security_level = EXCLUDED.security_level,
+    encryption_mode = EXCLUDED.encryption_mode,
+    enabled = EXCLUDED.enabled,
+    sort_no = EXCLUDED.sort_no,
+    description = EXCLUDED.description,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_user (
+    id, username, password_hash, display_name, phone, email, role_code, status, enabled,
+    force_change_password, last_login_time, remark, created_at, updated_at
+)
+VALUES (
+    900000000000000001,
+    'admin',
+    '$2y$10$z8ekeDBn1ICzkV7tw8WdC.uuyU3XnMIvDiK7SF5LD8Uz0zUiIn2b6',
+    '系统管理员',
+    NULL,
+    NULL,
+    'ADMIN',
+    'ENABLED',
+    TRUE,
+    FALSE,
+    NULL,
+    'schema init',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (username) DO NOTHING;
+
+UPDATE gak_user
+SET role_code = 'ADMIN',
+    status = 'ENABLED',
+    enabled = TRUE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE username = 'admin';
+
+INSERT INTO gak_user_app_permission (
+    id, user_id, app_id, app_code, granted, granted_by, granted_at, remark, created_at, updated_at
+)
+SELECT
+    400000000000000000 + app.id,
+    admin_user.id,
+    app.id,
+    app.app_code,
+    TRUE,
+    admin_user.id,
+    CURRENT_TIMESTAMP,
+    'schema init',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+FROM gak_system_app app
+JOIN gak_user admin_user ON admin_user.username = 'admin'
+WHERE app.enabled = TRUE
+  AND NOT EXISTS (
+    SELECT 1
+    FROM gak_user_app_permission permission
+    WHERE permission.user_id = admin_user.id
+      AND permission.app_code = app.app_code
+  );

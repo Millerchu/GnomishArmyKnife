@@ -23,6 +23,7 @@
         <module>gak-password-memo</module>
         <module>gak-wow-character</module>
         <module>gak-todo-list</module>
+        <module>gak-permission-management</module>
     </modules>
 
 </project>

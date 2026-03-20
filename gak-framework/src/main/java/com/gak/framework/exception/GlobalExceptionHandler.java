@@ -8,6 +8,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -45,6 +46,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ex.getStatusCode())
                 .body(ApiResponse.failure(String.valueOf(ex.getStatusCode().value()), message));
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoHandlerFound(NoHandlerFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.failure(String.valueOf(HttpStatus.NOT_FOUND.value()), "接口不存在"));
     }
 
     @ExceptionHandler(Exception.class)
