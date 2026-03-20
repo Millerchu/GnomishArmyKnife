@@ -22,6 +22,7 @@
         <module>gak-worklog</module>
         <module>gak-password-memo</module>
         <module>gak-wow-character</module>
+        <module>gak-todo-list</module>
     </modules>
 
 </project>

@@ -67,6 +67,33 @@ CREATE TABLE IF NOT EXISTS gak_wow_character (
 
 ALTER TABLE gak_wow_character ADD COLUMN IF NOT EXISTS mythic_dungeon_name VARCHAR(32);
 
+CREATE TABLE IF NOT EXISTS gak_todo_item (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    title VARCHAR(100) NOT NULL,
+    list_code VARCHAR(20) NOT NULL,
+    importance VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    important BOOLEAN NOT NULL DEFAULT FALSE,
+    due_date DATE,
+    reminder_at TIMESTAMP,
+    note TEXT,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_todo_item_step (
+    id BIGINT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    title VARCHAR(80) NOT NULL,
+    done BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_no INTEGER NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_todo_item_step_task
+        FOREIGN KEY (task_id) REFERENCES gak_todo_item (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS gak_work_log (
     id BIGINT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -98,3 +125,5 @@ CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wow_character_owner_sort ON gak_wow_character (owner_user_id, item_level DESC, mythic_score DESC);
+CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_todo_item_step_task_sort ON gak_todo_item_step (task_id, sort_no);
