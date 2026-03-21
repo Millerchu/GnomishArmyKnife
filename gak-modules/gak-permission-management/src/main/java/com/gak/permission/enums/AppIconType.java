@@ -5,9 +5,11 @@ package com.gak.permission.enums;
  */
 public enum AppIconType {
 
-    TEXT,
+    PRESET,
+    UPLOAD,
     URL,
-    SVG;
+    TEXT,
+    ;
 
     public static String normalize(String code) {
         if (code == null || code.isBlank()) {

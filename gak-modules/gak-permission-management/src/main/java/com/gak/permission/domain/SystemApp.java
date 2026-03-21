@@ -18,8 +18,11 @@ public class SystemApp {
     private String routePath;
     private String category;
     private String iconType;
+    private String iconPreset;
     private String iconText;
     private String iconUrl;
+    private String iconStorageType;
+    private String iconFileName;
     private String securityLevel;
     private String encryptionMode;
     private Boolean enabled;
@@ -85,12 +88,36 @@ public class SystemApp {
         this.iconText = iconText;
     }
 
+    public String getIconPreset() {
+        return iconPreset;
+    }
+
+    public void setIconPreset(String iconPreset) {
+        this.iconPreset = iconPreset;
+    }
+
     public String getIconUrl() {
         return iconUrl;
     }
 
     public void setIconUrl(String iconUrl) {
         this.iconUrl = iconUrl;
+    }
+
+    public String getIconStorageType() {
+        return iconStorageType;
+    }
+
+    public void setIconStorageType(String iconStorageType) {
+        this.iconStorageType = iconStorageType;
+    }
+
+    public String getIconFileName() {
+        return iconFileName;
+    }
+
+    public void setIconFileName(String iconFileName) {
+        this.iconFileName = iconFileName;
     }
 
     public String getSecurityLevel() {

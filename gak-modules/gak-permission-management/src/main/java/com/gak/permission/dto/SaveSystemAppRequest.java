@@ -1,39 +1,66 @@
-package com.gak.permission.vo;
+package com.gak.permission.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 /**
- * 应用目录视图。
+ * 应用新增/编辑请求。
  */
-public class AppCatalogVO {
+public class SaveSystemAppRequest {
 
-    private Long id;
+    @NotBlank(message = "appCode 不能为空")
+    @Size(max = 64, message = "appCode 长度不能超过 64")
     private String appCode;
+
+    @Size(max = 64, message = "featureCode 长度不能超过 64")
     private String featureCode;
-    private String code;
+
+    @NotBlank(message = "name 不能为空")
+    @Size(max = 64, message = "name 长度不能超过 64")
     private String name;
+
+    @Size(max = 128, message = "route 长度不能超过 128")
     private String route;
-    private String status;
+
+    @Size(max = 64, message = "category 长度不能超过 64")
     private String category;
+
+    @NotBlank(message = "securityLevel 不能为空")
+    @Size(max = 20, message = "securityLevel 长度不能超过 20")
     private String securityLevel;
+
+    @NotBlank(message = "encryptionMode 不能为空")
+    @Size(max = 20, message = "encryptionMode 长度不能超过 20")
     private String encryptionMode;
-    private Boolean enabled;
-    private Integer sortNo;
+
+    @NotBlank(message = "iconType 不能为空")
+    @Size(max = 16, message = "iconType 长度不能超过 16")
     private String iconType;
+
+    @Size(max = 64, message = "iconPreset 长度不能超过 64")
     private String iconPreset;
+
+    @Size(max = 32, message = "iconText 长度不能超过 32")
     private String iconText;
+
+    @Size(max = 255, message = "iconUrl 长度不能超过 255")
     private String iconUrl;
+
+    @Size(max = 32, message = "iconStorageType 长度不能超过 32")
     private String iconStorageType;
+
+    @Size(max = 255, message = "iconFileName 长度不能超过 255")
     private String iconFileName;
+
+    private Boolean enabled;
+
+    private Integer sortNo;
+
+    @Size(max = 255, message = "description 长度不能超过 255")
     private String description;
+
+    @Size(max = 255, message = "remark 长度不能超过 255")
     private String remark;
-    private Integer grantCount;
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
 
     public String getAppCode() {
         return appCode;
@@ -49,14 +76,6 @@ public class AppCatalogVO {
 
     public void setFeatureCode(String featureCode) {
         this.featureCode = featureCode;
-    }
-
-    public String getCode() {
-        return code;
-    }
-
-    public void setCode(String code) {
-        this.code = code;
     }
 
     public String getName() {
@@ -83,14 +102,6 @@ public class AppCatalogVO {
         this.category = category;
     }
 
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
     public String getSecurityLevel() {
         return securityLevel;
     }
@@ -105,22 +116,6 @@ public class AppCatalogVO {
 
     public void setEncryptionMode(String encryptionMode) {
         this.encryptionMode = encryptionMode;
-    }
-
-    public Boolean getEnabled() {
-        return enabled;
-    }
-
-    public void setEnabled(Boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    public Integer getSortNo() {
-        return sortNo;
-    }
-
-    public void setSortNo(Integer sortNo) {
-        this.sortNo = sortNo;
     }
 
     public String getIconType() {
@@ -171,6 +166,22 @@ public class AppCatalogVO {
         this.iconFileName = iconFileName;
     }
 
+    public Boolean getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public Integer getSortNo() {
+        return sortNo;
+    }
+
+    public void setSortNo(Integer sortNo) {
+        this.sortNo = sortNo;
+    }
+
     public String getDescription() {
         return description;
     }
@@ -185,13 +196,5 @@ public class AppCatalogVO {
 
     public void setRemark(String remark) {
         this.remark = remark;
-    }
-
-    public Integer getGrantCount() {
-        return grantCount;
-    }
-
-    public void setGrantCount(Integer grantCount) {
-        this.grantCount = grantCount;
     }
 }

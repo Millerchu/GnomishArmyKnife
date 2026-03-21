@@ -125,11 +125,14 @@ CREATE TABLE IF NOT EXISTS gak_system_app (
     id BIGINT PRIMARY KEY,
     app_code VARCHAR(64) NOT NULL,
     app_name VARCHAR(64) NOT NULL,
-    route_path VARCHAR(128) NOT NULL,
+    route_path VARCHAR(128),
     category VARCHAR(64),
     icon_type VARCHAR(16) NOT NULL DEFAULT 'TEXT',
+    icon_preset VARCHAR(64),
     icon_text VARCHAR(32),
     icon_url VARCHAR(255),
+    icon_storage_type VARCHAR(32),
+    icon_file_name VARCHAR(255),
     security_level VARCHAR(20) NOT NULL,
     encryption_mode VARCHAR(20) NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -166,6 +169,24 @@ CREATE TABLE IF NOT EXISTS gak_permission_audit_log (
     created_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_app_audit_log (
+    id BIGINT PRIMARY KEY,
+    operator_user_id BIGINT,
+    app_id BIGINT,
+    action_type VARCHAR(32) NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    ip VARCHAR(64),
+    user_agent VARCHAR(255),
+    created_at TIMESTAMP NOT NULL
+);
+
+ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_preset VARCHAR(64);
+ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_storage_type VARCHAR(32);
+ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_file_name VARCHAR(255);
+ALTER TABLE IF EXISTS gak_system_app ALTER COLUMN route_path DROP NOT NULL;
+ALTER TABLE IF EXISTS gak_app_audit_log ALTER COLUMN app_id DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
@@ -177,28 +198,33 @@ CREATE INDEX IF NOT EXISTS idx_system_app_enabled_sort ON gak_system_app (enable
 CREATE UNIQUE INDEX IF NOT EXISTS uk_user_app_permission_user_code ON gak_user_app_permission (user_id, app_code);
 CREATE INDEX IF NOT EXISTS idx_user_app_permission_user_granted ON gak_user_app_permission (user_id, granted, app_code);
 CREATE INDEX IF NOT EXISTS idx_permission_audit_target_created ON gak_permission_audit_log (target_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_audit_app_created ON gak_app_audit_log (app_id, created_at DESC);
 
 INSERT INTO gak_system_app (
-    id, app_code, app_name, route_path, category, icon_type, icon_text, icon_url,
-    security_level, encryption_mode, enabled, sort_no, description, remark, created_at, updated_at
+    id, app_code, app_name, route_path, category, icon_type, icon_preset, icon_text, icon_url,
+    icon_storage_type, icon_file_name, security_level, encryption_mode, enabled, sort_no,
+    description, remark, created_at, updated_at
 ) VALUES
-    (2001, 'APP_CALCULATOR', '计算器', '/calculator', '效率工具', 'TEXT', '计算', NULL, 'PUBLIC', 'NONE', TRUE, 10, '日常数值计算与公式换算。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2002, 'APP_WORK_LOG', '工作日志', '/work-log', '办公协作', 'TEXT', '日志', NULL, 'INTERNAL', 'FIELD', TRUE, 20, '记录每日工作内容、工时与项目投入。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2003, 'APP_PASSWORD_MEMO', '密码备忘录', '/password-memo', '安全工具', 'TEXT', '密码', NULL, 'CONFIDENTIAL', 'END_TO_END', TRUE, 30, '集中管理账号密码并做受控查看。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'TEXT', '待办', NULL, 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'TEXT', '油耗', NULL, 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'TEXT', '魔兽', NULL, 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'TEXT', '账单', NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'TEXT', '经验', NULL, 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'TEXT', '软件', NULL, 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'TEXT', '健康', NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (2001, 'APP_CALCULATOR', '计算器', '/calculator', '效率工具', 'TEXT', NULL, '计算', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 10, '日常数值计算与公式换算。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2002, 'APP_WORK_LOG', '工作日志', '/work-log', '办公协作', 'TEXT', NULL, '日志', NULL, NULL, NULL, 'INTERNAL', 'FIELD', TRUE, 20, '记录每日工作内容、工时与项目投入。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2003, 'APP_PASSWORD_MEMO', '密码备忘录', '/password-memo', '安全工具', 'TEXT', NULL, '密码', NULL, NULL, NULL, 'CONFIDENTIAL', 'END_TO_END', TRUE, 30, '集中管理账号密码并做受控查看。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'TEXT', NULL, '待办', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'TEXT', NULL, '油耗', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'TEXT', NULL, '魔兽', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'TEXT', NULL, '账单', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'TEXT', NULL, '经验', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'TEXT', NULL, '软件', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'TEXT', NULL, '健康', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (app_code) DO UPDATE SET
     app_name = EXCLUDED.app_name,
     route_path = EXCLUDED.route_path,
     category = EXCLUDED.category,
     icon_type = EXCLUDED.icon_type,
+    icon_preset = EXCLUDED.icon_preset,
     icon_text = EXCLUDED.icon_text,
     icon_url = EXCLUDED.icon_url,
+    icon_storage_type = EXCLUDED.icon_storage_type,
+    icon_file_name = EXCLUDED.icon_file_name,
     security_level = EXCLUDED.security_level,
     encryption_mode = EXCLUDED.encryption_mode,
     enabled = EXCLUDED.enabled,

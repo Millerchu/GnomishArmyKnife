@@ -12,8 +12,10 @@ import com.gak.permission.dto.PermissionUserQueryRequest;
 import com.gak.permission.dto.UpdateUserAppPermissionRequest;
 import com.gak.permission.enums.AppEncryptionMode;
 import com.gak.permission.enums.AppIconType;
+import com.gak.permission.enums.AppIconStorageType;
 import com.gak.permission.enums.AppSecurityLevel;
 import com.gak.permission.enums.PermissionAuditActionType;
+import com.gak.permission.enums.SystemAppStatus;
 import com.gak.permission.mapper.PermissionAuditLogMapper;
 import com.gak.permission.mapper.SystemAppMapper;
 import com.gak.permission.mapper.UserAppPermissionMapper;
@@ -36,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -49,6 +52,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class PermissionManagementService {
 
+    private static final Pattern PRESET_PATTERN = Pattern.compile("^[a-z0-9-]{2,32}$");
     private static final Comparator<SystemApp> APP_ORDER = Comparator
             .comparing(SystemApp::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(SystemApp::getId, Comparator.nullsLast(Comparator.naturalOrder()));
@@ -305,15 +309,20 @@ public class PermissionManagementService {
         vo.setCode(app.getAppCode());
         vo.setName(app.getAppName());
         vo.setRoute(app.getRoutePath());
+        vo.setStatus(Boolean.TRUE.equals(app.getEnabled()) ? SystemAppStatus.ENABLED.name() : SystemAppStatus.DISABLED.name());
         vo.setCategory(app.getCategory());
         vo.setSecurityLevel(app.getSecurityLevel());
         vo.setEncryptionMode(app.getEncryptionMode());
         vo.setEnabled(Boolean.TRUE.equals(app.getEnabled()));
         vo.setSortNo(app.getSortNo());
         vo.setIconType(app.getIconType());
+        vo.setIconPreset(app.getIconPreset());
         vo.setIconText(app.getIconText());
         vo.setIconUrl(app.getIconUrl());
+        vo.setIconStorageType(app.getIconStorageType());
+        vo.setIconFileName(app.getIconFileName());
         vo.setDescription(app.getDescription());
+        vo.setRemark(app.getRemark());
         return vo;
     }
 
@@ -352,8 +361,59 @@ public class PermissionManagementService {
             AppSecurityLevel.normalize(app.getSecurityLevel());
             AppEncryptionMode.normalize(app.getEncryptionMode());
             app.setIconType(AppIconType.normalize(app.getIconType()));
+            app.setIconStorageType(normalizeOptionalIconStorageType(app.getIconStorageType()));
+            app.setIconPreset(normalizeIconPreset(app.getIconPreset()));
+            validateIconPayload(
+                    app.getIconType(),
+                    app.getIconPreset(),
+                    app.getIconText(),
+                    app.getIconUrl(),
+                    app.getIconStorageType(),
+                    app.getIconFileName()
+            );
         } catch (IllegalArgumentException exception) {
             throw new BusinessException("APP_CATALOG_INVALID", "应用目录存在非法配置");
+        }
+    }
+
+    private String normalizeOptionalIconStorageType(String iconStorageType) {
+        String normalized = trimToNull(iconStorageType);
+        if (normalized == null) {
+            return null;
+        }
+        return AppIconStorageType.normalize(normalized);
+    }
+
+    private String normalizeIconPreset(String iconPreset) {
+        String normalized = trimToNull(iconPreset);
+        if (normalized == null) {
+            return null;
+        }
+        if (!PRESET_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("非法图标预设");
+        }
+        return normalized;
+    }
+
+    private void validateIconPayload(String iconType,
+                                     String iconPreset,
+                                     String iconText,
+                                     String iconUrl,
+                                     String iconStorageType,
+                                     String iconFileName) {
+        if (AppIconType.PRESET.name().equals(iconType) && !StringUtils.hasText(iconPreset)) {
+            throw new IllegalArgumentException("预设图标缺失");
+        }
+        if (AppIconType.UPLOAD.name().equals(iconType)) {
+            if (!StringUtils.hasText(iconUrl) || !StringUtils.hasText(iconStorageType) || !StringUtils.hasText(iconFileName)) {
+                throw new IllegalArgumentException("上传图标字段缺失");
+            }
+        }
+        if (AppIconType.URL.name().equals(iconType) && !StringUtils.hasText(iconUrl)) {
+            throw new IllegalArgumentException("URL 图标缺失");
+        }
+        if (AppIconType.TEXT.name().equals(iconType) && !StringUtils.hasText(iconText)) {
+            throw new IllegalArgumentException("文本图标缺失");
         }
     }
 
