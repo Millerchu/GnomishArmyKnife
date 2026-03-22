@@ -1,13 +1,14 @@
 package com.gak.worklog.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.exception.BusinessException;
 import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.entity.WorkLog;
 import com.gak.worklog.entity.WorkLogType;
-import com.gak.worklog.entity.WorkLogTypeCode;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.time.DayOfWeek;
@@ -33,14 +34,20 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @Service
 public class WorkLogService {
 
+    private static final String APP_CODE = "APP_WORK_LOG";
+    private static final String MODULE_CODE = "WORK_LOG";
     private static final int BRIEF_MAX_LENGTH = 80;
 
     private final WorkLogMapper workLogMapper;
     private final WorkLogTypeMapper workLogTypeMapper;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
-    public WorkLogService(WorkLogMapper workLogMapper, WorkLogTypeMapper workLogTypeMapper) {
+    public WorkLogService(WorkLogMapper workLogMapper,
+                          WorkLogTypeMapper workLogTypeMapper,
+                          DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.workLogMapper = workLogMapper;
         this.workLogTypeMapper = workLogTypeMapper;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     /**
@@ -147,13 +154,7 @@ public class WorkLogService {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new ResponseStatusException(BAD_REQUEST, "startDate 不能大于 endDate");
         }
-        String normalizedTypeCode = null;
-        if (typeCode != null) {
-            normalizedTypeCode = typeCode.trim().toUpperCase();
-        }
-        if (normalizedTypeCode != null && !WorkLogTypeCode.isValid(normalizedTypeCode)) {
-            throw new ResponseStatusException(BAD_REQUEST, "typeCode 非法");
-        }
+        String normalizedTypeCode = normalizeOptionalTypeCode(typeCode);
 
         QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId);
@@ -232,20 +233,18 @@ public class WorkLogService {
         if (typeCodes == null || typeCodes.isEmpty()) {
             throw new ResponseStatusException(BAD_REQUEST, "typeCodes 不能为空");
         }
-
-        Set<String> uniqueCodes = new LinkedHashSet<>();
-        for (String typeCode : typeCodes) {
-            if (typeCode == null || typeCode.isBlank()) {
-                throw new ResponseStatusException(BAD_REQUEST, "typeCodes 不能为空白");
-            }
-            String normalized = typeCode.trim().toUpperCase();
-            if (!WorkLogTypeCode.isValid(normalized)) {
-                throw new ResponseStatusException(BAD_REQUEST, "typeCode 非法: " + typeCode);
-            }
-            uniqueCodes.add(normalized);
+        try {
+            // 工作日志类型已经改成字典驱动，仍然保留多选去重的写入语义。
+            return dataDictionaryUsageSupport.normalizeMultiValueByUsage(
+                    APP_CODE,
+                    MODULE_CODE,
+                    "typeCodes",
+                    typeCodes,
+                    true
+            );
+        } catch (BusinessException exception) {
+            throw new ResponseStatusException(BAD_REQUEST, "typeCode 非法");
         }
-
-        return new ArrayList<>(uniqueCodes);
     }
 
     private void saveTypeRelations(Long workLogId, List<String> typeCodes, LocalDateTime now) {
@@ -307,6 +306,20 @@ public class WorkLogService {
         }
 
         return result;
+    }
+
+    private String normalizeOptionalTypeCode(String typeCode) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(
+                    APP_CODE,
+                    MODULE_CODE,
+                    "typeCodes",
+                    typeCode,
+                    false
+            );
+        } catch (BusinessException exception) {
+            throw new ResponseStatusException(BAD_REQUEST, "typeCode 非法");
+        }
     }
 
     private WorkLogResponse buildResponse(WorkLog workLog, List<String> typeCodes) {

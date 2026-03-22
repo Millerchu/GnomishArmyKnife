@@ -1,6 +1,7 @@
 package com.gak.permission.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.permission.domain.PermissionAuditLog;
@@ -18,6 +19,7 @@ import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -32,7 +34,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,8 +61,26 @@ class PermissionManagementServiceTest {
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
+    @Mock
+    private DataDictionaryUsageSupport dataDictionaryUsageSupport;
+
     @InjectMocks
     private PermissionManagementService permissionManagementService;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(dataDictionaryUsageSupport.normalizeValueByUsage(
+                eq("APP_APP_MANAGEMENT"),
+                eq("SYSTEM_APP"),
+                anyString(),
+                any(),
+                anyBoolean()
+        )).thenAnswer(invocation -> normalizeAppField(
+                invocation.getArgument(2),
+                (String) invocation.getArgument(3),
+                invocation.getArgument(4)
+        ));
+    }
 
     @Test
     void pageUsersShouldReturnPermissionCounts() {
@@ -233,5 +257,32 @@ class PermissionManagementServiceTest {
         permission.setCreatedAt(LocalDateTime.now());
         permission.setUpdatedAt(LocalDateTime.now());
         return permission;
+    }
+
+    private String normalizeAppField(String field, String value, boolean required) {
+        String normalized = value == null ? null : value.trim();
+        if (normalized == null || normalized.isEmpty()) {
+            if (required) {
+                throw new BusinessException("DICT_ITEM_VALUE_REQUIRED", "字典值不能为空");
+            }
+            return null;
+        }
+        return switch (field) {
+            case "securityLevel" -> normalizeEnumLike(normalized, List.of("PUBLIC", "INTERNAL", "CONFIDENTIAL"));
+            case "dataSourceMode" -> normalizeEnumLike(normalized, List.of("REAL", "DEMO"));
+            case "encryptionMode" -> normalizeEnumLike(normalized, List.of("NONE", "FIELD", "END_TO_END"));
+            case "iconType" -> normalizeEnumLike(normalized, List.of("PRESET", "UPLOAD", "URL", "TEXT"));
+            case "status" -> normalizeEnumLike(normalized, List.of("ENABLED", "DISABLED"));
+            default -> normalized;
+        };
+    }
+
+    private String normalizeEnumLike(String value, List<String> supportedValues) {
+        for (String supportedValue : supportedValues) {
+            if (supportedValue.equalsIgnoreCase(value)) {
+                return supportedValue;
+            }
+        }
+        throw new BusinessException("DICT_ITEM_VALUE_INVALID", "字典值非法");
     }
 }

@@ -8,8 +8,8 @@ import com.gak.permission.enums.AppAuditActionType;
 import com.gak.permission.enums.AppIconStorageType;
 import com.gak.permission.mapper.AppAuditLogMapper;
 import com.gak.permission.vo.AppIconUploadVO;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
-import com.gak.user.enums.user.UserRoleCode;
 import com.gak.user.mapper.user.UserMapper;
 import java.io.IOException;
 import java.io.InputStream;
@@ -178,7 +178,7 @@ public class SystemAppIconService {
         if (currentUser == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
         }
-        if (!UserRoleCode.ADMIN.name().equalsIgnoreCase(currentUser.getRoleCode())) {
+        if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(currentUser.getRoleCode())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可操作应用管理");
         }
     }

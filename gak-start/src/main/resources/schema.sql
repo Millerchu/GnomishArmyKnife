@@ -471,44 +471,65 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5002 AND deleted = FA
     WHERE item.dictionary_id = 5002 AND item.item_code = 'disabled' AND item.deleted = FALSE
   );
 
-INSERT INTO gak_data_dictionary_item (
-    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
-    is_default, description, extra_json, created_at, updated_at, deleted
-)
-SELECT 5301, 5003, 'WORK_LOG_TYPE', 'develop', '开发', 'DEVELOP', 1, 'ENABLED', TRUE, '默认工作类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
-WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
-  AND NOT EXISTS (
-    SELECT 1 FROM gak_data_dictionary_item item
-    WHERE item.dictionary_id = 5003 AND item.item_code = 'develop' AND item.deleted = FALSE
+UPDATE gak_data_dictionary_item
+SET deleted = TRUE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE dictionary_id = 5003
+  AND deleted = FALSE
+  AND (
+    item_code IN ('develop', 'meeting', 'test')
+    OR item_value IN ('DEVELOP', 'MEETING', 'TEST')
   );
 
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5302, 5003, 'WORK_LOG_TYPE', 'meeting', '会议', 'MEETING', 2, 'ENABLED', FALSE, '会议沟通', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+SELECT 5311, 5003, 'WORK_LOG_TYPE', 'normal', '常规', 'NORMAL', 1, 'ENABLED', TRUE, '常规工作记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
-    WHERE item.dictionary_id = 5003 AND item.item_code = 'meeting' AND item.deleted = FALSE
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'normal' AND item.deleted = FALSE
   );
 
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5303, 5003, 'WORK_LOG_TYPE', 'test', '测试', 'TEST', 3, 'ENABLED', FALSE, '测试验证', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+SELECT 5312, 5003, 'WORK_LOG_TYPE', 'leave', '请假', 'LEAVE', 2, 'ENABLED', FALSE, '请假记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
-    WHERE item.dictionary_id = 5003 AND item.item_code = 'test' AND item.deleted = FALSE
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'leave' AND item.deleted = FALSE
   );
 
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5304, 5003, 'WORK_LOG_TYPE', 'other', '其他', 'OTHER', 4, 'ENABLED', FALSE, '其他类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+SELECT 5313, 5003, 'WORK_LOG_TYPE', 'business_trip', '出差', 'BUSINESS_TRIP', 3, 'ENABLED', FALSE, '出差记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'business_trip' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5314, 5003, 'WORK_LOG_TYPE', 'sick_leave', '病假', 'SICK_LEAVE', 4, 'ENABLED', FALSE, '病假记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'sick_leave' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5315, 5003, 'WORK_LOG_TYPE', 'other', '其他', 'OTHER', 5, 'ENABLED', FALSE, '其他类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item

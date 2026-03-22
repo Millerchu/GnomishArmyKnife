@@ -1,6 +1,7 @@
 package com.gak.datadictionary.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.datadictionary.cache.DataDictionaryCacheSupport;
 import com.gak.datadictionary.domain.DataDictionary;
 import com.gak.datadictionary.domain.DataDictionaryItem;
 import com.gak.datadictionary.dto.DataDictionaryQueryRequest;
@@ -48,6 +49,9 @@ class DataDictionaryServiceTest {
 
     @Mock
     private UserMapper userMapper;
+
+    @Mock
+    private DataDictionaryCacheSupport dataDictionaryCacheSupport;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -135,8 +139,22 @@ class DataDictionaryServiceTest {
 
         dataDictionaryService.createItem(1L, 3001L, buildSaveItemRequest());
 
+        ArgumentCaptor<DataDictionaryItem> captor = ArgumentCaptor.forClass(DataDictionaryItem.class);
         verify(dataDictionaryItemMapper).update(any(DataDictionaryItem.class), any());
-        verify(dataDictionaryItemMapper).insert(any(DataDictionaryItem.class));
+        verify(dataDictionaryItemMapper).insert(captor.capture());
+        assertEquals("{\"group\":\"work-log\"}", captor.getValue().getExtraJson());
+    }
+
+    @Test
+    void listItemsShouldReturnExtraJson() {
+        when(userMapper.selectById(1L)).thenReturn(buildAdminUser(1L));
+        when(dataDictionaryMapper.selectOne(any())).thenReturn(buildDictionary(3001L, "WORK_LOG_TYPE", "工作日志类型"));
+        when(dataDictionaryItemMapper.selectList(any())).thenReturn(List.of(
+                buildItem(3101L, 3001L, "DEVELOP", "DEVELOP", true)
+        ));
+
+        assertEquals("{\"group\":\"work-log\"}",
+                dataDictionaryService.listItems(1L, 3001L).getList().get(0).getExtraJson());
     }
 
     @Test
@@ -200,6 +218,7 @@ class DataDictionaryServiceTest {
         item.setCreatedAt(LocalDateTime.now());
         item.setUpdatedAt(LocalDateTime.now());
         item.setDeleted(false);
+        item.setExtraJson("{\"group\":\"work-log\"}");
         return item;
     }
 
@@ -224,6 +243,7 @@ class DataDictionaryServiceTest {
         request.setEnabled(true);
         request.setIsDefault(true);
         request.setDescription("默认项");
+        request.setExtraJson("{\"group\":\"work-log\"}");
         return request;
     }
 }

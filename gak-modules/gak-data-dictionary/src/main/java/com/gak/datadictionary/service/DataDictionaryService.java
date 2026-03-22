@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.datadictionary.cache.DataDictionaryCacheSupport;
 import com.gak.datadictionary.domain.DataDictionary;
 import com.gak.datadictionary.domain.DataDictionaryItem;
 import com.gak.datadictionary.domain.DataDictionaryUsage;
@@ -22,8 +23,8 @@ import com.gak.datadictionary.vo.DataDictionaryItemVO;
 import com.gak.datadictionary.vo.DataDictionaryVO;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
-import com.gak.user.enums.user.UserRoleCode;
 import com.gak.user.mapper.user.UserMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -52,17 +53,20 @@ public class DataDictionaryService {
     private final DataDictionaryUsageMapper dataDictionaryUsageMapper;
     private final UserMapper userMapper;
     private final ObjectMapper objectMapper;
+    private final DataDictionaryCacheSupport dataDictionaryCacheSupport;
 
     public DataDictionaryService(DataDictionaryMapper dataDictionaryMapper,
                                  DataDictionaryItemMapper dataDictionaryItemMapper,
                                  DataDictionaryUsageMapper dataDictionaryUsageMapper,
                                  UserMapper userMapper,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 DataDictionaryCacheSupport dataDictionaryCacheSupport) {
         this.dataDictionaryMapper = dataDictionaryMapper;
         this.dataDictionaryItemMapper = dataDictionaryItemMapper;
         this.dataDictionaryUsageMapper = dataDictionaryUsageMapper;
         this.userMapper = userMapper;
         this.objectMapper = objectMapper;
+        this.dataDictionaryCacheSupport = dataDictionaryCacheSupport;
     }
 
     public PagedResult<DataDictionaryVO> page(Long currentUserId, DataDictionaryQueryRequest request) {
@@ -124,6 +128,7 @@ public class DataDictionaryService {
         dictionary.setUpdatedAt(now);
         dictionary.setDeleted(false);
         dataDictionaryMapper.insert(dictionary);
+        dataDictionaryCacheSupport.evictDictionary(dictionary.getDictCode());
         return toDictionaryVO(dictionary, 0);
     }
 
@@ -140,6 +145,7 @@ public class DataDictionaryService {
         current.setDescription(normalized.description());
         current.setUpdatedAt(LocalDateTime.now());
         dataDictionaryMapper.updateById(current);
+        dataDictionaryCacheSupport.evictDictionary(current.getDictCode());
         return toDictionaryVO(current, loadItemCount(current.getId()));
     }
 
@@ -162,6 +168,7 @@ public class DataDictionaryService {
         UpdateWrapper<DataDictionaryItem> itemWrapper = new UpdateWrapper<>();
         itemWrapper.eq("dictionary_id", current.getId()).eq("deleted", false);
         dataDictionaryItemMapper.update(deletedItem, itemWrapper);
+        dataDictionaryCacheSupport.evictDictionary(current.getDictCode());
     }
 
     @Transactional
@@ -182,6 +189,7 @@ public class DataDictionaryService {
 
         current.setStatus(status);
         current.setUpdatedAt(updated.getUpdatedAt());
+        dataDictionaryCacheSupport.evictDictionary(current.getDictCode());
         return toDictionaryVO(current, loadItemCount(current.getId()));
     }
 
@@ -224,6 +232,7 @@ public class DataDictionaryService {
         item.setUpdatedAt(now);
         item.setDeleted(false);
         dataDictionaryItemMapper.insert(item);
+        dataDictionaryCacheSupport.evictDictionary(dictionary.getDictCode());
         return toItemVO(item);
     }
 
@@ -248,6 +257,7 @@ public class DataDictionaryService {
         applyNormalizedItem(current, normalized);
         current.setUpdatedAt(now);
         dataDictionaryItemMapper.updateById(current);
+        dataDictionaryCacheSupport.evictDictionary(dictionary.getDictCode());
         return toItemVO(current);
     }
 
@@ -262,6 +272,7 @@ public class DataDictionaryService {
         deletedItem.setDeleted(true);
         deletedItem.setUpdatedAt(LocalDateTime.now());
         dataDictionaryItemMapper.updateById(deletedItem);
+        dataDictionaryCacheSupport.evictDictionary(current.getDictCode());
     }
 
     @Transactional
@@ -286,6 +297,7 @@ public class DataDictionaryService {
 
         current.setStatus(status);
         current.setUpdatedAt(updated.getUpdatedAt());
+        dataDictionaryCacheSupport.evictDictionary(current.getDictCode());
         return toItemVO(current);
     }
 
@@ -335,6 +347,7 @@ public class DataDictionaryService {
         vo.setStatus(item.getStatus());
         vo.setIsDefault(Boolean.TRUE.equals(item.getIsDefault()));
         vo.setDescription(item.getDescription());
+        vo.setExtraJson(item.getExtraJson());
         return vo;
     }
 
@@ -346,6 +359,7 @@ public class DataDictionaryService {
         item.setStatus(normalized.status());
         item.setIsDefault(normalized.isDefault());
         item.setDescription(normalized.description());
+        item.setExtraJson(normalized.extraJson());
     }
 
     private void clearDefaultItems(Long dictionaryId, Long excludeId, LocalDateTime now) {
@@ -381,7 +395,8 @@ public class DataDictionaryService {
                 normalizeRequiredStatus(request.getStatus(), request.getEnabled(), true,
                         "DICT_ITEM_STATUS_INVALID", "DICT_ITEM_STATUS_MISMATCH"),
                 Boolean.TRUE.equals(request.getIsDefault()),
-                trimToNull(request.getDescription())
+                trimToNull(request.getDescription()),
+                trimToNull(request.getExtraJson())
         );
     }
 
@@ -465,7 +480,7 @@ public class DataDictionaryService {
         if (currentUser == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
         }
-        if (!UserRoleCode.ADMIN.name().equalsIgnoreCase(currentUser.getRoleCode())) {
+        if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(currentUser.getRoleCode())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可操作数据字典");
         }
         return currentUser;
@@ -594,6 +609,7 @@ public class DataDictionaryService {
                                             int sortNo,
                                             String status,
                                             boolean isDefault,
-                                            String description) {
+                                            String description,
+                                            String extraJson) {
     }
 }

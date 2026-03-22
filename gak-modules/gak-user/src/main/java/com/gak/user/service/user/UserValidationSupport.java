@@ -1,8 +1,6 @@
 package com.gak.user.service.user;
 
 import com.gak.framework.exception.BusinessException;
-import com.gak.user.enums.user.UserRoleCode;
-import com.gak.user.enums.user.UserStatus;
 import org.springframework.util.StringUtils;
 
 /**
@@ -13,26 +11,12 @@ final class UserValidationSupport {
     private UserValidationSupport() {
     }
 
-    static String normalizeRoleCode(String roleCode, String defaultRoleCode) {
-        String resolved = StringUtils.hasText(roleCode) ? roleCode.trim().toUpperCase() : defaultRoleCode;
-        if (!UserRoleCode.isValid(resolved)) {
-            throw new BusinessException("ROLE_CODE_INVALID", "roleCode 非法");
-        }
-        return resolved;
-    }
-
-    static StatusEnabledPair normalizeStatusEnabled(String status, Boolean enabled, UserStatus defaultStatus) {
-        String resolvedStatusCode = StringUtils.hasText(status) ? status.trim().toUpperCase() : defaultStatus.name();
-        if (!UserStatus.isValid(resolvedStatusCode)) {
-            throw new BusinessException("USER_STATUS_INVALID", "status 非法");
-        }
-
-        UserStatus resolvedStatus = UserStatus.fromCode(resolvedStatusCode);
-        boolean resolvedEnabled = enabled != null ? enabled : resolvedStatus.isEnabled();
-        if (resolvedEnabled != resolvedStatus.isEnabled()) {
+    static StatusEnabledPair normalizeStatusEnabled(String status, Boolean enabled, boolean enabledStatus) {
+        boolean resolvedEnabled = enabled != null ? enabled : enabledStatus;
+        if (resolvedEnabled != enabledStatus) {
             throw new BusinessException("USER_STATUS_MISMATCH", "status 与 enabled 语义不一致");
         }
-        return new StatusEnabledPair(resolvedStatus.name(), resolvedEnabled);
+        return new StatusEnabledPair(status, resolvedEnabled);
     }
 
     static String resolvePassword(String initialPassword, String password, boolean required) {

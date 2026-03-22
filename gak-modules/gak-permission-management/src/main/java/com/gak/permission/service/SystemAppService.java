@@ -3,6 +3,7 @@ package com.gak.permission.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.permission.domain.AppAuditLog;
@@ -12,18 +13,13 @@ import com.gak.permission.dto.SaveSystemAppRequest;
 import com.gak.permission.dto.SystemAppQueryRequest;
 import com.gak.permission.dto.UpdateSystemAppStatusRequest;
 import com.gak.permission.enums.AppAuditActionType;
-import com.gak.permission.enums.AppDataSourceMode;
-import com.gak.permission.enums.AppEncryptionMode;
-import com.gak.permission.enums.AppIconType;
 import com.gak.permission.enums.AppIconStorageType;
-import com.gak.permission.enums.AppSecurityLevel;
-import com.gak.permission.enums.SystemAppStatus;
 import com.gak.permission.mapper.AppAuditLogMapper;
 import com.gak.permission.mapper.SystemAppMapper;
 import com.gak.permission.mapper.UserAppPermissionMapper;
 import com.gak.permission.vo.AppCatalogVO;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
-import com.gak.user.enums.user.UserRoleCode;
 import com.gak.user.mapper.user.UserMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -46,6 +42,19 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class SystemAppService {
 
+    private static final String APP_CODE = "APP_APP_MANAGEMENT";
+    private static final String MODULE_CODE = "SYSTEM_APP";
+    private static final String SECURITY_LEVEL_FIELD = "securityLevel";
+    private static final String ENCRYPTION_MODE_FIELD = "encryptionMode";
+    private static final String DATA_SOURCE_MODE_FIELD = "dataSourceMode";
+    private static final String ICON_TYPE_FIELD = "iconType";
+    private static final String STATUS_FIELD = "status";
+    private static final String ENABLED_STATUS = "ENABLED";
+    private static final String DISABLED_STATUS = "DISABLED";
+    private static final String ICON_TYPE_PRESET = "PRESET";
+    private static final String ICON_TYPE_UPLOAD = "UPLOAD";
+    private static final String ICON_TYPE_URL = "URL";
+    private static final String ICON_TYPE_TEXT = "TEXT";
     private static final Pattern PRESET_PATTERN = Pattern.compile("^[a-z0-9-]{2,32}$");
     private static final Comparator<SystemApp> APP_ORDER = Comparator
             .comparing(SystemApp::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -56,17 +65,20 @@ public class SystemAppService {
     private final UserAppPermissionMapper userAppPermissionMapper;
     private final AppAuditLogMapper appAuditLogMapper;
     private final ObjectMapper objectMapper;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     public SystemAppService(UserMapper userMapper,
                             SystemAppMapper systemAppMapper,
                             UserAppPermissionMapper userAppPermissionMapper,
                             AppAuditLogMapper appAuditLogMapper,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.userMapper = userMapper;
         this.systemAppMapper = systemAppMapper;
         this.userAppPermissionMapper = userAppPermissionMapper;
         this.appAuditLogMapper = appAuditLogMapper;
         this.objectMapper = objectMapper;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     public PagedResult<AppCatalogVO> page(Long currentUserId, SystemAppQueryRequest request) {
@@ -83,9 +95,9 @@ public class SystemAppService {
                     .or()
                     .like("category", keyword));
         }
-        SystemAppStatus.StatusEnabledPair statusPair = normalizeOptionalStatus(request.getStatus());
-        if (statusPair != null) {
-            wrapper.eq("enabled", statusPair.enabled());
+        String status = normalizeOptionalStatus(request.getStatus());
+        if (status != null) {
+            wrapper.eq("enabled", isEnabledStatus(status));
         }
         String securityLevel = normalizeOptionalSecurityLevel(request.getSecurityLevel());
         if (securityLevel != null) {
@@ -162,7 +174,7 @@ public class SystemAppService {
         requireAdminUser(currentUserId);
         SystemApp current = getAppOrThrow(id);
         AppCatalogVO before = toAppCatalogVO(current, loadGrantCount(current.getAppCode()));
-        SystemAppStatus.StatusEnabledPair pair = SystemAppStatus.normalize(
+        String status = normalizeRequiredStatus(
                 request.getStatus(),
                 request.getEnabled(),
                 Boolean.TRUE.equals(current.getEnabled())
@@ -170,18 +182,18 @@ public class SystemAppService {
 
         SystemApp updated = new SystemApp();
         updated.setId(id);
-        updated.setEnabled(pair.enabled());
+        updated.setEnabled(isEnabledStatus(status));
         updated.setUpdatedAt(LocalDateTime.now());
         systemAppMapper.updateById(updated);
 
-        current.setEnabled(pair.enabled());
+        current.setEnabled(updated.getEnabled());
         current.setUpdatedAt(updated.getUpdatedAt());
         AppCatalogVO after = toAppCatalogVO(current, before.getGrantCount() != null ? before.getGrantCount() : 0);
 
         // 应用管理和权限管理共用同一张应用目录表；只要这里改 enabled，授权保存和主页展示都会自动感知。
         saveAuditLog(currentUserId,
                 current.getId(),
-                pair.enabled() ? AppAuditActionType.ENABLE_APP : AppAuditActionType.DISABLE_APP,
+                Boolean.TRUE.equals(updated.getEnabled()) ? AppAuditActionType.ENABLE_APP : AppAuditActionType.DISABLE_APP,
                 before,
                 after,
                 ip,
@@ -233,7 +245,7 @@ public class SystemAppService {
         vo.setCode(app.getAppCode());
         vo.setName(app.getAppName());
         vo.setRoute(app.getRoutePath());
-        vo.setStatus(Boolean.TRUE.equals(app.getEnabled()) ? SystemAppStatus.ENABLED.name() : SystemAppStatus.DISABLED.name());
+        vo.setStatus(resolveStatus(Boolean.TRUE.equals(app.getEnabled())));
         vo.setCategory(app.getCategory());
         vo.setDataSourceMode(app.getDataSourceMode());
         vo.setSecurityLevel(app.getSecurityLevel());
@@ -340,7 +352,7 @@ public class SystemAppService {
         if (currentUser == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
         }
-        if (!UserRoleCode.ADMIN.name().equalsIgnoreCase(currentUser.getRoleCode())) {
+        if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(currentUser.getRoleCode())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可操作应用管理");
         }
     }
@@ -365,19 +377,13 @@ public class SystemAppService {
     }
 
     private String normalizeRequiredSecurityLevel(String securityLevel) {
-        try {
-            return AppSecurityLevel.normalize(securityLevel);
-        } catch (IllegalArgumentException exception) {
-            throw new BusinessException("APP_SECURITY_LEVEL_INVALID", "securityLevel 非法");
-        }
+        return normalizeMetadataValue(SECURITY_LEVEL_FIELD, securityLevel, true,
+                "APP_SECURITY_LEVEL_INVALID", "securityLevel 非法");
     }
 
     private String normalizeRequiredDataSourceMode(String dataSourceMode) {
-        try {
-            return AppDataSourceMode.normalize(dataSourceMode);
-        } catch (IllegalArgumentException exception) {
-            throw new BusinessException("APP_DATA_SOURCE_MODE_INVALID", "dataSourceMode 非法");
-        }
+        return normalizeMetadataValue(DATA_SOURCE_MODE_FIELD, dataSourceMode, true,
+                "APP_DATA_SOURCE_MODE_INVALID", "dataSourceMode 非法");
     }
 
     private String normalizeOptionalSecurityLevel(String securityLevel) {
@@ -389,19 +395,12 @@ public class SystemAppService {
     }
 
     private String normalizeRequiredEncryptionMode(String encryptionMode) {
-        try {
-            return AppEncryptionMode.normalize(encryptionMode);
-        } catch (IllegalArgumentException exception) {
-            throw new BusinessException("APP_ENCRYPTION_MODE_INVALID", "encryptionMode 非法");
-        }
+        return normalizeMetadataValue(ENCRYPTION_MODE_FIELD, encryptionMode, true,
+                "APP_ENCRYPTION_MODE_INVALID", "encryptionMode 非法");
     }
 
     private String normalizeIconType(String iconType) {
-        try {
-            return AppIconType.normalize(iconType);
-        } catch (IllegalArgumentException exception) {
-            throw new BusinessException("APP_ICON_TYPE_INVALID", "iconType 非法");
-        }
+        return normalizeMetadataValue(ICON_TYPE_FIELD, iconType, true, "APP_ICON_TYPE_INVALID", "iconType 非法");
     }
 
     private String normalizeIconPreset(String iconPreset) {
@@ -427,29 +426,34 @@ public class SystemAppService {
         }
     }
 
-    private SystemAppStatus.StatusEnabledPair normalizeOptionalStatus(String status) {
+    private String normalizeOptionalStatus(String status) {
         String normalized = trimToNull(status);
         if (normalized == null) {
             return null;
         }
-        return SystemAppStatus.normalize(normalized, null, true);
+        return normalizeMetadataValue(STATUS_FIELD, normalized, true, "APP_STATUS_INVALID", "status 非法");
     }
 
     private void validateCatalogMetadata(SystemApp app) {
-        app.setDataSourceMode(normalizeRequiredDataSourceMode(app.getDataSourceMode()));
-        normalizeRequiredSecurityLevel(app.getSecurityLevel());
-        normalizeRequiredEncryptionMode(app.getEncryptionMode());
-        app.setIconType(normalizeIconType(app.getIconType()));
-        app.setIconStorageType(normalizeOptionalIconStorageType(app.getIconStorageType()));
-        app.setIconPreset(normalizeIconPreset(app.getIconPreset()));
-        validateIconPayload(
-                app.getIconType(),
-                app.getIconPreset(),
-                app.getIconText(),
-                app.getIconUrl(),
-                app.getIconStorageType(),
-                app.getIconFileName()
-        );
+        try {
+            app.setDataSourceMode(normalizeRequiredDataSourceMode(app.getDataSourceMode()));
+            app.setSecurityLevel(normalizeRequiredSecurityLevel(app.getSecurityLevel()));
+            app.setEncryptionMode(normalizeRequiredEncryptionMode(app.getEncryptionMode()));
+            app.setIconType(normalizeIconType(app.getIconType()));
+            app.setIconStorageType(normalizeOptionalIconStorageType(app.getIconStorageType()));
+            app.setIconPreset(normalizeIconPreset(app.getIconPreset()));
+            normalizeRequiredStatus(resolveStatus(Boolean.TRUE.equals(app.getEnabled())), app.getEnabled(), Boolean.TRUE.equals(app.getEnabled()));
+            validateIconPayload(
+                    app.getIconType(),
+                    app.getIconPreset(),
+                    app.getIconText(),
+                    app.getIconUrl(),
+                    app.getIconStorageType(),
+                    app.getIconFileName()
+            );
+        } catch (BusinessException exception) {
+            throw new BusinessException("APP_CATALOG_INVALID", "应用目录存在非法配置");
+        }
     }
 
     private void validateIconPayload(String iconType,
@@ -458,10 +462,10 @@ public class SystemAppService {
                                      String iconUrl,
                                      String iconStorageType,
                                      String iconFileName) {
-        if (AppIconType.PRESET.name().equals(iconType) && !StringUtils.hasText(iconPreset)) {
+        if (ICON_TYPE_PRESET.equals(iconType) && !StringUtils.hasText(iconPreset)) {
             throw new BusinessException("APP_ICON_PRESET_REQUIRED", "iconType 为 PRESET 时 iconPreset 不能为空");
         }
-        if (AppIconType.UPLOAD.name().equals(iconType)) {
+        if (ICON_TYPE_UPLOAD.equals(iconType)) {
             if (!StringUtils.hasText(iconUrl)) {
                 throw new BusinessException("APP_ICON_URL_REQUIRED", "iconType 为 UPLOAD 时 iconUrl 不能为空");
             }
@@ -472,12 +476,44 @@ public class SystemAppService {
                 throw new BusinessException("APP_ICON_FILE_NAME_REQUIRED", "iconType 为 UPLOAD 时 iconFileName 不能为空");
             }
         }
-        if (AppIconType.URL.name().equals(iconType) && !StringUtils.hasText(iconUrl)) {
+        if (ICON_TYPE_URL.equals(iconType) && !StringUtils.hasText(iconUrl)) {
             throw new BusinessException("APP_ICON_URL_REQUIRED", "iconType 为 URL 时 iconUrl 不能为空");
         }
-        if (AppIconType.TEXT.name().equals(iconType) && !StringUtils.hasText(iconText)) {
+        if (ICON_TYPE_TEXT.equals(iconType) && !StringUtils.hasText(iconText)) {
             throw new BusinessException("APP_ICON_TEXT_REQUIRED", "iconType 为 TEXT 时 iconText 不能为空");
         }
+    }
+
+    private String normalizeRequiredStatus(String status, Boolean enabled, boolean defaultEnabled) {
+        String normalized = normalizeMetadataValue(STATUS_FIELD, status, false, "APP_STATUS_INVALID", "status 非法");
+        if (normalized == null) {
+            normalized = resolveStatus(defaultEnabled);
+        }
+        boolean resolvedEnabled = enabled != null ? enabled : isEnabledStatus(normalized);
+        if (resolvedEnabled != isEnabledStatus(normalized)) {
+            throw new BusinessException("APP_STATUS_MISMATCH", "status 与 enabled 语义不一致");
+        }
+        return normalized;
+    }
+
+    private String normalizeMetadataValue(String bizFieldCode,
+                                          String value,
+                                          boolean required,
+                                          String errorCode,
+                                          String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(APP_CODE, MODULE_CODE, bizFieldCode, value, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
+    }
+
+    private String resolveStatus(boolean enabled) {
+        return enabled ? ENABLED_STATUS : DISABLED_STATUS;
+    }
+
+    private boolean isEnabledStatus(String status) {
+        return ENABLED_STATUS.equalsIgnoreCase(status);
     }
 
     private String trimToNull(String value) {

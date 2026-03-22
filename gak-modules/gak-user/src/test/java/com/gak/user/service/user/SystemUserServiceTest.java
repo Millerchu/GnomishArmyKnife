@@ -1,5 +1,6 @@
 package com.gak.user.service.user;
 
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
@@ -22,6 +23,9 @@ class SystemUserServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     @InjectMocks
     private SystemUserService systemUserService;

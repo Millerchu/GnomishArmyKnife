@@ -1,13 +1,13 @@
 package com.gak.user.service.user;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
 import com.gak.user.dto.user.ChangePasswordRequest;
 import com.gak.user.dto.user.LoginRequest;
 import com.gak.user.dto.user.RegisterRequest;
-import com.gak.user.enums.user.UserRoleCode;
-import com.gak.user.enums.user.UserStatus;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.user.service.user.UserValidationSupport.StatusEnabledPair;
 import com.gak.user.vo.user.UserLoginVO;
@@ -25,19 +25,25 @@ import org.springframework.util.StringUtils;
 @Service
 public class AuthService {
 
+    private static final String APP_CODE = "APP_USER_AUTH";
+    private static final String MODULE_CODE = "AUTH_REGISTER";
+
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final PasswordCryptoService passwordCryptoService;
     private final TokenService tokenService;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     public AuthService(UserMapper userMapper,
                        PasswordEncoder passwordEncoder,
                        PasswordCryptoService passwordCryptoService,
-                       TokenService tokenService) {
+                       TokenService tokenService,
+                       DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.passwordCryptoService = passwordCryptoService;
         this.tokenService = tokenService;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     @Transactional
@@ -159,25 +165,36 @@ public class AuthService {
     }
 
     private String resolveRegisterRoleCode(String roleCode) {
-        String normalized = UserValidationSupport.normalizeRoleCode(roleCode, UserRoleCode.USER.name());
-        if (!UserRoleCode.USER.name().equals(normalized)) {
+        String normalized = normalizeRegisterValue("roleCode", roleCode, false, "ROLE_CODE_INVALID", "roleCode 非法");
+        if (normalized == null) {
+            normalized = UserSecurityConstants.DEFAULT_ROLE_CODE;
+        }
+        if (!UserSecurityConstants.DEFAULT_ROLE_CODE.equalsIgnoreCase(normalized)) {
             throw new BusinessException("ROLE_CODE_INVALID", "注册用户角色只能为 USER");
         }
         return normalized;
     }
 
     private StatusEnabledPair resolveRegisterStatus(String status, Boolean enabled) {
-        StatusEnabledPair pair = UserValidationSupport.normalizeStatusEnabled(status, enabled, UserStatus.ENABLED);
-        if (!UserStatus.ENABLED.name().equals(pair.status()) || !pair.enabled()) {
+        String normalizedStatus = normalizeRegisterValue("status", status, false, "USER_STATUS_INVALID", "status 非法");
+        if (normalizedStatus == null) {
+            normalizedStatus = UserSecurityConstants.ENABLED_STATUS;
+        }
+        StatusEnabledPair pair = UserValidationSupport.normalizeStatusEnabled(
+                normalizedStatus,
+                enabled,
+                isEnabledStatus(normalizedStatus)
+        );
+        if (!UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(pair.status()) || !pair.enabled()) {
             throw new BusinessException("USER_STATUS_INVALID", "注册用户状态只能为 ENABLED");
         }
         return pair;
     }
 
     private boolean isEnabled(User user) {
-        String status = StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserStatus.ENABLED.name();
-        boolean enabled = user.getEnabled() != null ? user.getEnabled() : UserStatus.fromCode(status).isEnabled();
-        return UserStatus.ENABLED.name().equalsIgnoreCase(status) && enabled;
+        String status = resolveStatus(user);
+        boolean enabled = user.getEnabled() != null ? user.getEnabled() : isEnabledStatus(status);
+        return isEnabledStatus(status) && enabled;
     }
 
     private UserProfileVO toUserProfile(User user) {
@@ -187,12 +204,36 @@ public class AuthService {
         vo.setDisplayName(user.getDisplayName());
         vo.setPhone(user.getPhone());
         vo.setEmail(user.getEmail());
-        vo.setRoleCode(StringUtils.hasText(user.getRoleCode()) ? user.getRoleCode() : UserRoleCode.USER.name());
-        String status = StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserStatus.ENABLED.name();
+        vo.setRoleCode(resolveRoleCode(user));
+        String status = resolveStatus(user);
         vo.setStatus(status);
-        vo.setEnabled(user.getEnabled() != null ? user.getEnabled() : UserStatus.fromCode(status).isEnabled());
+        vo.setEnabled(user.getEnabled() != null ? user.getEnabled() : isEnabledStatus(status));
         vo.setForceChangePassword(Boolean.TRUE.equals(user.getForceChangePassword()));
         vo.setLastLoginTime(user.getLastLoginTime());
         return vo;
+    }
+
+    private String resolveRoleCode(User user) {
+        return StringUtils.hasText(user.getRoleCode()) ? user.getRoleCode() : UserSecurityConstants.DEFAULT_ROLE_CODE;
+    }
+
+    private String resolveStatus(User user) {
+        return StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserSecurityConstants.ENABLED_STATUS;
+    }
+
+    private boolean isEnabledStatus(String status) {
+        return UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(status);
+    }
+
+    private String normalizeRegisterValue(String bizFieldCode,
+                                          String value,
+                                          boolean required,
+                                          String errorCode,
+                                          String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(APP_CODE, MODULE_CODE, bizFieldCode, value, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
     }
 }

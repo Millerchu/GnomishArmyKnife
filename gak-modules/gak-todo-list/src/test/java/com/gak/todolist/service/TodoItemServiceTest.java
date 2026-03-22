@@ -1,5 +1,7 @@
 package com.gak.todolist.service;
 
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.exception.BusinessException;
 import com.gak.todolist.domain.TodoItem;
 import com.gak.todolist.domain.TodoItemStep;
@@ -43,6 +45,9 @@ class TodoItemServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private DataDictionaryUsageSupport dataDictionaryUsageSupport;
+
     @InjectMocks
     private TodoItemService todoItemService;
 
@@ -63,6 +68,12 @@ class TodoItemServiceTest {
                 buildStep(1L, 11L, "写接口", false, 1),
                 buildStep(2L, 11L, "补测试", true, 2)
         ));
+        when(dataDictionaryUsageSupport.normalizeValueByUsage("APP_TODO_LIST", "TODO_ITEM", "listCode", "WORK", true))
+                .thenReturn("WORK");
+        when(dataDictionaryUsageSupport.normalizeValueByUsage("APP_TODO_LIST", "TODO_ITEM", "importance", "HIGH", true))
+                .thenReturn("HIGH");
+        when(dataDictionaryUsageSupport.normalizeValueByUsage("APP_TODO_LIST", "TODO_ITEM", "status", "TODO", true))
+                .thenReturn("TODO");
 
         SaveTodoItemRequest request = new SaveTodoItemRequest();
         request.setTitle("开发待办列表接口");
@@ -92,6 +103,13 @@ class TodoItemServiceTest {
         when(todoItemStepMapper.selectList(any())).thenReturn(List.of(
                 buildStep(10L, 2L, "补文档", false, 1)
         ));
+        when(dataDictionaryUsageSupport.listEnabledOptionsByUsage("APP_TODO_LIST", "TODO_ITEM", "listCode")).thenReturn(List.of(
+                buildOption("MY_DAY"),
+                buildOption("WORK"),
+                buildOption("PERSONAL"),
+                buildOption("LEARNING"),
+                buildOption("SHOPPING")
+        ));
 
         TodoItemQueryRequest request = new TodoItemQueryRequest();
         request.setPageNo(1L);
@@ -110,6 +128,8 @@ class TodoItemServiceTest {
     void updateStatusShouldRejectInconsistentCompletedFlag() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         when(todoItemMapper.selectOne(any())).thenReturn(buildItem(1L, "任务", "WORK", "HIGH", "TODO", false, LocalDate.now()));
+        when(dataDictionaryUsageSupport.normalizeValueByUsage("APP_TODO_LIST", "TODO_ITEM", "status", "COMPLETED", true))
+                .thenReturn("COMPLETED");
 
         UpdateTodoStatusRequest request = new UpdateTodoStatusRequest();
         request.setStatus("COMPLETED");
@@ -192,5 +212,12 @@ class TodoItemServiceTest {
         request.setTitle(title);
         request.setDone(done);
         return request;
+    }
+
+    private DictionaryOptionVO buildOption(String itemValue) {
+        DictionaryOptionVO option = new DictionaryOptionVO();
+        option.setItemValue(itemValue);
+        option.setItemLabel(itemValue);
+        return option;
     }
 }

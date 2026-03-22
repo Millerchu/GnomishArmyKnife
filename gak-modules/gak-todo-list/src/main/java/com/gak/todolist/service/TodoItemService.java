@@ -1,6 +1,8 @@
 package com.gak.todolist.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.exception.BusinessException;
 import com.gak.todolist.domain.TodoItem;
 import com.gak.todolist.domain.TodoItemStep;
@@ -9,9 +11,6 @@ import com.gak.todolist.dto.TodoItemQueryRequest;
 import com.gak.todolist.dto.TodoItemStepRequest;
 import com.gak.todolist.dto.UpdateTodoImportantRequest;
 import com.gak.todolist.dto.UpdateTodoStatusRequest;
-import com.gak.todolist.enums.TodoImportance;
-import com.gak.todolist.enums.TodoListCode;
-import com.gak.todolist.enums.TodoStatus;
 import com.gak.todolist.enums.TodoViewCode;
 import com.gak.todolist.mapper.TodoItemMapper;
 import com.gak.todolist.mapper.TodoItemStepMapper;
@@ -44,6 +43,13 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TodoItemService {
 
+    private static final String APP_CODE = "APP_TODO_LIST";
+    private static final String MODULE_CODE = "TODO_ITEM";
+    private static final String LIST_CODE_FIELD = "listCode";
+    private static final String STATUS_FIELD = "status";
+    private static final String IMPORTANCE_FIELD = "importance";
+    private static final String MY_DAY_LIST_CODE = "MY_DAY";
+    private static final String COMPLETED_STATUS = "COMPLETED";
     private static final Comparator<TodoItem> ITEM_ORDER = Comparator
             .comparing(TodoItemService::isCompleted)
             .thenComparing(item -> !Boolean.TRUE.equals(item.getImportant()))
@@ -53,13 +59,16 @@ public class TodoItemService {
     private final TodoItemMapper todoItemMapper;
     private final TodoItemStepMapper todoItemStepMapper;
     private final UserMapper userMapper;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     public TodoItemService(TodoItemMapper todoItemMapper,
                            TodoItemStepMapper todoItemStepMapper,
-                           UserMapper userMapper) {
+                           UserMapper userMapper,
+                           DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.todoItemMapper = todoItemMapper;
         this.todoItemStepMapper = todoItemStepMapper;
         this.userMapper = userMapper;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     public TodoItemPageVO page(Long currentUserId, TodoItemQueryRequest request) {
@@ -172,7 +181,7 @@ public class TodoItemService {
         ensureCurrentUserExists(currentUserId);
 
         QueryWrapper<TodoItem> wrapper = new QueryWrapper<>();
-        wrapper.eq("owner_user_id", currentUserId).eq("status", TodoStatus.COMPLETED.name());
+        wrapper.eq("owner_user_id", currentUserId).eq("status", COMPLETED_STATUS);
         List<TodoItem> completedItems = todoItemMapper.selectList(wrapper);
         if (completedItems.isEmpty()) {
             return;
@@ -185,7 +194,7 @@ public class TodoItemService {
         deleteStepsByTaskIds(ids);
 
         QueryWrapper<TodoItem> deleteWrapper = new QueryWrapper<>();
-        deleteWrapper.eq("owner_user_id", currentUserId).eq("status", TodoStatus.COMPLETED.name());
+        deleteWrapper.eq("owner_user_id", currentUserId).eq("status", COMPLETED_STATUS);
         todoItemMapper.delete(deleteWrapper);
     }
 
@@ -251,7 +260,7 @@ public class TodoItemService {
         }
         if (TodoViewCode.TODAY.name().equals(viewCode)) {
             return !isCompleted(item)
-                    && (LocalDate.now().equals(item.getDueDate()) || TodoListCode.MY_DAY.name().equals(item.getListCode()));
+                    && (LocalDate.now().equals(item.getDueDate()) || MY_DAY_LIST_CODE.equals(item.getListCode()));
         }
         if (TodoViewCode.IMPORTANT.name().equals(viewCode)) {
             return !isCompleted(item) && Boolean.TRUE.equals(item.getImportant());
@@ -286,7 +295,7 @@ public class TodoItemService {
         long completedCount = 0;
         LocalDate today = LocalDate.now();
         for (TodoItem item : items) {
-            if (!isCompleted(item) && (today.equals(item.getDueDate()) || TodoListCode.MY_DAY.name().equals(item.getListCode()))) {
+            if (!isCompleted(item) && (today.equals(item.getDueDate()) || MY_DAY_LIST_CODE.equals(item.getListCode()))) {
                 todayCount++;
             }
             if (!isCompleted(item) && Boolean.TRUE.equals(item.getImportant())) {
@@ -326,11 +335,11 @@ public class TodoItemService {
 
     private List<ListStatVO> buildListStats(List<TodoItem> items) {
         Map<String, Long> counts = new LinkedHashMap<>();
-        for (TodoListCode code : TodoListCode.values()) {
-            counts.put(code.name(), 0L);
+        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, LIST_CODE_FIELD)) {
+            counts.put(option.getItemValue(), 0L);
         }
         for (TodoItem item : items) {
-            counts.computeIfPresent(item.getListCode(), (key, value) -> value + 1);
+            counts.merge(item.getListCode(), 1L, Long::sum);
         }
 
         List<ListStatVO> result = new ArrayList<>();
@@ -450,60 +459,27 @@ public class TodoItemService {
     }
 
     private String normalizeRequiredListCode(String value) {
-        String trimmed = trimRequired(value);
-        if (!TodoListCode.isValid(trimmed)) {
-            throw new BusinessException("TODO_LIST_CODE_INVALID", "listCode 非法");
-        }
-        return TodoListCode.normalize(trimmed);
+        return normalizeByUsage(LIST_CODE_FIELD, value, true, "TODO_LIST_CODE_INVALID", "listCode 非法");
     }
 
     private String normalizeRequiredImportance(String value) {
-        String trimmed = trimRequired(value);
-        if (!TodoImportance.isValid(trimmed)) {
-            throw new BusinessException("TODO_IMPORTANCE_INVALID", "importance 非法");
-        }
-        return TodoImportance.normalize(trimmed);
+        return normalizeByUsage(IMPORTANCE_FIELD, value, true, "TODO_IMPORTANCE_INVALID", "importance 非法");
     }
 
     private String normalizeRequiredStatus(String value) {
-        String trimmed = trimRequired(value);
-        if (!TodoStatus.isValid(trimmed)) {
-            throw new BusinessException("TODO_STATUS_INVALID", "status 非法");
-        }
-        return TodoStatus.normalize(trimmed);
+        return normalizeByUsage(STATUS_FIELD, value, true, "TODO_STATUS_INVALID", "status 非法");
     }
 
     private String normalizeOptionalListCode(String value) {
-        String trimmed = trimToNull(value);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!TodoListCode.isValid(trimmed)) {
-            throw new BusinessException("TODO_LIST_CODE_INVALID", "listCode 非法");
-        }
-        return TodoListCode.normalize(trimmed);
+        return normalizeByUsage(LIST_CODE_FIELD, value, false, "TODO_LIST_CODE_INVALID", "listCode 非法");
     }
 
     private String normalizeOptionalImportance(String value) {
-        String trimmed = trimToNull(value);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!TodoImportance.isValid(trimmed)) {
-            throw new BusinessException("TODO_IMPORTANCE_INVALID", "importance 非法");
-        }
-        return TodoImportance.normalize(trimmed);
+        return normalizeByUsage(IMPORTANCE_FIELD, value, false, "TODO_IMPORTANCE_INVALID", "importance 非法");
     }
 
     private String normalizeOptionalStatus(String value) {
-        String trimmed = trimToNull(value);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!TodoStatus.isValid(trimmed)) {
-            throw new BusinessException("TODO_STATUS_INVALID", "status 非法");
-        }
-        return TodoStatus.normalize(trimmed);
+        return normalizeByUsage(STATUS_FIELD, value, false, "TODO_STATUS_INVALID", "status 非法");
     }
 
     private String normalizeOptionalViewCode(String value) {
@@ -521,14 +497,14 @@ public class TodoItemService {
         if (completed == null) {
             return;
         }
-        boolean isCompletedStatus = TodoStatus.COMPLETED.name().equals(status);
+        boolean isCompletedStatus = COMPLETED_STATUS.equals(status);
         if (completed != isCompletedStatus) {
             throw new BusinessException("TODO_STATUS_MISMATCH", "status 与 completed 语义不一致");
         }
     }
 
     private static boolean isCompleted(TodoItem item) {
-        return TodoStatus.COMPLETED.name().equals(item.getStatus());
+        return COMPLETED_STATUS.equals(item.getStatus());
     }
 
     private String trimRequired(String value) {
@@ -548,6 +524,18 @@ public class TodoItemService {
 
     private boolean containsIgnoreCase(String source, String needle) {
         return source != null && source.toLowerCase().contains(needle);
+    }
+
+    private String normalizeByUsage(String bizFieldCode,
+                                    String value,
+                                    boolean required,
+                                    String errorCode,
+                                    String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(APP_CODE, MODULE_CODE, bizFieldCode, value, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
     }
 
     private record NormalizedTodo(

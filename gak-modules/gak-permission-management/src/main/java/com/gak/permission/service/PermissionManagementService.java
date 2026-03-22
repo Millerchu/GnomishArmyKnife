@@ -3,6 +3,7 @@ package com.gak.permission.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.permission.domain.PermissionAuditLog;
@@ -10,13 +11,8 @@ import com.gak.permission.domain.SystemApp;
 import com.gak.permission.domain.UserAppPermission;
 import com.gak.permission.dto.PermissionUserQueryRequest;
 import com.gak.permission.dto.UpdateUserAppPermissionRequest;
-import com.gak.permission.enums.AppDataSourceMode;
-import com.gak.permission.enums.AppEncryptionMode;
-import com.gak.permission.enums.AppIconType;
 import com.gak.permission.enums.AppIconStorageType;
-import com.gak.permission.enums.AppSecurityLevel;
 import com.gak.permission.enums.PermissionAuditActionType;
-import com.gak.permission.enums.SystemAppStatus;
 import com.gak.permission.mapper.PermissionAuditLogMapper;
 import com.gak.permission.mapper.SystemAppMapper;
 import com.gak.permission.mapper.UserAppPermissionMapper;
@@ -25,9 +21,8 @@ import com.gak.permission.vo.AppCatalogVO;
 import com.gak.permission.vo.PermissionUserListItemVO;
 import com.gak.permission.vo.UpdateUserAppPermissionVO;
 import com.gak.permission.vo.UserAppPermissionVO;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
-import com.gak.user.enums.user.UserRoleCode;
-import com.gak.user.enums.user.UserStatus;
 import com.gak.user.mapper.user.UserMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -53,6 +48,22 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class PermissionManagementService {
 
+    private static final String USER_APP_CODE = "APP_USER_MANAGEMENT";
+    private static final String USER_MODULE_CODE = "SYSTEM_USER";
+    private static final String APP_CATALOG_APP_CODE = "APP_APP_MANAGEMENT";
+    private static final String APP_CATALOG_MODULE_CODE = "SYSTEM_APP";
+    private static final String SECURITY_LEVEL_FIELD = "securityLevel";
+    private static final String ENCRYPTION_MODE_FIELD = "encryptionMode";
+    private static final String DATA_SOURCE_MODE_FIELD = "dataSourceMode";
+    private static final String ICON_TYPE_FIELD = "iconType";
+    private static final String STATUS_FIELD = "status";
+    private static final String ROLE_CODE_FIELD = "roleCode";
+    private static final String ENABLED_STATUS = "ENABLED";
+    private static final String DISABLED_STATUS = "DISABLED";
+    private static final String ICON_TYPE_PRESET = "PRESET";
+    private static final String ICON_TYPE_UPLOAD = "UPLOAD";
+    private static final String ICON_TYPE_URL = "URL";
+    private static final String ICON_TYPE_TEXT = "TEXT";
     private static final Pattern PRESET_PATTERN = Pattern.compile("^[a-z0-9-]{2,32}$");
     private static final Comparator<SystemApp> APP_ORDER = Comparator
             .comparing(SystemApp::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -63,17 +74,20 @@ public class PermissionManagementService {
     private final UserAppPermissionMapper userAppPermissionMapper;
     private final PermissionAuditLogMapper permissionAuditLogMapper;
     private final ObjectMapper objectMapper;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     public PermissionManagementService(UserMapper userMapper,
                                        SystemAppMapper systemAppMapper,
                                        UserAppPermissionMapper userAppPermissionMapper,
                                        PermissionAuditLogMapper permissionAuditLogMapper,
-                                       ObjectMapper objectMapper) {
+                                       ObjectMapper objectMapper,
+                                       DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.userMapper = userMapper;
         this.systemAppMapper = systemAppMapper;
         this.userAppPermissionMapper = userAppPermissionMapper;
         this.permissionAuditLogMapper = permissionAuditLogMapper;
         this.objectMapper = objectMapper;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     public PagedResult<PermissionUserListItemVO> pageUsers(Long currentUserId, PermissionUserQueryRequest request) {
@@ -310,7 +324,7 @@ public class PermissionManagementService {
         vo.setCode(app.getAppCode());
         vo.setName(app.getAppName());
         vo.setRoute(app.getRoutePath());
-        vo.setStatus(Boolean.TRUE.equals(app.getEnabled()) ? SystemAppStatus.ENABLED.name() : SystemAppStatus.DISABLED.name());
+        vo.setStatus(resolveAppStatus(Boolean.TRUE.equals(app.getEnabled())));
         vo.setCategory(app.getCategory());
         vo.setDataSourceMode(app.getDataSourceMode());
         vo.setSecurityLevel(app.getSecurityLevel());
@@ -345,7 +359,7 @@ public class PermissionManagementService {
     private void requireAdminUser(Long currentUserId) {
         User currentUser = getUserOrThrow(currentUserId);
         // 权限管理页属于系统管理域，只有管理员才能查看用户授权列表和改别人的权限。
-        if (!UserRoleCode.ADMIN.name().equalsIgnoreCase(resolveRoleCode(currentUser))) {
+        if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(resolveRoleCode(currentUser))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可操作权限管理");
         }
     }
@@ -360,12 +374,18 @@ public class PermissionManagementService {
 
     private void validateCatalogMetadata(SystemApp app) {
         try {
-            app.setDataSourceMode(AppDataSourceMode.normalize(app.getDataSourceMode()));
-            AppSecurityLevel.normalize(app.getSecurityLevel());
-            AppEncryptionMode.normalize(app.getEncryptionMode());
-            app.setIconType(AppIconType.normalize(app.getIconType()));
+            app.setDataSourceMode(normalizeAppMetadataValue(DATA_SOURCE_MODE_FIELD, app.getDataSourceMode(), true,
+                    "APP_CATALOG_INVALID", "应用目录存在非法配置"));
+            app.setSecurityLevel(normalizeAppMetadataValue(SECURITY_LEVEL_FIELD, app.getSecurityLevel(), true,
+                    "APP_CATALOG_INVALID", "应用目录存在非法配置"));
+            app.setEncryptionMode(normalizeAppMetadataValue(ENCRYPTION_MODE_FIELD, app.getEncryptionMode(), true,
+                    "APP_CATALOG_INVALID", "应用目录存在非法配置"));
+            app.setIconType(normalizeAppMetadataValue(ICON_TYPE_FIELD, app.getIconType(), true,
+                    "APP_CATALOG_INVALID", "应用目录存在非法配置"));
             app.setIconStorageType(normalizeOptionalIconStorageType(app.getIconStorageType()));
             app.setIconPreset(normalizeIconPreset(app.getIconPreset()));
+            normalizeAppMetadataValue(STATUS_FIELD, resolveAppStatus(Boolean.TRUE.equals(app.getEnabled())), true,
+                    "APP_CATALOG_INVALID", "应用目录存在非法配置");
             validateIconPayload(
                     app.getIconType(),
                     app.getIconPreset(),
@@ -374,7 +394,7 @@ public class PermissionManagementService {
                     app.getIconStorageType(),
                     app.getIconFileName()
             );
-        } catch (IllegalArgumentException exception) {
+        } catch (RuntimeException exception) {
             throw new BusinessException("APP_CATALOG_INVALID", "应用目录存在非法配置");
         }
     }
@@ -404,18 +424,18 @@ public class PermissionManagementService {
                                      String iconUrl,
                                      String iconStorageType,
                                      String iconFileName) {
-        if (AppIconType.PRESET.name().equals(iconType) && !StringUtils.hasText(iconPreset)) {
+        if (ICON_TYPE_PRESET.equals(iconType) && !StringUtils.hasText(iconPreset)) {
             throw new IllegalArgumentException("预设图标缺失");
         }
-        if (AppIconType.UPLOAD.name().equals(iconType)) {
+        if (ICON_TYPE_UPLOAD.equals(iconType)) {
             if (!StringUtils.hasText(iconUrl) || !StringUtils.hasText(iconStorageType) || !StringUtils.hasText(iconFileName)) {
                 throw new IllegalArgumentException("上传图标字段缺失");
             }
         }
-        if (AppIconType.URL.name().equals(iconType) && !StringUtils.hasText(iconUrl)) {
+        if (ICON_TYPE_URL.equals(iconType) && !StringUtils.hasText(iconUrl)) {
             throw new IllegalArgumentException("URL 图标缺失");
         }
-        if (AppIconType.TEXT.name().equals(iconType) && !StringUtils.hasText(iconText)) {
+        if (ICON_TYPE_TEXT.equals(iconType) && !StringUtils.hasText(iconText)) {
             throw new IllegalArgumentException("文本图标缺失");
         }
     }
@@ -425,11 +445,7 @@ public class PermissionManagementService {
         if (normalized == null) {
             return null;
         }
-        normalized = normalized.toUpperCase();
-        if (!UserStatus.isValid(normalized)) {
-            throw new BusinessException("USER_STATUS_INVALID", "status 非法");
-        }
-        return normalized;
+        return normalizeUserMetadataValue(STATUS_FIELD, normalized, true, "USER_STATUS_INVALID", "status 非法");
     }
 
     private String normalizeOptionalRoleCode(String roleCode) {
@@ -437,11 +453,7 @@ public class PermissionManagementService {
         if (normalized == null) {
             return null;
         }
-        normalized = normalized.toUpperCase();
-        if (!UserRoleCode.isValid(normalized)) {
-            throw new BusinessException("ROLE_CODE_INVALID", "roleCode 非法");
-        }
-        return normalized;
+        return normalizeUserMetadataValue(ROLE_CODE_FIELD, normalized, true, "ROLE_CODE_INVALID", "roleCode 非法");
     }
 
     private List<String> normalizeFeatureCodes(List<String> featureCodes) {
@@ -461,16 +473,16 @@ public class PermissionManagementService {
     }
 
     private String resolveRoleCode(User user) {
-        return StringUtils.hasText(user.getRoleCode()) ? user.getRoleCode() : UserRoleCode.USER.name();
+        return StringUtils.hasText(user.getRoleCode()) ? user.getRoleCode() : UserSecurityConstants.DEFAULT_ROLE_CODE;
     }
 
     private String resolveStatus(User user) {
-        return StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserStatus.ENABLED.name();
+        return StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserSecurityConstants.ENABLED_STATUS;
     }
 
     private boolean resolveEnabled(User user) {
         String status = resolveStatus(user);
-        return user.getEnabled() != null ? user.getEnabled() : UserStatus.fromCode(status).isEnabled();
+        return user.getEnabled() != null ? user.getEnabled() : UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(status);
     }
 
     private String trimToNull(String value) {
@@ -510,5 +522,39 @@ public class PermissionManagementService {
         } catch (JsonProcessingException exception) {
             return "{\"message\":\"json serialize failed\"}";
         }
+    }
+
+    private String normalizeUserMetadataValue(String bizFieldCode,
+                                              String value,
+                                              boolean required,
+                                              String errorCode,
+                                              String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(USER_APP_CODE, USER_MODULE_CODE, bizFieldCode, value, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
+    }
+
+    private String normalizeAppMetadataValue(String bizFieldCode,
+                                             String value,
+                                             boolean required,
+                                             String errorCode,
+                                             String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(
+                    APP_CATALOG_APP_CODE,
+                    APP_CATALOG_MODULE_CODE,
+                    bizFieldCode,
+                    value,
+                    required
+            );
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
+    }
+
+    private String resolveAppStatus(boolean enabled) {
+        return enabled ? ENABLED_STATUS : DISABLED_STATUS;
     }
 }

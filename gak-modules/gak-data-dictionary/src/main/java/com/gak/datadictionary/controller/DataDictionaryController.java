@@ -1,6 +1,7 @@
 package com.gak.datadictionary.controller;
 
 import com.gak.datadictionary.dto.DataDictionaryQueryRequest;
+import com.gak.datadictionary.dto.DictionaryUsageOptionQueryRequest;
 import com.gak.datadictionary.dto.SaveDataDictionaryItemRequest;
 import com.gak.datadictionary.dto.SaveDataDictionaryRequest;
 import com.gak.datadictionary.dto.UpdateDataDictionaryItemStatusRequest;
@@ -9,11 +10,15 @@ import com.gak.datadictionary.service.DataDictionaryService;
 import com.gak.datadictionary.vo.DataDictionaryItemListVO;
 import com.gak.datadictionary.vo.DataDictionaryItemVO;
 import com.gak.datadictionary.vo.DataDictionaryVO;
+import com.gak.framework.dictionary.DataDictionarySupport;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.user.service.user.TokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -32,10 +37,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class DataDictionaryController {
 
     private final DataDictionaryService dataDictionaryService;
+    private final DataDictionarySupport dataDictionarySupport;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
     private final TokenService tokenService;
 
-    public DataDictionaryController(DataDictionaryService dataDictionaryService, TokenService tokenService) {
+    public DataDictionaryController(DataDictionaryService dataDictionaryService,
+                                    DataDictionarySupport dataDictionarySupport,
+                                    DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                                    TokenService tokenService) {
         this.dataDictionaryService = dataDictionaryService;
+        this.dataDictionarySupport = dataDictionarySupport;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
         this.tokenService = tokenService;
     }
 
@@ -74,6 +86,24 @@ public class DataDictionaryController {
                                                       HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(dataDictionaryService.updateStatus(currentUserId, id, request));
+    }
+
+    @GetMapping("/options/{dictCode}")
+    public ApiResponse<List<DictionaryOptionVO>> listOptions(@PathVariable String dictCode,
+                                                             HttpServletRequest httpServletRequest) {
+        tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(dataDictionarySupport.listEnabledOptions(dictCode));
+    }
+
+    @GetMapping("/options/by-usage")
+    public ApiResponse<List<DictionaryOptionVO>> listOptionsByUsage(@Valid DictionaryUsageOptionQueryRequest request,
+                                                                    HttpServletRequest httpServletRequest) {
+        tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(dataDictionaryUsageSupport.listEnabledOptionsByUsage(
+                request.getAppCode(),
+                request.getModuleCode(),
+                request.getBizFieldCode()
+        ));
     }
 
     @GetMapping("/{dictionaryId}/items")

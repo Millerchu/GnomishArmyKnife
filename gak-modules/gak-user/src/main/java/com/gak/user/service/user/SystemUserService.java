@@ -1,16 +1,16 @@
 package com.gak.user.service.user;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
 import com.gak.user.dto.user.CreateUserRequest;
 import com.gak.user.dto.user.ResetPasswordRequest;
 import com.gak.user.dto.user.UpdateUserRequest;
 import com.gak.user.dto.user.UpdateUserStatusRequest;
 import com.gak.user.dto.user.UserQueryRequest;
-import com.gak.user.enums.user.UserRoleCode;
-import com.gak.user.enums.user.UserStatus;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.user.service.user.UserValidationSupport.StatusEnabledPair;
 import com.gak.user.vo.user.UserListItemVO;
@@ -32,14 +32,20 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class SystemUserService {
 
+    private static final String APP_CODE = "APP_USER_MANAGEMENT";
+    private static final String MODULE_CODE = "SYSTEM_USER";
     private static final String DEFAULT_ADMIN_USERNAME = "admin";
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
-    public SystemUserService(UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public SystemUserService(UserMapper userMapper,
+                             PasswordEncoder passwordEncoder,
+                             DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     public PagedResult<UserListItemVO> page(UserQueryRequest request) {
@@ -55,11 +61,11 @@ public class SystemUserService {
                     .like("email", keyword));
         }
         if (StringUtils.hasText(request.getStatus())) {
-            String status = UserValidationSupport.normalizeStatusEnabled(request.getStatus(), null, UserStatus.ENABLED).status();
+            String status = normalizeStatusValue(request.getStatus(), true, UserSecurityConstants.ENABLED_STATUS);
             wrapper.eq("status", status);
         }
         if (StringUtils.hasText(request.getRoleCode())) {
-            wrapper.eq("role_code", UserValidationSupport.normalizeRoleCode(request.getRoleCode(), UserRoleCode.USER.name()));
+            wrapper.eq("role_code", normalizeRoleCode(request.getRoleCode(), false));
         }
         wrapper.orderByDesc("created_at").orderByDesc("id");
 
@@ -81,10 +87,12 @@ public class SystemUserService {
     public UserProfileVO create(CreateUserRequest request) {
         String username = normalizeUsername(request.getUsername());
         ensureUsernameUnique(username, null);
+        String roleCode = normalizeRoleCode(request.getRoleCode(), true);
+        String status = normalizeStatusValue(request.getStatus(), true, UserSecurityConstants.ENABLED_STATUS);
         StatusEnabledPair statusEnabledPair = UserValidationSupport.normalizeStatusEnabled(
-                request.getStatus(),
+                status,
                 request.getEnabled(),
-                UserStatus.ENABLED
+                isEnabledStatus(status)
         );
         String password = request.getInitialPassword().trim();
         UserValidationSupport.validatePasswordLength(password);
@@ -96,7 +104,7 @@ public class SystemUserService {
         user.setDisplayName(resolveDisplayName(request.getDisplayName(), username));
         user.setPhone(UserValidationSupport.trimToNull(request.getPhone()));
         user.setEmail(UserValidationSupport.trimToNull(request.getEmail()));
-        user.setRoleCode(UserValidationSupport.normalizeRoleCode(request.getRoleCode(), UserRoleCode.USER.name()));
+        user.setRoleCode(roleCode);
         user.setStatus(statusEnabledPair.status());
         user.setEnabled(statusEnabledPair.enabled());
         user.setForceChangePassword(false);
@@ -112,17 +120,19 @@ public class SystemUserService {
         User current = getByIdOrThrow(id);
         String username = normalizeUsername(request.getUsername());
         ensureUsernameUnique(username, id);
+        String roleCode = normalizeRoleCode(request.getRoleCode(), true, resolveCurrentRoleCode(current));
+        String status = normalizeStatusValue(request.getStatus(), true, resolveCurrentStatus(current));
         StatusEnabledPair statusEnabledPair = UserValidationSupport.normalizeStatusEnabled(
-                request.getStatus(),
+                status,
                 request.getEnabled(),
-                resolveCurrentStatus(current)
+                isEnabledStatus(status)
         );
 
         current.setUsername(username);
         current.setDisplayName(resolveDisplayName(request.getDisplayName(), username));
         current.setPhone(UserValidationSupport.trimToNull(request.getPhone()));
         current.setEmail(UserValidationSupport.trimToNull(request.getEmail()));
-        current.setRoleCode(UserValidationSupport.normalizeRoleCode(request.getRoleCode(), resolveCurrentRoleCode(current)));
+        current.setRoleCode(roleCode);
         current.setStatus(statusEnabledPair.status());
         current.setEnabled(statusEnabledPair.enabled());
         current.setRemark(UserValidationSupport.trimToNull(request.getRemark()));
@@ -146,10 +156,11 @@ public class SystemUserService {
     @Transactional
     public void updateStatus(Long id, UpdateUserStatusRequest request) {
         User current = getByIdOrThrow(id);
+        String status = normalizeStatusValue(request.getStatus(), true, resolveCurrentStatus(current));
         StatusEnabledPair statusEnabledPair = UserValidationSupport.normalizeStatusEnabled(
-                request.getStatus(),
+                status,
                 request.getEnabled(),
-                resolveCurrentStatus(current)
+                isEnabledStatus(status)
         );
 
         User updatedUser = new User();
@@ -200,13 +211,12 @@ public class SystemUserService {
         return StringUtils.hasText(trimmed) ? trimmed : username;
     }
 
-    private UserStatus resolveCurrentStatus(User user) {
-        String status = StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserStatus.ENABLED.name();
-        return UserStatus.fromCode(status);
+    private String resolveCurrentStatus(User user) {
+        return StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserSecurityConstants.ENABLED_STATUS;
     }
 
     private String resolveCurrentRoleCode(User user) {
-        return StringUtils.hasText(user.getRoleCode()) ? user.getRoleCode() : UserRoleCode.USER.name();
+        return StringUtils.hasText(user.getRoleCode()) ? user.getRoleCode() : UserSecurityConstants.DEFAULT_ROLE_CODE;
     }
 
     private UserProfileVO toUserProfile(User user) {
@@ -217,9 +227,9 @@ public class SystemUserService {
         vo.setPhone(user.getPhone());
         vo.setEmail(user.getEmail());
         vo.setRoleCode(resolveCurrentRoleCode(user));
-        String status = StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserStatus.ENABLED.name();
+        String status = resolveCurrentStatus(user);
         vo.setStatus(status);
-        vo.setEnabled(user.getEnabled() != null ? user.getEnabled() : UserStatus.fromCode(status).isEnabled());
+        vo.setEnabled(user.getEnabled() != null ? user.getEnabled() : isEnabledStatus(status));
         vo.setForceChangePassword(Boolean.TRUE.equals(user.getForceChangePassword()));
         vo.setLastLoginTime(user.getLastLoginTime());
         return vo;
@@ -233,12 +243,48 @@ public class SystemUserService {
         vo.setPhone(user.getPhone());
         vo.setEmail(user.getEmail());
         vo.setRoleCode(resolveCurrentRoleCode(user));
-        String status = StringUtils.hasText(user.getStatus()) ? user.getStatus() : UserStatus.ENABLED.name();
+        String status = resolveCurrentStatus(user);
         vo.setStatus(status);
-        vo.setEnabled(user.getEnabled() != null ? user.getEnabled() : UserStatus.fromCode(status).isEnabled());
+        vo.setEnabled(user.getEnabled() != null ? user.getEnabled() : isEnabledStatus(status));
         vo.setLastLoginTime(user.getLastLoginTime());
         vo.setCreatedAt(user.getCreatedAt());
         vo.setRemark(user.getRemark());
         return vo;
+    }
+
+    private String normalizeRoleCode(String roleCode, boolean allowNull) {
+        return normalizeRoleCode(roleCode, allowNull, UserSecurityConstants.DEFAULT_ROLE_CODE);
+    }
+
+    private String normalizeRoleCode(String roleCode, boolean allowNull, String defaultRoleCode) {
+        String normalized = normalizeUserMetadataValue("roleCode", roleCode, !allowNull, "ROLE_CODE_INVALID", "roleCode 非法");
+        if (normalized == null) {
+            return defaultRoleCode;
+        }
+        return normalized;
+    }
+
+    private String normalizeStatusValue(String status, boolean allowNull, String defaultStatus) {
+        String normalized = normalizeUserMetadataValue("status", status, !allowNull, "USER_STATUS_INVALID", "status 非法");
+        if (normalized == null) {
+            return defaultStatus;
+        }
+        return normalized;
+    }
+
+    private boolean isEnabledStatus(String status) {
+        return UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(status);
+    }
+
+    private String normalizeUserMetadataValue(String bizFieldCode,
+                                              String value,
+                                              boolean required,
+                                              String errorCode,
+                                              String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(APP_CODE, MODULE_CODE, bizFieldCode, value, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
     }
 }

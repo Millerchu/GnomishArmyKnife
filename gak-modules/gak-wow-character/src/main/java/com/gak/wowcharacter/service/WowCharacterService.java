@@ -1,6 +1,12 @@
 package com.gak.wowcharacter.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.framework.dictionary.DataDictionarySupport;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.user.domain.user.User;
@@ -9,9 +15,6 @@ import com.gak.wowcharacter.domain.WowCharacter;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
-import com.gak.wowcharacter.enums.WowClassName;
-import com.gak.wowcharacter.enums.WowFaction;
-import com.gak.wowcharacter.enums.WowMythicDungeonName;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.vo.ClassStatVO;
 import com.gak.wowcharacter.vo.FactionStatVO;
@@ -28,6 +31,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
@@ -42,6 +46,16 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class WowCharacterService {
 
+    private static final String APP_CODE = "APP_WOW_CHARACTER";
+    private static final String MODULE_CODE = "WOW_CHARACTER";
+    private static final String FACTION_FIELD = "faction";
+    private static final String CLASS_NAME_FIELD = "className";
+    private static final String RACE_NAME_FIELD = "raceName";
+    private static final String SPEC_NAME_FIELD = "specName";
+    private static final String PROFESSION_PRIMARY_FIELD = "professionPrimary";
+    private static final String PROFESSION_SECONDARY_FIELD = "professionSecondary";
+    private static final String MYTHIC_DUNGEON_FIELD = "mythicDungeonName";
+    private static final String PROFESSION_DICT_CODE = "WOW_PRIMARY_PROFESSION";
     private static final Comparator<WowCharacter> DEFAULT_ORDER = Comparator
             .comparing(WowCharacter::getItemLevel, Comparator.nullsLast(Comparator.reverseOrder()))
             .thenComparing(WowCharacter::getMythicScore, Comparator.nullsLast(Comparator.reverseOrder()))
@@ -49,10 +63,20 @@ public class WowCharacterService {
 
     private final WowCharacterMapper wowCharacterMapper;
     private final UserMapper userMapper;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
+    private final DataDictionarySupport dataDictionarySupport;
+    private final ObjectMapper objectMapper;
 
-    public WowCharacterService(WowCharacterMapper wowCharacterMapper, UserMapper userMapper) {
+    public WowCharacterService(WowCharacterMapper wowCharacterMapper,
+                               UserMapper userMapper,
+                               DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                               DataDictionarySupport dataDictionarySupport,
+                               ObjectMapper objectMapper) {
         this.wowCharacterMapper = wowCharacterMapper;
         this.userMapper = userMapper;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
+        this.dataDictionarySupport = dataDictionarySupport;
+        this.objectMapper = objectMapper;
     }
 
     public PagedResult<WowCharacterListVO> page(Long currentUserId, WowCharacterQueryRequest request) {
@@ -172,30 +196,41 @@ public class WowCharacterService {
     }
 
     private NormalizedCharacter normalizeRequest(SaveWowCharacterRequest request) {
-        String className = trimToNull(request.getClassName());
-        if (!WowClassName.isValid(className)) {
-            throw new BusinessException("WOW_CLASS_INVALID", "className 非法");
-        }
-
-        String faction = trimToNull(request.getFaction());
-        if (!WowFaction.isValid(faction)) {
-            throw new BusinessException("WOW_FACTION_INVALID", "faction 非法");
-        }
+        ClassOption classOption = normalizeRequiredClassOption(request.getClassName());
+        String faction = normalizeRequiredFaction(request.getFaction());
+        RaceOption raceOption = normalizeRequiredRaceOption(request.getRaceName());
+        SpecOption specOption = normalizeOptionalSpecName(classOption.classCode(), request.getSpecName());
+        String professionPrimary = normalizeOptionalProfession(
+                PROFESSION_PRIMARY_FIELD,
+                request.getProfessionPrimary(),
+                "WOW_PROFESSION_PRIMARY_INVALID",
+                "professionPrimary 非法"
+        );
+        String professionSecondary = normalizeOptionalProfession(
+                PROFESSION_SECONDARY_FIELD,
+                request.getProfessionSecondary(),
+                "WOW_PROFESSION_SECONDARY_INVALID",
+                "professionSecondary 非法"
+        );
+        validateProfessionPair(professionPrimary, professionSecondary);
+        validateClassRaceRelation(classOption, raceOption);
+        validateRaceFactionRelation(raceOption, faction);
+        validateClassSpecRelation(classOption, specOption);
 
         return new NormalizedCharacter(
                 trimToNull(request.getCharacterName()),
-                className,
-                trimToNull(request.getSpecName()),
-                trimToNull(request.getRaceName()),
+                classOption.className(),
+                specOption != null ? specOption.code() : null,
+                raceOption.raceName(),
                 trimToNull(request.getRealmName()),
-                WowFaction.from(faction).name(),
+                faction,
                 request.getLevel(),
                 request.getItemLevel(),
                 normalizeMythicBestLevel(request.getMythicBestLevel()),
                 normalizeMythicDungeonName(request.getMythicBestLevel(), request.getMythicDungeonName()),
                 request.getMythicScore() == null ? 0 : request.getMythicScore(),
-                trimToNull(request.getProfessionPrimary()),
-                trimToNull(request.getProfessionSecondary()),
+                professionPrimary,
+                professionSecondary,
                 trimToNull(request.getNote())
         );
     }
@@ -218,25 +253,11 @@ public class WowCharacterService {
     }
 
     private String normalizeOptionalFaction(String faction) {
-        String trimmed = trimToNull(faction);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!WowFaction.isValid(trimmed)) {
-            throw new BusinessException("WOW_FACTION_INVALID", "faction 非法");
-        }
-        return WowFaction.from(trimmed).name();
+        return normalizeUsageValue(FACTION_FIELD, faction, false, "WOW_FACTION_INVALID", "faction 非法");
     }
 
     private String normalizeOptionalClassName(String className) {
-        String trimmed = trimToNull(className);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!WowClassName.isValid(trimmed)) {
-            throw new BusinessException("WOW_CLASS_INVALID", "className 非法");
-        }
-        return trimmed;
+        return normalizeUsageValue(CLASS_NAME_FIELD, className, false, "WOW_CLASS_INVALID", "className 非法");
     }
 
     private long countDistinctRealms(List<WowCharacter> records) {
@@ -261,11 +282,13 @@ public class WowCharacterService {
     private List<WowCharacterSimpleVO> buildFeaturedCharacters(List<WowCharacter> records) {
         List<WowCharacterSimpleVO> result = new ArrayList<>();
         for (WowCharacter record : records.stream().sorted(DEFAULT_ORDER).limit(2).toList()) {
+            ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
             WowCharacterSimpleVO vo = new WowCharacterSimpleVO();
             vo.setId(record.getId());
             vo.setCharacterName(record.getCharacterName());
             vo.setClassName(record.getClassName());
-            vo.setSpecName(record.getSpecName());
+            vo.setSpecName(resolvedSpec.value());
+            vo.setSpecNameLabel(resolvedSpec.label());
             vo.setRaceName(record.getRaceName());
             vo.setRealmName(record.getRealmName());
             vo.setFaction(record.getFaction());
@@ -275,7 +298,9 @@ public class WowCharacterService {
             vo.setMythicDungeonName(record.getMythicDungeonName());
             vo.setMythicScore(safeMythicScore(record));
             vo.setProfessionPrimary(record.getProfessionPrimary());
+            vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
             vo.setProfessionSecondary(record.getProfessionSecondary());
+            vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
             result.add(vo);
         }
         return result;
@@ -283,19 +308,24 @@ public class WowCharacterService {
 
     private List<FactionStatVO> buildFactionStats(List<WowCharacter> records) {
         Map<String, Long> counts = new HashMap<>();
-        for (WowFaction faction : WowFaction.values()) {
-            counts.put(faction.name(), 0L);
+        List<DictionaryOptionVO> factionOptions = dataDictionaryUsageSupport.listEnabledOptionsByUsage(
+                APP_CODE,
+                MODULE_CODE,
+                FACTION_FIELD
+        );
+        for (DictionaryOptionVO option : factionOptions) {
+            counts.put(option.getItemValue(), 0L);
         }
         for (WowCharacter record : records) {
-            counts.computeIfPresent(record.getFaction(), (key, value) -> value + 1);
+            counts.merge(record.getFaction(), 1L, Long::sum);
         }
 
         List<FactionStatVO> result = new ArrayList<>();
         long total = records.size();
-        for (WowFaction faction : WowFaction.values()) {
-            long count = counts.get(faction.name());
+        for (DictionaryOptionVO option : factionOptions) {
+            long count = counts.getOrDefault(option.getItemValue(), 0L);
             FactionStatVO vo = new FactionStatVO();
-            vo.setLabel(faction.getLabel());
+            vo.setLabel(option.getItemLabel());
             vo.setCount(count);
             vo.setRatio(total == 0 ? 0D : round((double) count / total));
             result.add(vo);
@@ -344,11 +374,13 @@ public class WowCharacterService {
     }
 
     private WowCharacterListVO toListVO(WowCharacter record) {
+        ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
         WowCharacterListVO vo = new WowCharacterListVO();
         vo.setId(record.getId());
         vo.setCharacterName(record.getCharacterName());
         vo.setClassName(record.getClassName());
-        vo.setSpecName(record.getSpecName());
+        vo.setSpecName(resolvedSpec.value());
+        vo.setSpecNameLabel(resolvedSpec.label());
         vo.setRaceName(record.getRaceName());
         vo.setRealmName(record.getRealmName());
         vo.setFaction(record.getFaction());
@@ -358,7 +390,9 @@ public class WowCharacterService {
         vo.setMythicDungeonName(record.getMythicDungeonName());
         vo.setMythicScore(safeMythicScore(record));
         vo.setProfessionPrimary(record.getProfessionPrimary());
+        vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
         vo.setProfessionSecondary(record.getProfessionSecondary());
+        vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
         vo.setNote(record.getNote());
         vo.setUpdatedAt(record.getUpdatedAt());
         return vo;
@@ -393,8 +427,14 @@ public class WowCharacterService {
         if (trimmedDungeonName != null && bestLevel <= 0) {
             throw new BusinessException("WOW_MYTHIC_LEVEL_REQUIRED", "mythicDungeonName 非空时，mythicBestLevel 必须 > 0");
         }
-        if (trimmedDungeonName != null && !WowMythicDungeonName.isValid(trimmedDungeonName)) {
-            throw new BusinessException("WOW_MYTHIC_DUNGEON_INVALID", "mythicDungeonName 非法");
+        if (trimmedDungeonName != null) {
+            return normalizeUsageValue(
+                    MYTHIC_DUNGEON_FIELD,
+                    trimmedDungeonName,
+                    true,
+                    "WOW_MYTHIC_DUNGEON_INVALID",
+                    "mythicDungeonName 非法"
+            );
         }
         return trimmedDungeonName;
     }
@@ -404,6 +444,230 @@ public class WowCharacterService {
             return null;
         }
         return value.trim();
+    }
+
+    private String normalizeRequiredFaction(String faction) {
+        return normalizeUsageValue(FACTION_FIELD, faction, true, "WOW_FACTION_INVALID", "faction 非法");
+    }
+
+    private ClassOption normalizeRequiredClassOption(String className) {
+        String normalized = normalizeUsageValue(CLASS_NAME_FIELD, className, true, "WOW_CLASS_INVALID", "className 非法");
+        ClassOption option = findClassOption(normalized);
+        if (option == null) {
+            throw new BusinessException("WOW_CLASS_INVALID", "className 非法");
+        }
+        return option;
+    }
+
+    private RaceOption normalizeRequiredRaceOption(String raceName) {
+        String normalized = normalizeUsageValue(RACE_NAME_FIELD, raceName, true, "WOW_RACE_INVALID", "raceName 非法");
+        RaceOption option = findRaceOption(normalized);
+        if (option == null) {
+            throw new BusinessException("WOW_RACE_INVALID", "raceName 非法");
+        }
+        return option;
+    }
+
+    private SpecOption normalizeOptionalSpecName(String classCode, String specName) {
+        String trimmed = trimToNull(specName);
+        if (trimmed == null) {
+            return null;
+        }
+        List<SpecOption> options = listSpecOptions();
+        try {
+            String normalized = normalizeUsageValue(SPEC_NAME_FIELD, trimmed, true, "WOW_SPEC_INVALID", "specName 非法");
+            SpecOption option = findSpecOptionByValue(options, normalized);
+            if (option == null) {
+                throw new BusinessException("WOW_SPEC_INVALID", "specName 非法");
+            }
+            return option;
+        } catch (BusinessException exception) {
+            // 兼容旧数据和旧前端仍提交中文专精名的场景，按职业+专精标签归一到当前唯一 code。
+            SpecOption legacyOption = findSpecOptionByLabel(options, classCode, trimmed);
+            if (legacyOption != null) {
+                return legacyOption;
+            }
+            throw new BusinessException("WOW_SPEC_INVALID", "specName 非法");
+        }
+    }
+
+    private String normalizeOptionalProfession(String bizFieldCode,
+                                              String profession,
+                                              String errorCode,
+                                              String message) {
+        return normalizeUsageValue(bizFieldCode, profession, false, errorCode, message);
+    }
+
+    private void validateProfessionPair(String professionPrimary, String professionSecondary) {
+        if (professionPrimary != null && professionPrimary.equalsIgnoreCase(professionSecondary)) {
+            throw new BusinessException("WOW_PROFESSION_DUPLICATE", "professionPrimary 与 professionSecondary 不能相同");
+        }
+    }
+
+    private void validateClassRaceRelation(ClassOption classOption, RaceOption raceOption) {
+        if (!raceOption.allowedClassCodes().contains(classOption.classCode())) {
+            throw new BusinessException("WOW_CLASS_RACE_MISMATCH", "className 与 raceName 不匹配");
+        }
+    }
+
+    private void validateRaceFactionRelation(RaceOption raceOption, String faction) {
+        if (!raceOption.factions().contains(normalizeFactionCode(faction))) {
+            throw new BusinessException("WOW_RACE_FACTION_MISMATCH", "raceName 与 faction 不匹配");
+        }
+    }
+
+    private void validateClassSpecRelation(ClassOption classOption, SpecOption specOption) {
+        if (specOption != null && !classOption.classCode().equals(specOption.classCode())) {
+            throw new BusinessException("WOW_CLASS_SPEC_MISMATCH", "className 与 specName 不匹配");
+        }
+    }
+
+    private ResolvedSpec resolveSpecForView(String className, String specName) {
+        String trimmed = trimToNull(specName);
+        if (trimmed == null) {
+            return new ResolvedSpec(null, null);
+        }
+        List<SpecOption> options = listSpecOptions();
+        SpecOption byValue = findSpecOptionByValue(options, trimmed);
+        if (byValue != null) {
+            return new ResolvedSpec(byValue.code(), byValue.label());
+        }
+        ClassOption classOption = findClassOption(className);
+        if (classOption != null) {
+            SpecOption byLabel = findSpecOptionByLabel(options, classOption.classCode(), trimmed);
+            if (byLabel != null) {
+                return new ResolvedSpec(byLabel.code(), byLabel.label());
+            }
+        }
+        return new ResolvedSpec(trimmed, trimmed);
+    }
+
+    private String resolveProfessionLabel(String profession) {
+        String trimmed = trimToNull(profession);
+        return trimmed == null ? null : dataDictionarySupport.getLabelByValue(PROFESSION_DICT_CODE, trimmed);
+    }
+
+    private String normalizeUsageValue(String bizFieldCode,
+                                       String value,
+                                       boolean required,
+                                       String errorCode,
+                                       String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(APP_CODE, MODULE_CODE, bizFieldCode, value, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException(errorCode, message);
+        }
+    }
+
+    private ClassOption findClassOption(String className) {
+        String normalized = trimToNull(className);
+        if (normalized == null) {
+            return null;
+        }
+        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, CLASS_NAME_FIELD)) {
+            if (normalized.equalsIgnoreCase(option.getItemValue())) {
+                return new ClassOption(normalizeClassCode(option.getItemCode()), option.getItemValue());
+            }
+        }
+        return null;
+    }
+
+    private RaceOption findRaceOption(String raceName) {
+        String normalized = trimToNull(raceName);
+        if (normalized == null) {
+            return null;
+        }
+        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, RACE_NAME_FIELD)) {
+            if (normalized.equalsIgnoreCase(option.getItemValue())) {
+                // 联动关系直接消费字典 extraJson，避免在服务层维护第二套种族/职业/阵营映射。
+                return new RaceOption(
+                        option.getItemValue(),
+                        readNormalizedStringSet(option.getExtraJson(), "factions", true),
+                        readNormalizedStringSet(option.getExtraJson(), "allowedClassCodes", false)
+                );
+            }
+        }
+        return null;
+    }
+
+    private List<SpecOption> listSpecOptions() {
+        List<SpecOption> result = new ArrayList<>();
+        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, SPEC_NAME_FIELD)) {
+            result.add(new SpecOption(
+                    option.getItemValue(),
+                    option.getItemLabel(),
+                    readNormalizedStringValue(option.getExtraJson(), "classCode", false)
+            ));
+        }
+        return result;
+    }
+
+    private SpecOption findSpecOptionByValue(List<SpecOption> options, String specValue) {
+        String normalized = trimToNull(specValue);
+        if (normalized == null) {
+            return null;
+        }
+        for (SpecOption option : options) {
+            if (normalized.equalsIgnoreCase(option.code())) {
+                return option;
+            }
+        }
+        return null;
+    }
+
+    private SpecOption findSpecOptionByLabel(List<SpecOption> options, String classCode, String specLabel) {
+        String normalizedLabel = trimToNull(specLabel);
+        if (normalizedLabel == null || classCode == null) {
+            return null;
+        }
+        for (SpecOption option : options) {
+            if (classCode.equals(option.classCode()) && normalizedLabel.equalsIgnoreCase(option.label())) {
+                return option;
+            }
+        }
+        return null;
+    }
+
+    private Set<String> readNormalizedStringSet(String extraJson, String fieldName, boolean upperCase) {
+        JsonNode root = readExtraJson(extraJson);
+        if (root == null || !root.has(fieldName) || !root.get(fieldName).isArray()) {
+            return Collections.emptySet();
+        }
+        Set<String> result = new HashSet<>();
+        for (JsonNode item : root.get(fieldName)) {
+            if (item != null && item.isTextual() && StringUtils.hasText(item.asText())) {
+                result.add(upperCase ? normalizeFactionCode(item.asText()) : normalizeClassCode(item.asText()));
+            }
+        }
+        return result;
+    }
+
+    private String readNormalizedStringValue(String extraJson, String fieldName, boolean upperCase) {
+        JsonNode root = readExtraJson(extraJson);
+        if (root == null || !root.has(fieldName) || !root.get(fieldName).isTextual()) {
+            return null;
+        }
+        return upperCase ? normalizeFactionCode(root.get(fieldName).asText()) : normalizeClassCode(root.get(fieldName).asText());
+    }
+
+    private JsonNode readExtraJson(String extraJson) {
+        String normalized = trimToNull(extraJson);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(normalized);
+        } catch (JsonProcessingException exception) {
+            throw new BusinessException("WOW_DICTIONARY_METADATA_INVALID", "WoW 字典元数据非法");
+        }
+    }
+
+    private String normalizeClassCode(String classCode) {
+        return classCode == null ? null : classCode.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeFactionCode(String faction) {
+        return faction == null ? null : faction.trim().toUpperCase(Locale.ROOT);
     }
 
     private record NormalizedCharacter(
@@ -422,5 +686,17 @@ public class WowCharacterService {
             String professionSecondary,
             String note
     ) {
+    }
+
+    private record ClassOption(String classCode, String className) {
+    }
+
+    private record RaceOption(String raceName, Set<String> factions, Set<String> allowedClassCodes) {
+    }
+
+    private record SpecOption(String code, String label, String classCode) {
+    }
+
+    private record ResolvedSpec(String value, String label) {
     }
 }

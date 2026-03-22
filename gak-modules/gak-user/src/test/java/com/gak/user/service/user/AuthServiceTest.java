@@ -1,5 +1,6 @@
 package com.gak.user.service.user;
 
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.user.domain.user.User;
 import com.gak.user.dto.user.RegisterRequest;
@@ -37,6 +38,9 @@ class AuthServiceTest {
     @Mock
     private TokenService tokenService;
 
+    @Mock
+    private DataDictionaryUsageSupport dataDictionaryUsageSupport;
+
     @InjectMocks
     private AuthService authService;
 
@@ -52,6 +56,10 @@ class AuthServiceTest {
 
         when(userMapper.selectCount(any())).thenReturn(0L);
         when(passwordEncoder.encode("Abc123!")).thenReturn("ENCODED_PASSWORD");
+        when(dataDictionaryUsageSupport.normalizeValueByUsage("APP_USER_AUTH", "AUTH_REGISTER", "roleCode", null, false))
+                .thenReturn(null);
+        when(dataDictionaryUsageSupport.normalizeValueByUsage("APP_USER_AUTH", "AUTH_REGISTER", "status", null, false))
+                .thenReturn(null);
         doAnswer(invocation -> {
             User user = invocation.getArgument(0);
             user.setId(1L);
