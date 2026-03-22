@@ -9,6 +9,7 @@ public class WowCharacterSimpleVO {
     private String characterName;
     private String className;
     private String specName;
+    private String specNameLabel;
     private String raceName;
     private String realmName;
     private String faction;
@@ -18,7 +19,9 @@ public class WowCharacterSimpleVO {
     private String mythicDungeonName;
     private Integer mythicScore;
     private String professionPrimary;
+    private String professionPrimaryLabel;
     private String professionSecondary;
+    private String professionSecondaryLabel;
 
     public Long getId() {
         return id;
@@ -50,6 +53,14 @@ public class WowCharacterSimpleVO {
 
     public void setSpecName(String specName) {
         this.specName = specName;
+    }
+
+    public String getSpecNameLabel() {
+        return specNameLabel;
+    }
+
+    public void setSpecNameLabel(String specNameLabel) {
+        this.specNameLabel = specNameLabel;
     }
 
     public String getRaceName() {
@@ -124,11 +135,27 @@ public class WowCharacterSimpleVO {
         this.professionPrimary = professionPrimary;
     }
 
+    public String getProfessionPrimaryLabel() {
+        return professionPrimaryLabel;
+    }
+
+    public void setProfessionPrimaryLabel(String professionPrimaryLabel) {
+        this.professionPrimaryLabel = professionPrimaryLabel;
+    }
+
     public String getProfessionSecondary() {
         return professionSecondary;
     }
 
     public void setProfessionSecondary(String professionSecondary) {
         this.professionSecondary = professionSecondary;
+    }
+
+    public String getProfessionSecondaryLabel() {
+        return professionSecondaryLabel;
+    }
+
+    public void setProfessionSecondaryLabel(String professionSecondaryLabel) {
+        this.professionSecondaryLabel = professionSecondaryLabel;
     }
 }

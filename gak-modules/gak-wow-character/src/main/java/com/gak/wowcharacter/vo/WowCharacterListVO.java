@@ -12,6 +12,7 @@ public class WowCharacterListVO {
     private String characterName;
     private String className;
     private String specName;
+    private String specNameLabel;
     private String raceName;
     private String realmName;
     private String faction;
@@ -21,7 +22,9 @@ public class WowCharacterListVO {
     private String mythicDungeonName;
     private Integer mythicScore;
     private String professionPrimary;
+    private String professionPrimaryLabel;
     private String professionSecondary;
+    private String professionSecondaryLabel;
     private String note;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -57,6 +60,14 @@ public class WowCharacterListVO {
 
     public void setSpecName(String specName) {
         this.specName = specName;
+    }
+
+    public String getSpecNameLabel() {
+        return specNameLabel;
+    }
+
+    public void setSpecNameLabel(String specNameLabel) {
+        this.specNameLabel = specNameLabel;
     }
 
     public String getRaceName() {
@@ -131,12 +142,28 @@ public class WowCharacterListVO {
         this.professionPrimary = professionPrimary;
     }
 
+    public String getProfessionPrimaryLabel() {
+        return professionPrimaryLabel;
+    }
+
+    public void setProfessionPrimaryLabel(String professionPrimaryLabel) {
+        this.professionPrimaryLabel = professionPrimaryLabel;
+    }
+
     public String getProfessionSecondary() {
         return professionSecondary;
     }
 
     public void setProfessionSecondary(String professionSecondary) {
         this.professionSecondary = professionSecondary;
+    }
+
+    public String getProfessionSecondaryLabel() {
+        return professionSecondaryLabel;
+    }
+
+    public void setProfessionSecondaryLabel(String professionSecondaryLabel) {
+        this.professionSecondaryLabel = professionSecondaryLabel;
     }
 
     public String getNote() {
