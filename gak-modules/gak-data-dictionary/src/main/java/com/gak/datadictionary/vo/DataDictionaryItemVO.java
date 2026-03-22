@@ -13,6 +13,7 @@ public class DataDictionaryItemVO {
     private String status;
     private Boolean isDefault;
     private String description;
+    private String extraJson;
 
     public Long getId() {
         return id;
@@ -76,5 +77,13 @@ public class DataDictionaryItemVO {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getExtraJson() {
+        return extraJson;
+    }
+
+    public void setExtraJson(String extraJson) {
+        this.extraJson = extraJson;
     }
 }

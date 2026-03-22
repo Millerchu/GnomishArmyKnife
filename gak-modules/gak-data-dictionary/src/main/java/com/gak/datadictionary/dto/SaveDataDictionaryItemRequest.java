@@ -32,6 +32,9 @@ public class SaveDataDictionaryItemRequest {
     @Size(max = 255, message = "description 长度不能超过 255")
     private String description;
 
+    @Size(max = 4000, message = "extraJson 长度不能超过 4000")
+    private String extraJson;
+
     public String getItemCode() {
         return itemCode;
     }
@@ -94,5 +97,13 @@ public class SaveDataDictionaryItemRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getExtraJson() {
+        return extraJson;
+    }
+
+    public void setExtraJson(String extraJson) {
+        this.extraJson = extraJson;
     }
 }
