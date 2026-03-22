@@ -182,6 +182,59 @@ CREATE TABLE IF NOT EXISTS gak_app_audit_log (
     created_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_data_dictionary (
+    id BIGINT PRIMARY KEY,
+    dict_code VARCHAR(64) NOT NULL,
+    dict_name VARCHAR(64) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    reference_apps_json TEXT,
+    description VARCHAR(255),
+    creator_user_id BIGINT,
+    creator_name VARCHAR(64),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS gak_data_dictionary_item (
+    id BIGINT PRIMARY KEY,
+    dictionary_id BIGINT NOT NULL,
+    dict_code VARCHAR(64) NOT NULL,
+    item_code VARCHAR(64) NOT NULL,
+    item_label VARCHAR(64) NOT NULL,
+    item_value VARCHAR(64) NOT NULL,
+    sort_no INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    description VARCHAR(255),
+    extra_json TEXT,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS gak_data_dictionary_usage (
+    id BIGINT PRIMARY KEY,
+    dict_code VARCHAR(64) NOT NULL,
+    dictionary_id BIGINT,
+    app_code VARCHAR(64) NOT NULL,
+    app_name VARCHAR(64),
+    module_code VARCHAR(64) NOT NULL,
+    module_name VARCHAR(64),
+    biz_field_code VARCHAR(64) NOT NULL,
+    biz_field_name VARCHAR(64),
+    usage_type VARCHAR(32) NOT NULL,
+    value_mode VARCHAR(32) NOT NULL,
+    allow_multiple BOOLEAN NOT NULL DEFAULT FALSE,
+    required_flag BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(20) NOT NULL,
+    usage_count BIGINT NOT NULL DEFAULT 0,
+    last_used_at TIMESTAMP,
+    remark VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_preset VARCHAR(64);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_storage_type VARCHAR(32);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_file_name VARCHAR(255);
@@ -202,6 +255,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_user_app_permission_user_code ON gak_user_a
 CREATE INDEX IF NOT EXISTS idx_user_app_permission_user_granted ON gak_user_app_permission (user_id, granted, app_code);
 CREATE INDEX IF NOT EXISTS idx_permission_audit_target_created ON gak_permission_audit_log (target_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_app_audit_app_created ON gak_app_audit_log (app_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_code_active ON gak_data_dictionary (dict_code) WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_data_dictionary_status_created ON gak_data_dictionary (deleted, status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_item_code_active
+    ON gak_data_dictionary_item (dictionary_id, item_code)
+    WHERE deleted = FALSE;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_item_value_active
+    ON gak_data_dictionary_item (dictionary_id, item_value)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_data_dictionary_item_dictionary_sort
+    ON gak_data_dictionary_item (dictionary_id, deleted, sort_no, id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_usage_field
+    ON gak_data_dictionary_usage (app_code, module_code, biz_field_code);
 
 INSERT INTO gak_system_app (
     id, app_code, app_name, route_path, category, data_source_mode, icon_type, icon_preset, icon_text, icon_url,
@@ -217,7 +282,8 @@ INSERT INTO gak_system_app (
     (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'DEMO', 'TEXT', NULL, '账单', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'DEMO', 'TEXT', NULL, '经验', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'DEMO', 'TEXT', NULL, '软件', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'DEMO', 'TEXT', NULL, '健康', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'DEMO', 'TEXT', NULL, '健康', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2011, 'APP_DATA_DICTIONARY', '数据字典', '/data-dictionary', '系统管理', 'REAL', 'TEXT', NULL, '字典', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 110, '维护系统可配置选项与字典项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (app_code) DO UPDATE SET
     app_name = EXCLUDED.app_name,
     route_path = EXCLUDED.route_path,
@@ -265,6 +331,288 @@ SET role_code = 'ADMIN',
     enabled = TRUE,
     updated_at = CURRENT_TIMESTAMP
 WHERE username = 'admin';
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5001, 'USER_ROLE_TYPE', '用户角色类型', 'ENABLED', '["用户管理"]', '用户角色下拉选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'USER_ROLE_TYPE' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5002, 'USER_STATUS', '用户状态', 'ENABLED', '["用户管理"]', '用户状态选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'USER_STATUS' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5003, 'WORK_LOG_TYPE', '工作日志类型', 'ENABLED', '["工作日志"]', '工作日志类型选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'WORK_LOG_TYPE' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5004, 'WORK_LOG_PROJECT', '工作日志项目', 'ENABLED', '["工作日志"]', '工作日志项目选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'WORK_LOG_PROJECT' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5005, 'APP_SECURITY_LEVEL', '应用密级', 'ENABLED', '["应用管理"]', '应用密级选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'APP_SECURITY_LEVEL' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5006, 'APP_ENCRYPTION_MODE', '应用加密方式', 'ENABLED', '["应用管理"]', '应用加密方式选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'APP_ENCRYPTION_MODE' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5101, 5001, 'USER_ROLE_TYPE', 'admin', '管理员', 'ADMIN', 1, 'ENABLED', FALSE, '管理员角色', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5001 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5001 AND item.item_code = 'admin' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5102, 5001, 'USER_ROLE_TYPE', 'dev', '开发', 'DEV', 2, 'ENABLED', FALSE, '开发角色', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5001 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5001 AND item.item_code = 'dev' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5103, 5001, 'USER_ROLE_TYPE', 'user', '普通用户', 'USER', 3, 'ENABLED', TRUE, '默认角色', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5001 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5001 AND item.item_code = 'user' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5201, 5002, 'USER_STATUS', 'enabled', '启用', 'ENABLED', 1, 'ENABLED', TRUE, '默认启用状态', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5002 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5002 AND item.item_code = 'enabled' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5202, 5002, 'USER_STATUS', 'disabled', '禁用', 'DISABLED', 2, 'ENABLED', FALSE, '禁用状态', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5002 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5002 AND item.item_code = 'disabled' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5301, 5003, 'WORK_LOG_TYPE', 'develop', '开发', 'DEVELOP', 1, 'ENABLED', TRUE, '默认工作类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'develop' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5302, 5003, 'WORK_LOG_TYPE', 'meeting', '会议', 'MEETING', 2, 'ENABLED', FALSE, '会议沟通', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'meeting' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5303, 5003, 'WORK_LOG_TYPE', 'test', '测试', 'TEST', 3, 'ENABLED', FALSE, '测试验证', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'test' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5304, 5003, 'WORK_LOG_TYPE', 'other', '其他', 'OTHER', 4, 'ENABLED', FALSE, '其他类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'other' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5401, 5004, 'WORK_LOG_PROJECT', 'gak', 'GAK', 'GAK', 1, 'ENABLED', TRUE, '默认项目', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5004 AND item.item_code = 'gak' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5402, 5004, 'WORK_LOG_PROJECT', 'client', '客户项目', 'CLIENT', 2, 'ENABLED', FALSE, '客户相关项目', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5004 AND item.item_code = 'client' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5403, 5004, 'WORK_LOG_PROJECT', 'ops', '运维支持', 'OPS', 3, 'ENABLED', FALSE, '运维与支撑事项', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5004 AND item.item_code = 'ops' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5501, 5005, 'APP_SECURITY_LEVEL', 'public', '公开', 'PUBLIC', 1, 'ENABLED', TRUE, '公开级别', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5005 AND item.item_code = 'public' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5502, 5005, 'APP_SECURITY_LEVEL', 'internal', '内部', 'INTERNAL', 2, 'ENABLED', FALSE, '内部级别', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5005 AND item.item_code = 'internal' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5503, 5005, 'APP_SECURITY_LEVEL', 'confidential', '机密', 'CONFIDENTIAL', 3, 'ENABLED', FALSE, '机密级别', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5005 AND item.item_code = 'confidential' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5601, 5006, 'APP_ENCRYPTION_MODE', 'none', '无加密', 'NONE', 1, 'ENABLED', TRUE, '默认加密方式', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5006 AND item.item_code = 'none' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5602, 5006, 'APP_ENCRYPTION_MODE', 'field', '字段加密', 'FIELD', 2, 'ENABLED', FALSE, '字段级加密', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5006 AND item.item_code = 'field' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5603, 5006, 'APP_ENCRYPTION_MODE', 'end_to_end', '端到端加密', 'END_TO_END', 3, 'ENABLED', FALSE, '端到端加密方式', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5006 AND item.item_code = 'end_to_end' AND item.deleted = FALSE
+  );
 
 INSERT INTO gak_user_app_permission (
     id, user_id, app_id, app_code, granted, granted_by, granted_at, remark, created_at, updated_at

@@ -24,6 +24,7 @@
         <module>gak-wow-character</module>
         <module>gak-todo-list</module>
         <module>gak-permission-management</module>
+        <module>gak-data-dictionary</module>
     </modules>
 
 </project>
