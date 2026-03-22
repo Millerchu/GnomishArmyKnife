@@ -12,6 +12,7 @@ import com.gak.permission.dto.SaveSystemAppRequest;
 import com.gak.permission.dto.SystemAppQueryRequest;
 import com.gak.permission.dto.UpdateSystemAppStatusRequest;
 import com.gak.permission.enums.AppAuditActionType;
+import com.gak.permission.enums.AppDataSourceMode;
 import com.gak.permission.enums.AppEncryptionMode;
 import com.gak.permission.enums.AppIconType;
 import com.gak.permission.enums.AppIconStorageType;
@@ -234,6 +235,7 @@ public class SystemAppService {
         vo.setRoute(app.getRoutePath());
         vo.setStatus(Boolean.TRUE.equals(app.getEnabled()) ? SystemAppStatus.ENABLED.name() : SystemAppStatus.DISABLED.name());
         vo.setCategory(app.getCategory());
+        vo.setDataSourceMode(app.getDataSourceMode());
         vo.setSecurityLevel(app.getSecurityLevel());
         vo.setEncryptionMode(app.getEncryptionMode());
         vo.setEnabled(Boolean.TRUE.equals(app.getEnabled()));
@@ -254,6 +256,7 @@ public class SystemAppService {
         app.setAppName(normalized.name());
         app.setRoutePath(normalized.route());
         app.setCategory(normalized.category());
+        app.setDataSourceMode(normalized.dataSourceMode());
         app.setIconType(normalized.iconType());
         app.setIconPreset(normalized.iconPreset());
         app.setIconText(normalized.iconText());
@@ -290,6 +293,7 @@ public class SystemAppService {
                 name,
                 route,
                 trimToNull(request.getCategory()),
+                normalizeRequiredDataSourceMode(request.getDataSourceMode()),
                 normalizeRequiredSecurityLevel(request.getSecurityLevel()),
                 normalizeRequiredEncryptionMode(request.getEncryptionMode()),
                 iconType,
@@ -368,6 +372,14 @@ public class SystemAppService {
         }
     }
 
+    private String normalizeRequiredDataSourceMode(String dataSourceMode) {
+        try {
+            return AppDataSourceMode.normalize(dataSourceMode);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("APP_DATA_SOURCE_MODE_INVALID", "dataSourceMode 非法");
+        }
+    }
+
     private String normalizeOptionalSecurityLevel(String securityLevel) {
         String normalized = trimToNull(securityLevel);
         if (normalized == null) {
@@ -424,6 +436,7 @@ public class SystemAppService {
     }
 
     private void validateCatalogMetadata(SystemApp app) {
+        app.setDataSourceMode(normalizeRequiredDataSourceMode(app.getDataSourceMode()));
         normalizeRequiredSecurityLevel(app.getSecurityLevel());
         normalizeRequiredEncryptionMode(app.getEncryptionMode());
         app.setIconType(normalizeIconType(app.getIconType()));
@@ -508,6 +521,7 @@ public class SystemAppService {
                                        String name,
                                        String route,
                                        String category,
+                                       String dataSourceMode,
                                        String securityLevel,
                                        String encryptionMode,
                                        String iconType,

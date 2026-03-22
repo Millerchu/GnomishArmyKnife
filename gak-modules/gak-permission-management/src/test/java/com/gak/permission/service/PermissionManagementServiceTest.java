@@ -208,6 +208,7 @@ class PermissionManagementServiceTest {
         app.setAppName(appName);
         app.setRoutePath("/" + appCode.toLowerCase());
         app.setCategory("分类");
+        app.setDataSourceMode("REAL");
         app.setIconType("TEXT");
         app.setIconText("图标");
         app.setSecurityLevel("PUBLIC");

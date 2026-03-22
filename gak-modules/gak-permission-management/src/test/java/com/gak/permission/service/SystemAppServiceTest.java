@@ -99,6 +99,7 @@ class SystemAppServiceTest {
         assertEquals("APP_EXAMPLE", result.getAppCode());
         assertEquals("ENABLED", result.getStatus());
         assertEquals("grid", result.getIconPreset());
+        assertEquals("REAL", result.getDataSourceMode());
     }
 
     @Test
@@ -144,6 +145,18 @@ class SystemAppServiceTest {
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
     }
 
+    @Test
+    void createShouldRejectInvalidDataSourceMode() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "ADMIN"));
+
+        SaveSystemAppRequest request = buildSaveRequest();
+        request.setDataSourceMode("MOCK");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> systemAppService.create(1L, request, "127.0.0.1", "JUnit"));
+        assertEquals("APP_DATA_SOURCE_MODE_INVALID", exception.getCode());
+    }
+
     private User buildUser(Long id, String roleCode) {
         User user = new User();
         user.setId(id);
@@ -160,6 +173,7 @@ class SystemAppServiceTest {
         app.setAppName(appCode);
         app.setRoutePath("/demo");
         app.setCategory("分类");
+        app.setDataSourceMode("REAL");
         app.setSecurityLevel("PUBLIC");
         app.setEncryptionMode("NONE");
         app.setIconType("TEXT");
@@ -191,6 +205,7 @@ class SystemAppServiceTest {
         request.setName("示例应用");
         request.setRoute("/example");
         request.setCategory("演示分组");
+        request.setDataSourceMode("REAL");
         request.setSecurityLevel("INTERNAL");
         request.setEncryptionMode("NONE");
         request.setIconType("PRESET");

@@ -17,6 +17,7 @@ public class SystemApp {
     private String appName;
     private String routePath;
     private String category;
+    private String dataSourceMode;
     private String iconType;
     private String iconPreset;
     private String iconText;
@@ -70,6 +71,14 @@ public class SystemApp {
 
     public void setCategory(String category) {
         this.category = category;
+    }
+
+    public String getDataSourceMode() {
+        return dataSourceMode;
+    }
+
+    public void setDataSourceMode(String dataSourceMode) {
+        this.dataSourceMode = dataSourceMode;
     }
 
     public String getIconType() {

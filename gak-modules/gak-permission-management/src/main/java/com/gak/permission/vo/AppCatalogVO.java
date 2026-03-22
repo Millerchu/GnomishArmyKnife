@@ -13,6 +13,7 @@ public class AppCatalogVO {
     private String route;
     private String status;
     private String category;
+    private String dataSourceMode;
     private String securityLevel;
     private String encryptionMode;
     private Boolean enabled;
@@ -81,6 +82,14 @@ public class AppCatalogVO {
 
     public void setCategory(String category) {
         this.category = category;
+    }
+
+    public String getDataSourceMode() {
+        return dataSourceMode;
+    }
+
+    public void setDataSourceMode(String dataSourceMode) {
+        this.dataSourceMode = dataSourceMode;
     }
 
     public String getStatus() {

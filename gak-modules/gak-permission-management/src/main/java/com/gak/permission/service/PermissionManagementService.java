@@ -10,6 +10,7 @@ import com.gak.permission.domain.SystemApp;
 import com.gak.permission.domain.UserAppPermission;
 import com.gak.permission.dto.PermissionUserQueryRequest;
 import com.gak.permission.dto.UpdateUserAppPermissionRequest;
+import com.gak.permission.enums.AppDataSourceMode;
 import com.gak.permission.enums.AppEncryptionMode;
 import com.gak.permission.enums.AppIconType;
 import com.gak.permission.enums.AppIconStorageType;
@@ -311,6 +312,7 @@ public class PermissionManagementService {
         vo.setRoute(app.getRoutePath());
         vo.setStatus(Boolean.TRUE.equals(app.getEnabled()) ? SystemAppStatus.ENABLED.name() : SystemAppStatus.DISABLED.name());
         vo.setCategory(app.getCategory());
+        vo.setDataSourceMode(app.getDataSourceMode());
         vo.setSecurityLevel(app.getSecurityLevel());
         vo.setEncryptionMode(app.getEncryptionMode());
         vo.setEnabled(Boolean.TRUE.equals(app.getEnabled()));
@@ -358,6 +360,7 @@ public class PermissionManagementService {
 
     private void validateCatalogMetadata(SystemApp app) {
         try {
+            app.setDataSourceMode(AppDataSourceMode.normalize(app.getDataSourceMode()));
             AppSecurityLevel.normalize(app.getSecurityLevel());
             AppEncryptionMode.normalize(app.getEncryptionMode());
             app.setIconType(AppIconType.normalize(app.getIconType()));

@@ -25,6 +25,10 @@ public class SaveSystemAppRequest {
     @Size(max = 64, message = "category 长度不能超过 64")
     private String category;
 
+    @NotBlank(message = "dataSourceMode 不能为空")
+    @Size(max = 16, message = "dataSourceMode 长度不能超过 16")
+    private String dataSourceMode;
+
     @NotBlank(message = "securityLevel 不能为空")
     @Size(max = 20, message = "securityLevel 长度不能超过 20")
     private String securityLevel;
@@ -100,6 +104,14 @@ public class SaveSystemAppRequest {
 
     public void setCategory(String category) {
         this.category = category;
+    }
+
+    public String getDataSourceMode() {
+        return dataSourceMode;
+    }
+
+    public void setDataSourceMode(String dataSourceMode) {
+        this.dataSourceMode = dataSourceMode;
     }
 
     public String getSecurityLevel() {

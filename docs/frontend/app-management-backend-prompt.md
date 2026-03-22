@@ -1,7 +1,7 @@
 # 应用管理后端接口代码生成提示词
 
 本文档用于把系统菜单中的“应用管理”模块一次性生成为后端代码。  
-本模块不是孤立 CRUD，而是权限管理和主页应用显示的上游数据源，目标是由管理员统一维护应用名称、图标、路由、密级、加密方式、排序和上下线状态。
+本模块不是孤立 CRUD，而是权限管理和主页应用显示的上游数据源，目标是由管理员统一维护应用名称、图标、数据来源、路由、密级、加密方式、排序和上下线状态。
 
 前端项目当前已固定以下接口路径（基于 `/api` 代理后的实际后端路径）：
 
@@ -24,7 +24,7 @@
 ### 1.1 本次先解决的问题
 
 - 由管理员统一维护系统中有哪些应用
-- 明确每个应用的名称、编码、路由、分类、图标、密级、加密方式、排序和状态
+- 明确每个应用的名称、编码、路由、分类、数据来源、图标、密级、加密方式、排序和状态
 - 支持预设图标和本地图标上传
 - 为权限管理提供稳定的应用目录来源
 - 为主页应用展示提供统一元数据
@@ -77,6 +77,7 @@
         "name": "待办列表",
         "route": "/todo-list",
         "category": "效率工具",
+        "dataSourceMode": "REAL",
         "securityLevel": "INTERNAL",
         "encryptionMode": "NONE",
         "iconType": "PRESET",
@@ -114,6 +115,7 @@
   "name": "示例应用",
   "route": "/example",
   "category": "演示分组",
+  "dataSourceMode": "REAL",
   "securityLevel": "INTERNAL",
   "encryptionMode": "NONE",
   "iconType": "PRESET",
@@ -198,6 +200,7 @@
 | `APP_HEALTH_RECORD` | 健康 | `/health` | `CONFIDENTIAL` | `FIELD` |
 
 推荐枚举：
+- `dataSourceMode`：`REAL` / `DEMO`
 - `securityLevel`：`PUBLIC` / `INTERNAL` / `CONFIDENTIAL`
 - `encryptionMode`：`NONE` / `FIELD` / `END_TO_END`
 - `iconType`：`PRESET` / `UPLOAD` / `URL` / `TEXT`
@@ -216,6 +219,7 @@
 - `app_name`
 - `route_path`
 - `category`
+- `data_source_mode`
 - `icon_type`
 - `icon_preset`
 - `icon_text`
@@ -256,6 +260,8 @@
 
 - 只有管理员允许新增、编辑、启用、停用应用、上传图标
 - `appCode/featureCode` 必须全局唯一，建议固定后不再随意修改
+- `dataSourceMode = REAL` 表示该应用页面应优先联调真实后端接口
+- `dataSourceMode = DEMO` 表示该应用允许继续使用演示数据或本地草稿
 - 停用应用后：
   - 权限管理中不可再授予新用户
   - 主页不应展示该应用
@@ -335,12 +341,12 @@ com.xxx.project
    - 查询参数：pageNo(默认1), pageSize(默认8), keyword(可选), status(可选), securityLevel(可选)
    - 返回：{ list: SystemAppListItem[], total: number }
    - 每项至少包含：
-     id, appCode, featureCode, name, route, category, securityLevel, encryptionMode, iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName, enabled, sortNo, description, remark
+     id, appCode, featureCode, name, route, category, dataSourceMode, securityLevel, encryptionMode, iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName, enabled, sortNo, description, remark
    - 如方便，建议增加 grantCount
 
 2) POST /system/apps
    - 入参：
-     appCode, featureCode, name, route, category, securityLevel, encryptionMode, iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName, enabled, sortNo, description, remark
+     appCode, featureCode, name, route, category, dataSourceMode, securityLevel, encryptionMode, iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName, enabled, sortNo, description, remark
 
 3) PUT /system/apps/{id}
    - 入参同新增
@@ -364,7 +370,7 @@ com.xxx.project
 【数据模型要求】
 1) 如果项目里已经因为权限管理模块创建了 `gak_system_app`，请直接复用，不要再建第二张应用表
 2) `gak_system_app` 字段至少包含：
-   id, appCode, appName, routePath, category, iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName, securityLevel, encryptionMode, enabled, sortNo, description, remark, createdAt, updatedAt
+   id, appCode, appName, routePath, category, dataSourceMode, iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName, securityLevel, encryptionMode, enabled, sortNo, description, remark, createdAt, updatedAt
 3) appCode 必须唯一
 
 【当前前端固定应用编码】
@@ -384,17 +390,18 @@ com.xxx.project
 1) 只有管理员可新增、编辑、启用、停用应用、上传图标
 2) appCode/featureCode 必须全局唯一，建议新增后不允许随意修改
 3) route 为空时允许作为预留应用；不为空时建议必须以 / 开头
-4) securityLevel 只允许 PUBLIC / INTERNAL / CONFIDENTIAL
-5) encryptionMode 只允许 NONE / FIELD / END_TO_END
-6) iconType 只允许 PRESET / UPLOAD / URL / TEXT
-7) iconType=PRESET 时必须校验 iconPreset 合法
-8) iconType=UPLOAD 时必须通过上传接口或其他受控方式生成 iconUrl
-9) iconType=URL 时优先使用 iconUrl
-10) iconType=TEXT 时优先使用 iconText
-11) 停用应用后，权限管理不可再授权该应用，主页当前用户应用接口也应自动过滤 enabled=false 的应用
-12) 如果项目已开发权限模块，请保证 /system/permissions/apps 和 /system/permissions/current-user/apps 实际读取的是同一张应用目录表
-13) 图标上传可选择文件服务器 / 对象存储 / 数据库存储，但对前端必须统一返回 iconUrl
-14) 上传接口仅允许图片文件，建议限制大小例如 2MB
+4) dataSourceMode 只允许 REAL / DEMO
+5) securityLevel 只允许 PUBLIC / INTERNAL / CONFIDENTIAL
+6) encryptionMode 只允许 NONE / FIELD / END_TO_END
+7) iconType 只允许 PRESET / UPLOAD / URL / TEXT
+8) iconType=PRESET 时必须校验 iconPreset 合法
+9) iconType=UPLOAD 时必须通过上传接口或其他受控方式生成 iconUrl
+10) iconType=URL 时优先使用 iconUrl
+11) iconType=TEXT 时优先使用 iconText
+12) 停用应用后，权限管理不可再授权该应用，主页当前用户应用接口也应自动过滤 enabled=false 的应用
+13) 如果项目已开发权限模块，请保证 /system/permissions/apps 和 /system/permissions/current-user/apps 实际读取的是同一张应用目录表
+14) 图标上传可选择文件服务器 / 对象存储 / 数据库存储，但对前端必须统一返回 iconUrl
+15) 上传接口仅允许图片文件，建议限制大小例如 2MB
 
 【推荐返回 VO】
 SystemAppListItem:
@@ -404,6 +411,7 @@ SystemAppListItem:
 - name
 - route
 - category
+- dataSourceMode
 - securityLevel
 - encryptionMode
 - iconType
@@ -456,6 +464,7 @@ UploadIconResponse:
   "name": "示例应用",
   "route": "/example",
   "category": "演示分组",
+  "dataSourceMode": "REAL",
   "securityLevel": "INTERNAL",
   "encryptionMode": "NONE",
   "iconType": "PRESET",
@@ -473,7 +482,7 @@ UploadIconResponse:
 要求：
 1) 只有管理员可以调用
 2) 校验 appCode 唯一
-3) 校验 securityLevel、encryptionMode、iconType 合法
+3) 校验 dataSourceMode、securityLevel、encryptionMode、iconType 合法
 4) route 非空时必须以 / 开头
 5) iconType=PRESET 时校验 iconPreset 合法
 6) 保存成功返回完整应用对象
@@ -529,6 +538,7 @@ UploadIconResponse:
 
 - 前端接口文件固定为 `src/api/appManagement.js`
 - 前端页面固定路由为 `/system/apps`
+- 前端保存应用时会提交 `dataSourceMode`
 - 前端保存应用时会按 `iconType` 提交 `iconPreset/iconText/iconUrl/iconStorageType/iconFileName`
 - 前端图标上传会先调用 `POST /system/apps/icon-upload`
 - 权限管理页会优先读取应用目录数据作为授权矩阵的应用来源
