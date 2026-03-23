@@ -1,8 +1,10 @@
 package com.gak.worklog.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -20,6 +22,8 @@ public class WorkLogResponse {
     private String zentaoNo;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
+    @JsonFormat(pattern = "HH:mm:ss")
+    private LocalTime offWorkTime;
     private String remark;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -102,6 +106,14 @@ public class WorkLogResponse {
 
     public void setOvertimeHours(BigDecimal overtimeHours) {
         this.overtimeHours = overtimeHours;
+    }
+
+    public LocalTime getOffWorkTime() {
+        return offWorkTime;
+    }
+
+    public void setOffWorkTime(LocalTime offWorkTime) {
+        this.offWorkTime = offWorkTime;
     }
 
     public String getRemark() {

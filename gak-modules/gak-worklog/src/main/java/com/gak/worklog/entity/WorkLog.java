@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 /**
  * 工作日志主表实体。
@@ -23,6 +24,7 @@ public class WorkLog {
     private String zentaoNo;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
+    private LocalTime offWorkTime;
     private String remark;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -97,6 +99,14 @@ public class WorkLog {
 
     public void setOvertimeHours(BigDecimal overtimeHours) {
         this.overtimeHours = overtimeHours;
+    }
+
+    public LocalTime getOffWorkTime() {
+        return offWorkTime;
+    }
+
+    public void setOffWorkTime(LocalTime offWorkTime) {
+        this.offWorkTime = offWorkTime;
     }
 
     public String getRemark() {

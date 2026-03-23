@@ -1,11 +1,13 @@
 package com.gak.worklog.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -38,6 +40,9 @@ public class UpdateWorkLogRequest {
 
     @DecimalMin(value = "0.0")
     private BigDecimal overtimeHours;
+
+    @JsonFormat(pattern = "HH:mm:ss")
+    private LocalTime offWorkTime;
 
     @Size(max = 500)
     private String remark;
@@ -104,6 +109,14 @@ public class UpdateWorkLogRequest {
 
     public void setOvertimeHours(BigDecimal overtimeHours) {
         this.overtimeHours = overtimeHours;
+    }
+
+    public LocalTime getOffWorkTime() {
+        return offWorkTime;
+    }
+
+    public void setOffWorkTime(LocalTime offWorkTime) {
+        this.offWorkTime = offWorkTime;
     }
 
     public String getRemark() {

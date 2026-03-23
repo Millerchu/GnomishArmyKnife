@@ -1,7 +1,9 @@
 package com.gak.worklog.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -12,10 +14,14 @@ public class WeeklyWorkLogBriefResponse {
     private Long id;
     private LocalDate logDate;
     private List<String> typeCodes;
+    private String location;
     private String projectCode;
     private String brief;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
+    @JsonFormat(pattern = "HH:mm:ss")
+    private LocalTime offWorkTime;
+    private String remark;
 
     public Long getId() {
         return id;
@@ -39,6 +45,14 @@ public class WeeklyWorkLogBriefResponse {
 
     public void setTypeCodes(List<String> typeCodes) {
         this.typeCodes = typeCodes;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
     }
 
     public String getProjectCode() {
@@ -71,5 +85,21 @@ public class WeeklyWorkLogBriefResponse {
 
     public void setOvertimeHours(BigDecimal overtimeHours) {
         this.overtimeHours = overtimeHours;
+    }
+
+    public LocalTime getOffWorkTime() {
+        return offWorkTime;
+    }
+
+    public void setOffWorkTime(LocalTime offWorkTime) {
+        this.offWorkTime = offWorkTime;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
     }
 }

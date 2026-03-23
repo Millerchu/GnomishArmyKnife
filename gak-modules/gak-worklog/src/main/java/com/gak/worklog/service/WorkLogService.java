@@ -11,17 +11,18 @@ import com.gak.worklog.entity.WorkLog;
 import com.gak.worklog.entity.WorkLogType;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -36,7 +37,12 @@ public class WorkLogService {
 
     private static final String APP_CODE = "APP_WORK_LOG";
     private static final String MODULE_CODE = "WORK_LOG";
+    private static final String TYPE_CODES_FIELD = "typeCodes";
+    private static final String PROJECT_CODE_FIELD = "projectCode";
+    private static final String LOCATION_FIELD = "location";
     private static final int BRIEF_MAX_LENGTH = 80;
+    private static final LocalTime STANDARD_OFF_WORK_TIME = LocalTime.of(18, 0);
+    private static final BigDecimal ZERO_HOURS = BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
 
     private final WorkLogMapper workLogMapper;
     private final WorkLogTypeMapper workLogTypeMapper;
@@ -59,18 +65,26 @@ public class WorkLogService {
     @Transactional
     public WorkLogResponse create(CreateWorkLogRequest request) {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
+        String projectCode = normalizeOptionalProjectCode(request.getProjectCode());
+        String location = normalizeOptionalLocation(request.getLocation());
         validateDuplicateLogDate(request.getUserId(), request.getLogDate(), null);
+        BigDecimal overtimeHours = resolveOvertimeHours(
+                request.getLogDate(),
+                request.getOffWorkTime(),
+                request.getOvertimeHours()
+        );
 
         LocalDateTime now = LocalDateTime.now();
         WorkLog workLog = new WorkLog();
         workLog.setUserId(request.getUserId());
         workLog.setLogDate(request.getLogDate());
-        workLog.setLocation(request.getLocation());
-        workLog.setProjectCode(request.getProjectCode());
+        workLog.setLocation(location);
+        workLog.setProjectCode(projectCode);
         workLog.setContent(request.getWorkItem());
         workLog.setZentaoNo(request.getZentaoNo());
         workLog.setPersonDay(request.getPersonDay());
-        workLog.setOvertimeHours(request.getOvertimeHours());
+        workLog.setOvertimeHours(overtimeHours);
+        workLog.setOffWorkTime(request.getOffWorkTime());
         workLog.setRemark(request.getRemark());
         workLog.setCreatedAt(now);
         workLog.setUpdatedAt(now);
@@ -106,15 +120,23 @@ public class WorkLogService {
     public WorkLogResponse update(Long id, UpdateWorkLogRequest request) {
         WorkLog current = getByIdOrThrow(id);
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
+        String projectCode = normalizeOptionalProjectCode(request.getProjectCode());
+        String location = normalizeOptionalLocation(request.getLocation());
         validateDuplicateLogDate(current.getUserId(), request.getLogDate(), id);
+        BigDecimal overtimeHours = resolveOvertimeHours(
+                request.getLogDate(),
+                request.getOffWorkTime(),
+                request.getOvertimeHours()
+        );
 
         current.setLogDate(request.getLogDate());
-        current.setLocation(request.getLocation());
-        current.setProjectCode(request.getProjectCode());
+        current.setLocation(location);
+        current.setProjectCode(projectCode);
         current.setContent(request.getWorkItem());
         current.setZentaoNo(request.getZentaoNo());
         current.setPersonDay(request.getPersonDay());
-        current.setOvertimeHours(request.getOvertimeHours());
+        current.setOvertimeHours(overtimeHours);
+        current.setOffWorkTime(request.getOffWorkTime());
         current.setRemark(request.getRemark());
         current.setUpdatedAt(LocalDateTime.now());
         workLogMapper.updateById(current);
@@ -207,10 +229,13 @@ public class WorkLogService {
             response.setId(workLog.getId());
             response.setLogDate(workLog.getLogDate());
             response.setTypeCodes(typeMap.getOrDefault(workLog.getId(), List.of()));
+            response.setLocation(workLog.getLocation());
             response.setProjectCode(workLog.getProjectCode());
             response.setBrief(extractBrief(workLog.getContent()));
             response.setPersonDay(workLog.getPersonDay());
             response.setOvertimeHours(workLog.getOvertimeHours());
+            response.setOffWorkTime(workLog.getOffWorkTime());
+            response.setRemark(workLog.getRemark());
             result.add(response);
         }
 
@@ -238,13 +263,21 @@ public class WorkLogService {
             return dataDictionaryUsageSupport.normalizeMultiValueByUsage(
                     APP_CODE,
                     MODULE_CODE,
-                    "typeCodes",
+                    TYPE_CODES_FIELD,
                     typeCodes,
                     true
             );
         } catch (BusinessException exception) {
             throw new ResponseStatusException(BAD_REQUEST, "typeCode 非法");
         }
+    }
+
+    private String normalizeOptionalProjectCode(String projectCode) {
+        return normalizeOptionalUsageValue(PROJECT_CODE_FIELD, projectCode, "projectCode 非法");
+    }
+
+    private String normalizeOptionalLocation(String location) {
+        return normalizeOptionalUsageValue(LOCATION_FIELD, location, "location 非法");
     }
 
     private void saveTypeRelations(Long workLogId, List<String> typeCodes, LocalDateTime now) {
@@ -313,13 +346,59 @@ public class WorkLogService {
             return dataDictionaryUsageSupport.normalizeValueByUsage(
                     APP_CODE,
                     MODULE_CODE,
-                    "typeCodes",
+                    TYPE_CODES_FIELD,
                     typeCode,
                     false
             );
         } catch (BusinessException exception) {
             throw new ResponseStatusException(BAD_REQUEST, "typeCode 非法");
         }
+    }
+
+    private String normalizeOptionalUsageValue(String bizFieldCode, String value, String message) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(
+                    APP_CODE,
+                    MODULE_CODE,
+                    bizFieldCode,
+                    value,
+                    false
+            );
+        } catch (BusinessException exception) {
+            throw new ResponseStatusException(BAD_REQUEST, message);
+        }
+    }
+
+    private BigDecimal resolveOvertimeHours(LocalDate logDate, LocalTime offWorkTime, BigDecimal requestOvertimeHours) {
+        if (isWeekend(logDate)) {
+            return normalizeOvertimeHours(requestOvertimeHours);
+        }
+        if (offWorkTime != null) {
+            return calculateWorkdayOvertimeHours(offWorkTime);
+        }
+        // 兼容旧前端仍只提交 overtimeHours 的阶段，等前端切完 offWorkTime 后再收紧。
+        return normalizeOvertimeHours(requestOvertimeHours);
+    }
+
+    private BigDecimal calculateWorkdayOvertimeHours(LocalTime offWorkTime) {
+        if (offWorkTime == null || !offWorkTime.isAfter(STANDARD_OFF_WORK_TIME)) {
+            return ZERO_HOURS;
+        }
+        long overtimeMinutes = java.time.Duration.between(STANDARD_OFF_WORK_TIME, offWorkTime).toMinutes();
+        return BigDecimal.valueOf(overtimeMinutes)
+                .divide(BigDecimal.valueOf(60), 1, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal normalizeOvertimeHours(BigDecimal overtimeHours) {
+        if (overtimeHours == null) {
+            return ZERO_HOURS;
+        }
+        return overtimeHours.setScale(1, RoundingMode.HALF_UP);
+    }
+
+    private boolean isWeekend(LocalDate logDate) {
+        DayOfWeek dayOfWeek = logDate.getDayOfWeek();
+        return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
     }
 
     private WorkLogResponse buildResponse(WorkLog workLog, List<String> typeCodes) {
@@ -334,6 +413,7 @@ public class WorkLogService {
         response.setZentaoNo(workLog.getZentaoNo());
         response.setPersonDay(workLog.getPersonDay());
         response.setOvertimeHours(workLog.getOvertimeHours());
+        response.setOffWorkTime(workLog.getOffWorkTime());
         response.setRemark(workLog.getRemark());
         response.setCreatedAt(workLog.getCreatedAt());
         response.setUpdatedAt(workLog.getUpdatedAt());

@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     zentao_no VARCHAR(255),
     person_day NUMERIC(4, 1) NOT NULL,
     overtime_hours NUMERIC(4, 1),
+    off_work_time TIME,
     remark VARCHAR(500),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
@@ -239,6 +240,7 @@ ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_preset VARCHAR(64);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_storage_type VARCHAR(32);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_file_name VARCHAR(255);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS data_source_mode VARCHAR(16) NOT NULL DEFAULT 'DEMO';
+ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS off_work_time TIME;
 ALTER TABLE IF EXISTS gak_system_app ALTER COLUMN route_path DROP NOT NULL;
 ALTER TABLE IF EXISTS gak_app_audit_log ALTER COLUMN app_id DROP NOT NULL;
 UPDATE gak_system_app SET data_source_mode = 'DEMO' WHERE data_source_mode IS NULL;
@@ -386,6 +388,20 @@ WHERE admin_user.username = 'admin'
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary dictionary
     WHERE dictionary.dict_code = 'WORK_LOG_PROJECT' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5007, 'WORK_LOG_LOCATION', '工作地点', 'ENABLED', '["工作日志"]', '工作地点选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'WORK_LOG_LOCATION' AND dictionary.deleted = FALSE
   );
 
 INSERT INTO gak_data_dictionary (
@@ -573,6 +589,61 @@ INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
+SELECT 5451, 5007, 'WORK_LOG_LOCATION', 'sh_office', '上海办公室', '上海办公室', 1, 'ENABLED', TRUE, '默认办公地点', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5007 AND item.item_code = 'sh_office' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5452, 5007, 'WORK_LOG_LOCATION', 'sz_office', '深圳办公室', '深圳办公室', 2, 'ENABLED', FALSE, '深圳办公地点', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5007 AND item.item_code = 'sz_office' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5453, 5007, 'WORK_LOG_LOCATION', 'home', '居家', '居家', 3, 'ENABLED', FALSE, '居家办公', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5007 AND item.item_code = 'home' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5454, 5007, 'WORK_LOG_LOCATION', 'client_site', '客户现场', '客户现场', 4, 'ENABLED', FALSE, '客户办公地点', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5007 AND item.item_code = 'client_site' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5455, 5007, 'WORK_LOG_LOCATION', 'travel', '出差在途', '出差在途', 5, 'ENABLED', FALSE, '在途办公地点', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5007 AND item.item_code = 'travel' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
 SELECT 5501, 5005, 'APP_SECURITY_LEVEL', 'public', '公开', 'PUBLIC', 1, 'ENABLED', TRUE, '公开级别', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FALSE)
   AND NOT EXISTS (
@@ -633,6 +704,63 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5006 AND item.item_code = 'end_to_end' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001005, 'WORK_LOG_TYPE', dictionary.id, 'APP_WORK_LOG', '工作日志', 'WORK_LOG', '工作日志',
+    'typeCodes', '日志类型', 'FORM_FIELD', 'ITEM_VALUE', TRUE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'WORK_LOG_TYPE'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_WORK_LOG'
+      AND usage.module_code = 'WORK_LOG'
+      AND usage.biz_field_code = 'typeCodes'
+  );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001006, 'WORK_LOG_PROJECT', dictionary.id, 'APP_WORK_LOG', '工作日志', 'WORK_LOG', '工作日志',
+    'projectCode', '所属项目', 'FORM_FIELD', 'ITEM_VALUE', FALSE, FALSE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'WORK_LOG_PROJECT'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_WORK_LOG'
+      AND usage.module_code = 'WORK_LOG'
+      AND usage.biz_field_code = 'projectCode'
+  );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001030, 'WORK_LOG_LOCATION', dictionary.id, 'APP_WORK_LOG', '工作日志', 'WORK_LOG', '工作日志',
+    'location', '工作地点', 'FORM_FIELD', 'ITEM_VALUE', FALSE, FALSE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'WORK_LOG_LOCATION'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_WORK_LOG'
+      AND usage.module_code = 'WORK_LOG'
+      AND usage.biz_field_code = 'location'
   );
 
 INSERT INTO gak_user_app_permission (
