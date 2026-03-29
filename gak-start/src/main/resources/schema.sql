@@ -258,6 +258,52 @@ CREATE INDEX IF NOT EXISTS idx_user_app_permission_user_granted ON gak_user_app_
 CREATE INDEX IF NOT EXISTS idx_permission_audit_target_created ON gak_permission_audit_log (target_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_app_audit_app_created ON gak_app_audit_log (app_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_code_active ON gak_data_dictionary (dict_code) WHERE deleted = FALSE;
+
+CREATE TABLE IF NOT EXISTS gak_data_migration_task (
+    id BIGINT PRIMARY KEY,
+    task_no VARCHAR(40) NOT NULL,
+    task_type VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    scope_mode VARCHAR(20),
+    package_name VARCHAR(128) NOT NULL,
+    system_resource_codes TEXT,
+    business_app_codes TEXT,
+    include_attachments BOOLEAN NOT NULL DEFAULT FALSE,
+    import_mode VARCHAR(20),
+    continue_on_error BOOLEAN NOT NULL DEFAULT FALSE,
+    record_count BIGINT NOT NULL DEFAULT 0,
+    attachment_count BIGINT NOT NULL DEFAULT 0,
+    file_url VARCHAR(512),
+    file_storage_type VARCHAR(32),
+    file_name VARCHAR(255),
+    file_size BIGINT,
+    error_message TEXT,
+    remark VARCHAR(255),
+    operator_user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS gak_data_migration_task_item (
+    id BIGINT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    resource_code VARCHAR(64) NOT NULL,
+    resource_name VARCHAR(128) NOT NULL,
+    resource_type VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    record_count BIGINT NOT NULL DEFAULT 0,
+    attachment_count BIGINT NOT NULL DEFAULT 0,
+    message VARCHAR(500),
+    created_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP,
+    CONSTRAINT fk_data_migration_task_item_task
+        FOREIGN KEY (task_id) REFERENCES gak_data_migration_task (id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_data_migration_task_no ON gak_data_migration_task (task_no);
+CREATE INDEX IF NOT EXISTS idx_data_migration_task_created ON gak_data_migration_task (created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_data_migration_task_type_status ON gak_data_migration_task (task_type, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_data_migration_task_item_task ON gak_data_migration_task_item (task_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_data_dictionary_status_created ON gak_data_dictionary (deleted, status, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_item_code_active
     ON gak_data_dictionary_item (dictionary_id, item_code)
