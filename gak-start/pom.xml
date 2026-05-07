@@ -67,6 +67,11 @@
             <artifactId>gak-data-migration</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-fuel-stats</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <!-- Web 项目一般直接用 web -->
         <dependency>

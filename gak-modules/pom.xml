@@ -26,6 +26,7 @@
         <module>gak-permission-management</module>
         <module>gak-data-dictionary</module>
         <module>gak-data-migration</module>
+        <module>gak-fuel-stats</module>
     </modules>
 
 </project>

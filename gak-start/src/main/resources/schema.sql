@@ -300,6 +300,36 @@ CREATE TABLE IF NOT EXISTS gak_data_migration_task_item (
         FOREIGN KEY (task_id) REFERENCES gak_data_migration_task (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS gak_fuel_record (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    vehicle_name VARCHAR(64) NOT NULL,
+    fuel_date DATE NOT NULL,
+    odometer_km NUMERIC(10, 1) NOT NULL,
+    fuel_volume NUMERIC(8, 2) NOT NULL,
+    total_amount NUMERIC(10, 2) NOT NULL,
+    discounted_amount NUMERIC(10, 2) NOT NULL,
+    unit_price NUMERIC(8, 3) NOT NULL,
+    fuel_type VARCHAR(16) NOT NULL,
+    fill_type VARCHAR(16) NOT NULL,
+    station_name VARCHAR(128),
+    note VARCHAR(500),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_fuel_price_snapshot (
+    id BIGINT PRIMARY KEY,
+    publish_date TIMESTAMP NOT NULL,
+    price_92 NUMERIC(6, 2) NOT NULL,
+    price_95 NUMERIC(6, 2) NOT NULL,
+    price_98 NUMERIC(6, 2) NOT NULL,
+    price_diesel NUMERIC(6, 2) NOT NULL,
+    remark VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS uk_data_migration_task_no ON gak_data_migration_task (task_no);
 CREATE INDEX IF NOT EXISTS idx_data_migration_task_created ON gak_data_migration_task (created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_data_migration_task_type_status ON gak_data_migration_task (task_type, status, created_at DESC);
@@ -315,6 +345,12 @@ CREATE INDEX IF NOT EXISTS idx_data_dictionary_item_dictionary_sort
     ON gak_data_dictionary_item (dictionary_id, deleted, sort_no, id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_data_dictionary_usage_field
     ON gak_data_dictionary_usage (app_code, module_code, biz_field_code);
+CREATE INDEX IF NOT EXISTS idx_fuel_record_owner_date
+    ON gak_fuel_record (owner_user_id, fuel_date DESC, odometer_km DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fuel_record_owner_vehicle_date
+    ON gak_fuel_record (owner_user_id, vehicle_name, fuel_date ASC, odometer_km ASC);
+CREATE INDEX IF NOT EXISTS idx_fuel_price_snapshot_publish_date
+    ON gak_fuel_price_snapshot (publish_date DESC, updated_at DESC);
 
 INSERT INTO gak_system_app (
     id, app_code, app_name, route_path, category, data_source_mode, icon_type, icon_preset, icon_text, icon_url,
@@ -325,7 +361,7 @@ INSERT INTO gak_system_app (
     (2002, 'APP_WORK_LOG', '工作日志', '/work-log', '办公协作', 'REAL', 'TEXT', NULL, '日志', NULL, NULL, NULL, 'INTERNAL', 'FIELD', TRUE, 20, '记录每日工作内容、工时与项目投入。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2003, 'APP_PASSWORD_MEMO', '密码备忘录', '/password-memo', '安全工具', 'REAL', 'TEXT', NULL, '密码', NULL, NULL, NULL, 'CONFIDENTIAL', 'END_TO_END', TRUE, 30, '集中管理账号密码并做受控查看。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'REAL', 'TEXT', NULL, '待办', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'DEMO', 'TEXT', NULL, '油耗', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'REAL', 'TEXT', NULL, '油耗', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'REAL', 'TEXT', NULL, '魔兽', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'DEMO', 'TEXT', NULL, '账单', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'DEMO', 'TEXT', NULL, '经验', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
@@ -379,6 +415,65 @@ SET role_code = 'ADMIN',
     enabled = TRUE,
     updated_at = CURRENT_TIMESTAMP
 WHERE username = 'admin';
+
+INSERT INTO gak_fuel_price_snapshot (
+    id, publish_date, price_92, price_95, price_98, price_diesel, remark, created_at, updated_at
+)
+VALUES (
+    7101,
+    CURRENT_TIMESTAMP,
+    7.58,
+    8.09,
+    8.96,
+    7.26,
+    '默认参考油价',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO UPDATE SET
+    publish_date = EXCLUDED.publish_date,
+    price_92 = EXCLUDED.price_92,
+    price_95 = EXCLUDED.price_95,
+    price_98 = EXCLUDED.price_98,
+    price_diesel = EXCLUDED.price_diesel,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_fuel_record (
+    id, owner_user_id, vehicle_name, fuel_date, odometer_km, fuel_volume, total_amount,
+    discounted_amount, unit_price, fuel_type, fill_type, station_name, note, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7201, 900000000000000001, 'Model Y', DATE '2026-02-24', 14430.0, 40.15, 312.37, 300.37, 7.481, '95', 'PARTIAL', '中国石化滨江站', '长途出发前补油。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7202, 900000000000000001, '卡罗拉', DATE '2026-03-01', 85736.0, 34.12, 255.22, 251.22, 7.363, '92', 'FULL', '壳牌文一路站', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7203, 900000000000000001, 'Model Y', DATE '2026-03-05', 14876.0, 39.82, 314.18, 302.18, 7.589, '95', 'FULL', '中国石油城西站', '工作周通勤加油。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7204, 900000000000000001, '卡罗拉', DATE '2026-03-12', 86210.0, 33.57, 251.77, 245.77, 7.321, '92', 'FULL', '壳牌文一路站', '城区通勤，油耗相对稳定。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7205, 900000000000000001, 'Model Y', DATE '2026-03-13', 15320.0, 41.26, 326.78, 308.78, 7.484, '95', 'FULL', '中国石化滨江站', '周末高速返程后加满。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7206, 900000000000000001, 'Model Y', DATE '2026-04-02', 15788.0, 38.64, 305.11, 294.11, 7.612, '95', 'FULL', '中国石化滨江站', '清明前通勤用车。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7207, 900000000000000001, '卡罗拉', DATE '2026-04-10', 86695.0, 31.44, 236.09, 231.09, 7.350, '92', 'PARTIAL', '中国石油城北站', '市区短途补油。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7208, 900000000000000001, 'Model Y', DATE '2026-04-18', 16292.0, 40.08, 318.26, 306.26, 7.641, '95', 'FULL', '壳牌滨文站', '周末郊区往返。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7209, 900000000000000001, '卡罗拉', DATE '2026-04-28', 87162.0, 35.02, 264.13, 258.13, 7.372, '92', 'FULL', '壳牌文一路站', '月末补满。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7210, 900000000000000001, 'Model Y', DATE '2026-05-06', 16775.0, 39.27, 313.04, 301.04, 7.665, '95', 'FULL', '中国石化滨江站', '五一返程后加油。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_records (
+    id, owner_user_id, vehicle_name, fuel_date, odometer_km, fuel_volume, total_amount,
+    discounted_amount, unit_price, fuel_type, fill_type, station_name, note, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    vehicle_name = EXCLUDED.vehicle_name,
+    fuel_date = EXCLUDED.fuel_date,
+    odometer_km = EXCLUDED.odometer_km,
+    fuel_volume = EXCLUDED.fuel_volume,
+    total_amount = EXCLUDED.total_amount,
+    discounted_amount = EXCLUDED.discounted_amount,
+    unit_price = EXCLUDED.unit_price,
+    fuel_type = EXCLUDED.fuel_type,
+    fill_type = EXCLUDED.fill_type,
+    station_name = EXCLUDED.station_name,
+    note = EXCLUDED.note,
+    updated_at = EXCLUDED.updated_at;
 
 INSERT INTO gak_data_dictionary (
     id, dict_code, dict_name, status, reference_apps_json, description,
