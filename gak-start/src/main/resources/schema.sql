@@ -321,6 +321,9 @@ CREATE TABLE IF NOT EXISTS gak_fuel_record (
 CREATE TABLE IF NOT EXISTS gak_fuel_price_snapshot (
     id BIGINT PRIMARY KEY,
     publish_date TIMESTAMP NOT NULL,
+    next_adjust_time TIMESTAMP,
+    adjust_window VARCHAR(64),
+    price_change_hint VARCHAR(255),
     price_92 NUMERIC(6, 2) NOT NULL,
     price_95 NUMERIC(6, 2) NOT NULL,
     price_98 NUMERIC(6, 2) NOT NULL,
@@ -329,6 +332,10 @@ CREATE TABLE IF NOT EXISTS gak_fuel_price_snapshot (
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
+
+ALTER TABLE gak_fuel_price_snapshot ADD COLUMN IF NOT EXISTS next_adjust_time TIMESTAMP;
+ALTER TABLE gak_fuel_price_snapshot ADD COLUMN IF NOT EXISTS adjust_window VARCHAR(64);
+ALTER TABLE gak_fuel_price_snapshot ADD COLUMN IF NOT EXISTS price_change_hint VARCHAR(255);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_data_migration_task_no ON gak_data_migration_task (task_no);
 CREATE INDEX IF NOT EXISTS idx_data_migration_task_created ON gak_data_migration_task (created_at DESC, id DESC);
@@ -417,11 +424,15 @@ SET role_code = 'ADMIN',
 WHERE username = 'admin';
 
 INSERT INTO gak_fuel_price_snapshot (
-    id, publish_date, price_92, price_95, price_98, price_diesel, remark, created_at, updated_at
+    id, publish_date, next_adjust_time, adjust_window, price_change_hint,
+    price_92, price_95, price_98, price_diesel, remark, created_at, updated_at
 )
 VALUES (
     7101,
     CURRENT_TIMESTAMP,
+    TIMESTAMP '2026-05-20 00:00:00',
+    '5月19日24时',
+    '当前以窄幅波动为主，下一轮调价窗口已临近。',
     7.58,
     8.09,
     8.96,
@@ -432,6 +443,9 @@ VALUES (
 )
 ON CONFLICT (id) DO UPDATE SET
     publish_date = EXCLUDED.publish_date,
+    next_adjust_time = EXCLUDED.next_adjust_time,
+    adjust_window = EXCLUDED.adjust_window,
+    price_change_hint = EXCLUDED.price_change_hint,
     price_92 = EXCLUDED.price_92,
     price_95 = EXCLUDED.price_95,
     price_98 = EXCLUDED.price_98,

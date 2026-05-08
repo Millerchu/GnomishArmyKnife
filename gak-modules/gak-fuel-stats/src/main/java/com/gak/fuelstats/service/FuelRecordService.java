@@ -164,6 +164,10 @@ public class FuelRecordService {
         prices.put("98", scaleMoney(snapshot == null ? null : snapshot.getPrice98()));
         prices.put("DIESEL", scaleMoney(snapshot == null ? null : snapshot.getPriceDiesel()));
         result.setPublishDate(snapshot == null ? null : snapshot.getPublishDate());
+        result.setNextAdjustTime(snapshot == null ? null : snapshot.getNextAdjustTime());
+        result.setAdjustWindow(snapshot == null ? null : snapshot.getAdjustWindow());
+        result.setPriceChangeHint(snapshot == null ? null : snapshot.getPriceChangeHint());
+        result.setRemark(snapshot == null ? null : snapshot.getRemark());
         result.setPrices(prices);
         return result;
     }

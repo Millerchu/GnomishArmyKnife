@@ -15,6 +15,18 @@ public class FuelPriceSnapshot {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private LocalDateTime publishDate;
+    /**
+     * 下一次成品油调价时间点。
+     */
+    private LocalDateTime nextAdjustTime;
+    /**
+     * 下一次调价窗口说明，例如“5月19日24时”。
+     */
+    private String adjustWindow;
+    /**
+     * 调价趋势或简要说明。
+     */
+    private String priceChangeHint;
     private BigDecimal price92;
     private BigDecimal price95;
     private BigDecimal price98;
@@ -37,6 +49,30 @@ public class FuelPriceSnapshot {
 
     public void setPublishDate(LocalDateTime publishDate) {
         this.publishDate = publishDate;
+    }
+
+    public LocalDateTime getNextAdjustTime() {
+        return nextAdjustTime;
+    }
+
+    public void setNextAdjustTime(LocalDateTime nextAdjustTime) {
+        this.nextAdjustTime = nextAdjustTime;
+    }
+
+    public String getAdjustWindow() {
+        return adjustWindow;
+    }
+
+    public void setAdjustWindow(String adjustWindow) {
+        this.adjustWindow = adjustWindow;
+    }
+
+    public String getPriceChangeHint() {
+        return priceChangeHint;
+    }
+
+    public void setPriceChangeHint(String priceChangeHint) {
+        this.priceChangeHint = priceChangeHint;
     }
 
     public BigDecimal getPrice92() {
