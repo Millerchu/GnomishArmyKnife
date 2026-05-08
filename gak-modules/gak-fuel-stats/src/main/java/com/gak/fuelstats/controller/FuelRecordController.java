@@ -36,6 +36,9 @@ public class FuelRecordController {
         this.tokenService = tokenService;
     }
 
+    /**
+     * 分页查询当前登录用户的加油记录。
+     */
     @GetMapping
     public ApiResponse<PagedResult<FuelRecordVO>> page(@Valid FuelRecordQueryRequest request,
                                                        HttpServletRequest httpServletRequest) {
@@ -43,6 +46,9 @@ public class FuelRecordController {
         return ApiResponse.success(fuelRecordService.page(currentUserId, request));
     }
 
+    /**
+     * 新增加油记录。
+     */
     @PostMapping
     public ApiResponse<FuelRecordVO> create(@Valid @RequestBody SaveFuelRecordRequest request,
                                             HttpServletRequest httpServletRequest) {
@@ -50,6 +56,9 @@ public class FuelRecordController {
         return ApiResponse.success(fuelRecordService.create(currentUserId, request));
     }
 
+    /**
+     * 修改加油记录。
+     */
     @PutMapping("/{id}")
     public ApiResponse<FuelRecordVO> update(@PathVariable Long id,
                                             @Valid @RequestBody SaveFuelRecordRequest request,
@@ -58,6 +67,9 @@ public class FuelRecordController {
         return ApiResponse.success(fuelRecordService.update(currentUserId, id, request));
     }
 
+    /**
+     * 删除加油记录。
+     */
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
@@ -65,17 +77,26 @@ public class FuelRecordController {
         return ApiResponse.success();
     }
 
+    /**
+     * 查询概览统计卡片数据。
+     */
     @GetMapping("/summary")
     public ApiResponse<FuelSummaryVO> summary(HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(fuelRecordService.getSummary(currentUserId));
     }
 
+    /**
+     * 查询当前维护的最新油价快照。
+     */
     @GetMapping("/latest-prices")
     public ApiResponse<FuelLatestPricesVO> latestPrices() {
         return ApiResponse.success(fuelRecordService.getLatestPrices());
     }
 
+    /**
+     * 查询图表报表数据。
+     */
     @GetMapping("/reports")
     public ApiResponse<FuelReportsVO> reports(HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);

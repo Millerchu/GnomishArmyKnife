@@ -42,10 +42,18 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class FuelRecordService {
 
-    private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-    private static final BigDecimal ZERO_VOLUME = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-    private static final BigDecimal ZERO_ODOMETER = BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
-    private static final BigDecimal ZERO_UNIT_PRICE = BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP);
+    private static final int MONEY_SCALE = 2;
+    private static final int VOLUME_SCALE = 2;
+    private static final int ODOMETER_SCALE = 1;
+    private static final int UNIT_PRICE_SCALE = 3;
+    private static final int RECENT_RECORD_LIMIT = 4;
+    private static final int MONTH_REPORT_SIZE = 12;
+    private static final String DEFAULT_VEHICLE_NAME = "未命名车辆";
+    private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    private static final BigDecimal ZERO_VOLUME = BigDecimal.ZERO.setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
+    private static final BigDecimal ZERO_ODOMETER = BigDecimal.ZERO.setScale(ODOMETER_SCALE, RoundingMode.HALF_UP);
+    private static final BigDecimal ZERO_UNIT_PRICE = BigDecimal.ZERO.setScale(UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
+    private static final BigDecimal ZERO_CONSUMPTION = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final List<String> ALLOWED_FUEL_TYPES = List.of("92", "95", "98", "DIESEL");
     private static final List<String> ALLOWED_FILL_TYPES = List.of("FULL", "PARTIAL");
@@ -137,7 +145,7 @@ public class FuelRecordService {
         summary.setAverageConsumption(calculateAverageConsumption(records));
         summary.setCurrentMonthAmount(calculateCurrentMonthAmount(records));
         summary.setVehicleStats(buildVehicleStats(records));
-        summary.setRecentRecords(records.stream().limit(4).toList());
+        summary.setRecentRecords(records.stream().limit(RECENT_RECORD_LIMIT).toList());
         return summary;
     }
 
@@ -207,6 +215,10 @@ public class FuelRecordService {
         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "加油记录不存在");
     }
 
+    /**
+     * 按车辆和时间顺序补齐里程差、百公里油耗等派生字段。
+     * 页面直接消费计算后的结果，避免前后端口径不一致。
+     */
     private List<FuelRecordVO> buildDerivedRecords(List<FuelRecord> records) {
         List<FuelRecord> ascending = new ArrayList<>(records);
         ascending.sort(Comparator
@@ -245,6 +257,9 @@ public class FuelRecordService {
         return derived;
     }
 
+    /**
+     * 将数据库实体转换为视图对象，并统一金额与精度口径。
+     */
     private FuelRecordVO toRecordVO(FuelRecord item, BigDecimal distanceKm, BigDecimal fuelConsumption) {
         FuelRecordVO vo = new FuelRecordVO();
         vo.setId(item.getId());
@@ -267,25 +282,12 @@ public class FuelRecordService {
         return vo;
     }
 
-    private FuelSummaryVO emptySummary() {
-        FuelSummaryVO summary = new FuelSummaryVO();
-        summary.setTotalAmount(ZERO_MONEY);
-        summary.setTotalDiscountAmount(ZERO_MONEY);
-        summary.setTotalFuelVolume(ZERO_VOLUME);
-        summary.setAverageUnitPrice(ZERO_UNIT_PRICE);
-        summary.setAverageConsumption(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-        summary.setCurrentMonthAmount(ZERO_MONEY);
-        summary.setVehicleStats(List.of());
-        summary.setRecentRecords(List.of());
-        return summary;
-    }
-
     private BigDecimal sumDiscountedAmount(List<FuelRecordVO> records) {
         BigDecimal sum = BigDecimal.ZERO;
         for (FuelRecordVO item : records) {
             sum = sum.add(nullSafe(item.getDiscountedAmount()));
         }
-        return sum.setScale(2, RoundingMode.HALF_UP);
+        return sum.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal sumDiscountAmount(List<FuelRecordVO> records) {
@@ -293,7 +295,7 @@ public class FuelRecordService {
         for (FuelRecordVO item : records) {
             sum = sum.add(nullSafe(item.getDiscountAmount()));
         }
-        return sum.setScale(2, RoundingMode.HALF_UP);
+        return sum.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal sumFuelVolume(List<FuelRecordVO> records) {
@@ -301,7 +303,7 @@ public class FuelRecordService {
         for (FuelRecordVO item : records) {
             sum = sum.add(nullSafe(item.getFuelVolume()));
         }
-        return sum.setScale(2, RoundingMode.HALF_UP);
+        return sum.setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateAverageUnitPrice(List<FuelRecordVO> records) {
@@ -322,9 +324,9 @@ public class FuelRecordService {
             }
         }
         if (count == 0) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            return ZERO_CONSUMPTION;
         }
-        return sum.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+        return sum.divide(BigDecimal.valueOf(count), MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateCurrentMonthAmount(List<FuelRecordVO> records) {
@@ -339,18 +341,9 @@ public class FuelRecordService {
     }
 
     private List<FuelVehicleStatVO> buildVehicleStats(List<FuelRecordVO> records) {
-        class VehicleAccumulator {
-            private String vehicleName;
-            private BigDecimal totalAmount = BigDecimal.ZERO;
-            private BigDecimal totalDiscountAmount = BigDecimal.ZERO;
-            private BigDecimal totalFuelVolume = BigDecimal.ZERO;
-            private BigDecimal totalDistance = BigDecimal.ZERO;
-            private long recordCount = 0;
-        }
-
         Map<String, VehicleAccumulator> accumulatorMap = new LinkedHashMap<>();
         for (FuelRecordVO item : records) {
-            String vehicleName = StringUtils.hasText(item.getVehicleName()) ? item.getVehicleName() : "未命名车辆";
+            String vehicleName = StringUtils.hasText(item.getVehicleName()) ? item.getVehicleName() : DEFAULT_VEHICLE_NAME;
             VehicleAccumulator accumulator = accumulatorMap.computeIfAbsent(vehicleName, key -> {
                 VehicleAccumulator created = new VehicleAccumulator();
                 created.vehicleName = key;
@@ -367,16 +360,16 @@ public class FuelRecordService {
         for (VehicleAccumulator item : accumulatorMap.values()) {
             FuelVehicleStatVO vo = new FuelVehicleStatVO();
             vo.setVehicleName(item.vehicleName);
-            vo.setTotalAmount(item.totalAmount.setScale(2, RoundingMode.HALF_UP));
-            vo.setTotalDiscountAmount(item.totalDiscountAmount.setScale(2, RoundingMode.HALF_UP));
-            vo.setTotalFuelVolume(item.totalFuelVolume.setScale(2, RoundingMode.HALF_UP));
+            vo.setTotalAmount(item.totalAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+            vo.setTotalDiscountAmount(item.totalDiscountAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+            vo.setTotalFuelVolume(item.totalFuelVolume.setScale(VOLUME_SCALE, RoundingMode.HALF_UP));
             if (item.totalDistance.compareTo(BigDecimal.ZERO) > 0) {
                 vo.setAverageConsumption(item.totalFuelVolume
                         .divide(item.totalDistance, 6, RoundingMode.HALF_UP)
                         .multiply(HUNDRED)
-                        .setScale(2, RoundingMode.HALF_UP));
+                        .setScale(MONEY_SCALE, RoundingMode.HALF_UP));
             } else {
-                vo.setAverageConsumption(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+                vo.setAverageConsumption(ZERO_CONSUMPTION);
             }
             vo.setRecordCount(item.recordCount);
             result.add(vo);
@@ -386,10 +379,13 @@ public class FuelRecordService {
         return result;
     }
 
+    /**
+     * 生成当前年度 12 个月的月度报表，缺失月份补 0，方便前端直接画折线图。
+     */
     private List<FuelMonthlyReportItemVO> buildMonthlyReport(List<FuelRecordVO> records) {
         YearMonth currentYearMonth = YearMonth.of(LocalDate.now().getYear(), 1);
         List<FuelMonthlyReportItemVO> result = new ArrayList<>();
-        for (int monthOffset = 0; monthOffset < 12; monthOffset++) {
+        for (int monthOffset = 0; monthOffset < MONTH_REPORT_SIZE; monthOffset++) {
             YearMonth month = currentYearMonth.plusMonths(monthOffset);
             FuelMonthlyReportItemVO item = new FuelMonthlyReportItemVO();
             item.setLabel(month.atDay(1).format(MONTH_LABEL_FORMATTER));
@@ -402,13 +398,16 @@ public class FuelRecordService {
                     totalAmount = totalAmount.add(nullSafe(record.getDiscountedAmount()));
                 }
             }
-            item.setFuelVolume(fuelVolume.setScale(2, RoundingMode.HALF_UP));
-            item.setTotalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
+            item.setFuelVolume(fuelVolume.setScale(VOLUME_SCALE, RoundingMode.HALF_UP));
+            item.setTotalAmount(totalAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
             result.add(item);
         }
         return result;
     }
 
+    /**
+     * 生成年维度支出报表，供前端年趋势卡片直接消费。
+     */
     private List<FuelYearlyCostReportItemVO> buildYearlyReport(List<FuelRecordVO> records) {
         Map<String, FuelYearlyCostReportItemVO> resultMap = new LinkedHashMap<>();
         for (FuelRecordVO record : records) {
@@ -416,18 +415,23 @@ public class FuelRecordService {
             FuelYearlyCostReportItemVO item = resultMap.computeIfAbsent(yearLabel, key -> {
                 FuelYearlyCostReportItemVO created = new FuelYearlyCostReportItemVO();
                 created.setLabel(key);
-                created.setTotalAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-                created.setTotalFuelVolume(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+                created.setTotalAmount(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+                created.setTotalFuelVolume(BigDecimal.ZERO.setScale(VOLUME_SCALE, RoundingMode.HALF_UP));
                 return created;
             });
-            item.setTotalAmount(item.getTotalAmount().add(nullSafe(record.getDiscountedAmount())).setScale(2, RoundingMode.HALF_UP));
-            item.setTotalFuelVolume(item.getTotalFuelVolume().add(nullSafe(record.getFuelVolume())).setScale(2, RoundingMode.HALF_UP));
+            item.setTotalAmount(item.getTotalAmount().add(nullSafe(record.getDiscountedAmount()))
+                    .setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+            item.setTotalFuelVolume(item.getTotalFuelVolume().add(nullSafe(record.getFuelVolume()))
+                    .setScale(VOLUME_SCALE, RoundingMode.HALF_UP));
         }
         List<FuelYearlyCostReportItemVO> list = new ArrayList<>(resultMap.values());
         list.sort(Comparator.comparing(FuelYearlyCostReportItemVO::getLabel));
         return list;
     }
 
+    /**
+     * 统一校验并归一化前端入参，避免后续持久化层再出现重复判空和精度处理。
+     */
     private NormalizedFuelRecord normalizeRequest(SaveFuelRecordRequest request) {
         String vehicleName = request.getVehicleName().trim();
         String fuelType = request.getFuelType().trim().toUpperCase(Locale.ROOT);
@@ -439,19 +443,19 @@ public class FuelRecordService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fillType 非法");
         }
 
-        BigDecimal totalAmount = request.getTotalAmount().setScale(2, RoundingMode.HALF_UP);
-        BigDecimal discountedAmount = request.getDiscountedAmount().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalAmount = request.getTotalAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal discountedAmount = request.getDiscountedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         if (discountedAmount.compareTo(totalAmount) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "优惠后金额不能大于加油金额");
         }
 
-        BigDecimal fuelVolume = request.getFuelVolume().setScale(2, RoundingMode.HALF_UP);
-        BigDecimal odometerKm = request.getOdometerKm().setScale(1, RoundingMode.HALF_UP);
+        BigDecimal fuelVolume = request.getFuelVolume().setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
+        BigDecimal odometerKm = request.getOdometerKm().setScale(ODOMETER_SCALE, RoundingMode.HALF_UP);
         BigDecimal unitPrice = request.getUnitPrice();
         if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            unitPrice = discountedAmount.divide(fuelVolume, 3, RoundingMode.HALF_UP);
+            unitPrice = discountedAmount.divide(fuelVolume, UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
         } else {
-            unitPrice = unitPrice.setScale(3, RoundingMode.HALF_UP);
+            unitPrice = unitPrice.setScale(UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
         }
 
         return new NormalizedFuelRecord(
@@ -495,19 +499,19 @@ public class FuelRecordService {
     }
 
     private BigDecimal scaleMoney(BigDecimal value) {
-        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+        return (value == null ? BigDecimal.ZERO : value).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal scaleVolume(BigDecimal value) {
-        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+        return (value == null ? BigDecimal.ZERO : value).setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal scaleOdometer(BigDecimal value) {
-        return (value == null ? BigDecimal.ZERO : value).setScale(1, RoundingMode.HALF_UP);
+        return (value == null ? BigDecimal.ZERO : value).setScale(ODOMETER_SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal scaleUnitPrice(BigDecimal value) {
-        return (value == null ? BigDecimal.ZERO : value).setScale(3, RoundingMode.HALF_UP);
+        return (value == null ? BigDecimal.ZERO : value).setScale(UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
     }
 
     private record NormalizedFuelRecord(String vehicleName,
@@ -521,5 +525,18 @@ public class FuelRecordService {
                                         String fillType,
                                         String stationName,
                                         String note) {
+    }
+
+    /**
+     * 车辆统计聚合中间对象。
+     */
+    private static final class VehicleAccumulator {
+
+        private String vehicleName;
+        private BigDecimal totalAmount = BigDecimal.ZERO;
+        private BigDecimal totalDiscountAmount = BigDecimal.ZERO;
+        private BigDecimal totalFuelVolume = BigDecimal.ZERO;
+        private BigDecimal totalDistance = BigDecimal.ZERO;
+        private long recordCount = 0;
     }
 }
