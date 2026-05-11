@@ -67,6 +67,33 @@ CREATE TABLE IF NOT EXISTS gak_wow_character (
 
 ALTER TABLE gak_wow_character ADD COLUMN IF NOT EXISTS mythic_dungeon_name VARCHAR(32);
 
+CREATE TABLE IF NOT EXISTS gak_personal_bill (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    bill_type VARCHAR(16) NOT NULL,
+    category_name VARCHAR(64) NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    account_name VARCHAR(64),
+    payment_method VARCHAR(64),
+    merchant_name VARCHAR(96),
+    bill_date DATE NOT NULL,
+    note VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_personal_budget (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    budget_year INTEGER NOT NULL,
+    category_name VARCHAR(64) NOT NULL,
+    annual_limit NUMERIC(12, 2) NOT NULL,
+    alert_threshold NUMERIC(4, 2) NOT NULL,
+    note VARCHAR(120),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gak_todo_item (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -249,6 +276,10 @@ CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wow_character_owner_sort ON gak_wow_character (owner_user_id, item_level DESC, mythic_score DESC);
+CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (owner_user_id, bill_date DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
+CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_personal_budget_owner_year_category ON gak_personal_budget (owner_user_id, budget_year, category_name);
 CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_step_task_sort ON gak_todo_item_step (task_id, sort_no);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_system_app_code ON gak_system_app (app_code);
@@ -370,7 +401,7 @@ INSERT INTO gak_system_app (
     (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'REAL', 'URL', NULL, '待办', '/app-icons/app-todo-list.png', 'PUBLIC_ASSET', 'app-todo-list.png', 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'REAL', 'URL', NULL, '油耗', '/app-icons/app-fuel-stats.png', 'PUBLIC_ASSET', 'app-fuel-stats.png', 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'REAL', 'URL', NULL, '魔兽', '/app-icons/app-wow-character.png', 'PUBLIC_ASSET', 'app-wow-character.png', 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'DEMO', 'URL', NULL, '账单', '/app-icons/app-personal-bills.png', 'PUBLIC_ASSET', 'app-personal-bills.png', 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'REAL', 'URL', NULL, '账单', '/app-icons/app-personal-bills.png', 'PUBLIC_ASSET', 'app-personal-bills.png', 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'DEMO', 'URL', NULL, '经验', '/app-icons/app-knowledge-base.png', 'PUBLIC_ASSET', 'app-knowledge-base.png', 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'DEMO', 'URL', NULL, '软件', '/app-icons/app-software-repo.png', 'PUBLIC_ASSET', 'app-software-repo.png', 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'DEMO', 'URL', NULL, '健康', '/app-icons/app-health-record.png', 'PUBLIC_ASSET', 'app-health-record.png', 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
@@ -543,6 +574,48 @@ WHERE admin_user.username = 'admin'
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary dictionary
     WHERE dictionary.dict_code = 'WORK_LOG_PROJECT' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5008, 'PERSONAL_BILLS_BILL_CATEGORY', '个人账单分类', 'ENABLED', '["个人账单"]', '个人账单收支分类选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'PERSONAL_BILLS_BILL_CATEGORY' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', '个人预算分类', 'ENABLED', '["个人账单"]', '年度预算分类选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'PERSONAL_BILLS_BUDGET_CATEGORY' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5010, 'PERSONAL_BILLS_PAYMENT_METHOD', '个人账单支付方式', 'ENABLED', '["个人账单"]', '个人账单支付方式选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'PERSONAL_BILLS_PAYMENT_METHOD' AND dictionary.deleted = FALSE
   );
 
 INSERT INTO gak_data_dictionary (
@@ -861,6 +934,237 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FA
     WHERE item.dictionary_id = 5006 AND item.item_code = 'end_to_end' AND item.deleted = FALSE
   );
 
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5701, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'food', '餐饮', '餐饮', 1, 'ENABLED', TRUE, '日常餐饮支出', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'food' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5702, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'transport', '交通', '交通', 2, 'ENABLED', FALSE, '公共交通与出行', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'transport' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5703, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'housing', '居家', '居家', 3, 'ENABLED', FALSE, '居家日用与家清', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'housing' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5704, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'entertainment', '娱乐', '娱乐', 4, 'ENABLED', FALSE, '游戏影音与聚会', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'entertainment' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5705, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'digital', '数码', '数码', 5, 'ENABLED', FALSE, '电子设备与配件', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'digital' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5706, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'learning', '学习', '学习', 6, 'ENABLED', FALSE, '课程书籍与培训', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'learning' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5707, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'travel', '旅行', '旅行', 7, 'ENABLED', FALSE, '差旅与旅游相关', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'travel' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5708, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'salary', '工资', '工资', 8, 'ENABLED', FALSE, '固定工资收入', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'salary' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5709, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'bonus', '奖金', '奖金', 9, 'ENABLED', FALSE, '绩效与奖金收入', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5008 AND item.item_code = 'bonus' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5711, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'food', '餐饮', '餐饮', 1, 'ENABLED', TRUE, '餐饮预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'food' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5712, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'transport', '交通', '交通', 2, 'ENABLED', FALSE, '交通预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'transport' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5713, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'housing', '居家', '居家', 3, 'ENABLED', FALSE, '居家预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'housing' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5714, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'entertainment', '娱乐', '娱乐', 4, 'ENABLED', FALSE, '娱乐预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'entertainment' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5715, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'digital', '数码', '数码', 5, 'ENABLED', FALSE, '数码预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'digital' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5716, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'learning', '学习', '学习', 6, 'ENABLED', FALSE, '学习预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'learning' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5717, 5009, 'PERSONAL_BILLS_BUDGET_CATEGORY', 'travel', '旅行', '旅行', 7, 'ENABLED', FALSE, '旅行预算', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5009 AND item.item_code = 'travel' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5721, 5010, 'PERSONAL_BILLS_PAYMENT_METHOD', 'alipay', '支付宝', '支付宝', 1, 'ENABLED', TRUE, '支付宝支付', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5010 AND item.item_code = 'alipay' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5722, 5010, 'PERSONAL_BILLS_PAYMENT_METHOD', 'wechat_pay', '微信支付', '微信支付', 2, 'ENABLED', FALSE, '微信支付', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5010 AND item.item_code = 'wechat_pay' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5723, 5010, 'PERSONAL_BILLS_PAYMENT_METHOD', 'bank_card', '银行卡', '银行卡', 3, 'ENABLED', FALSE, '银行卡刷卡或线上支付', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5010 AND item.item_code = 'bank_card' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5724, 5010, 'PERSONAL_BILLS_PAYMENT_METHOD', 'bank_transfer', '银行转账', '银行转账', 4, 'ENABLED', FALSE, '工资或转账入账', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5010 AND item.item_code = 'bank_transfer' AND item.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5725, 5010, 'PERSONAL_BILLS_PAYMENT_METHOD', 'cash', '现金', '现金', 5, 'ENABLED', FALSE, '线下现金支付', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5010 AND item.item_code = 'cash' AND item.deleted = FALSE
+  );
+
 INSERT INTO gak_data_dictionary_usage (
     id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
     biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
@@ -917,6 +1221,123 @@ WHERE dictionary.dict_code = 'WORK_LOG_LOCATION'
       AND usage.module_code = 'WORK_LOG'
       AND usage.biz_field_code = 'location'
   );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001041, 'PERSONAL_BILLS_BILL_CATEGORY', dictionary.id, 'APP_PERSONAL_BILLS', '个人账单', 'PERSONAL_BILLS', '个人账单',
+    'categoryName', '账单分类', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PERSONAL_BILLS_BILL_CATEGORY'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_PERSONAL_BILLS'
+      AND usage.module_code = 'PERSONAL_BILLS'
+      AND usage.biz_field_code = 'categoryName'
+  );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001042, 'PERSONAL_BILLS_BUDGET_CATEGORY', dictionary.id, 'APP_PERSONAL_BILLS', '个人账单', 'PERSONAL_BILLS', '个人账单',
+    'budgetCategoryName', '预算分类', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PERSONAL_BILLS_BUDGET_CATEGORY'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_PERSONAL_BILLS'
+      AND usage.module_code = 'PERSONAL_BILLS'
+      AND usage.biz_field_code = 'budgetCategoryName'
+  );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001043, 'PERSONAL_BILLS_PAYMENT_METHOD', dictionary.id, 'APP_PERSONAL_BILLS', '个人账单', 'PERSONAL_BILLS', '个人账单',
+    'paymentMethod', '支付方式', 'FORM_FIELD', 'ITEM_VALUE', FALSE, FALSE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PERSONAL_BILLS_PAYMENT_METHOD'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_PERSONAL_BILLS'
+      AND usage.module_code = 'PERSONAL_BILLS'
+      AND usage.biz_field_code = 'paymentMethod'
+  );
+
+INSERT INTO gak_personal_budget (
+    id, owner_user_id, budget_year, category_name, annual_limit, alert_threshold,
+    note, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7301, 900000000000000001, 2026, '餐饮', 15000.00, 0.80, '控制外食与聚餐支出。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7302, 900000000000000001, 2026, '交通', 6000.00, 0.85, '通勤和打车统一计入。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7303, 900000000000000001, 2026, '居家', 8000.00, 0.80, '家清与生活用品预算。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7304, 900000000000000001, 2026, '娱乐', 5000.00, 0.75, '游戏与影音订阅。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7305, 900000000000000001, 2026, '数码', 12000.00, 0.70, '设备和外设统一预算。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7306, 900000000000000001, 2026, '学习', 4000.00, 0.80, '课程和书籍预算。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7307, 900000000000000001, 2026, '旅行', 10000.00, 0.70, '年度出游专项预算。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_budgets (
+    id, owner_user_id, budget_year, category_name, annual_limit, alert_threshold,
+    note, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    budget_year = EXCLUDED.budget_year,
+    category_name = EXCLUDED.category_name,
+    annual_limit = EXCLUDED.annual_limit,
+    alert_threshold = EXCLUDED.alert_threshold,
+    note = EXCLUDED.note,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_personal_bill (
+    id, owner_user_id, bill_type, category_name, amount, account_name, payment_method,
+    merchant_name, bill_date, note, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7401, 900000000000000001, 'INCOME', '工资', 18500.00, '招商银行卡', '银行转账', '工资入账', DATE '2026-05-05', '5 月工资', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7402, 900000000000000001, 'EXPENSE', '餐饮', 86.00, '招商银行卡', '支付宝', '盒马鲜生', DATE '2026-05-06', '工作日晚餐和水果。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7403, 900000000000000001, 'EXPENSE', '交通', 42.00, '微信零钱', '微信支付', '滴滴出行', DATE '2026-05-07', '加班回家打车。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7404, 900000000000000001, 'EXPENSE', '居家', 236.00, '招商银行卡', '支付宝', '京东', DATE '2026-05-08', '洗衣液和厨房清洁用品。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7405, 900000000000000001, 'EXPENSE', '娱乐', 128.00, '微信零钱', '微信支付', 'Steam', DATE '2026-05-09', '周末游戏折扣购买。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7406, 900000000000000001, 'EXPENSE', '数码', 699.00, '招商银行卡', '银行卡', 'Apple', DATE '2026-05-10', '补购配件。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7407, 900000000000000001, 'EXPENSE', '学习', 299.00, '支付宝余额', '支付宝', '极客时间', DATE '2026-05-11', '课程续费。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7408, 900000000000000001, 'INCOME', '奖金', 3200.00, '招商银行卡', '银行转账', '项目奖金', DATE '2026-04-20', '阶段奖金入账。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7409, 900000000000000001, 'EXPENSE', '旅行', 1260.00, '招商银行卡', '银行卡', '携程', DATE '2026-04-27', '端午前行程预订。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7410, 900000000000000001, 'EXPENSE', '餐饮', 68.00, '招商银行卡', '支付宝', '瑞幸咖啡', DATE '2026-04-29', '下午茶和简餐。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_bills (
+    id, owner_user_id, bill_type, category_name, amount, account_name, payment_method,
+    merchant_name, bill_date, note, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    bill_type = EXCLUDED.bill_type,
+    category_name = EXCLUDED.category_name,
+    amount = EXCLUDED.amount,
+    account_name = EXCLUDED.account_name,
+    payment_method = EXCLUDED.payment_method,
+    merchant_name = EXCLUDED.merchant_name,
+    bill_date = EXCLUDED.bill_date,
+    note = EXCLUDED.note,
+    updated_at = EXCLUDED.updated_at;
 
 INSERT INTO gak_user_app_permission (
     id, user_id, app_id, app_code, granted, granted_by, granted_at, remark, created_at, updated_at
