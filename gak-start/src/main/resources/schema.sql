@@ -364,17 +364,17 @@ INSERT INTO gak_system_app (
     icon_storage_type, icon_file_name, security_level, encryption_mode, enabled, sort_no,
     description, remark, created_at, updated_at
 ) VALUES
-    (2001, 'APP_CALCULATOR', '计算器', '/calculator', '效率工具', 'DEMO', 'TEXT', NULL, '计算', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 10, '日常数值计算与公式换算。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2002, 'APP_WORK_LOG', '工作日志', '/work-log', '办公协作', 'REAL', 'TEXT', NULL, '日志', NULL, NULL, NULL, 'INTERNAL', 'FIELD', TRUE, 20, '记录每日工作内容、工时与项目投入。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2003, 'APP_PASSWORD_MEMO', '密码备忘录', '/password-memo', '安全工具', 'REAL', 'TEXT', NULL, '密码', NULL, NULL, NULL, 'CONFIDENTIAL', 'END_TO_END', TRUE, 30, '集中管理账号密码并做受控查看。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'REAL', 'TEXT', NULL, '待办', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'REAL', 'TEXT', NULL, '油耗', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'REAL', 'TEXT', NULL, '魔兽', NULL, NULL, NULL, 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'DEMO', 'TEXT', NULL, '账单', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'DEMO', 'TEXT', NULL, '经验', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'DEMO', 'TEXT', NULL, '软件', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'DEMO', 'TEXT', NULL, '健康', NULL, NULL, NULL, 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2011, 'APP_DATA_DICTIONARY', '数据字典', '/data-dictionary', '系统管理', 'REAL', 'TEXT', NULL, '字典', NULL, NULL, NULL, 'INTERNAL', 'NONE', TRUE, 110, '维护系统可配置选项与字典项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (2001, 'APP_CALCULATOR', '计算器', '/calculator', '效率工具', 'DEMO', 'URL', NULL, '计算', '/app-icons/app-calculator.png', 'PUBLIC_ASSET', 'app-calculator.png', 'PUBLIC', 'NONE', TRUE, 10, '日常数值计算与公式换算。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2002, 'APP_WORK_LOG', '工作日志', '/work-log', '办公协作', 'REAL', 'URL', NULL, '日志', '/app-icons/app-work-log.png', 'PUBLIC_ASSET', 'app-work-log.png', 'INTERNAL', 'FIELD', TRUE, 20, '记录每日工作内容、工时与项目投入。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2003, 'APP_PASSWORD_MEMO', '密码备忘录', '/password-memo', '安全工具', 'REAL', 'URL', NULL, '密码', '/app-icons/app-password-memo.png', 'PUBLIC_ASSET', 'app-password-memo.png', 'CONFIDENTIAL', 'END_TO_END', TRUE, 30, '集中管理账号密码并做受控查看。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2004, 'APP_TODO_LIST', '待办列表', '/todo-list', '效率工具', 'REAL', 'URL', NULL, '待办', '/app-icons/app-todo-list.png', 'PUBLIC_ASSET', 'app-todo-list.png', 'INTERNAL', 'NONE', TRUE, 40, '管理个人待办、我的一天和重要事项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'REAL', 'URL', NULL, '油耗', '/app-icons/app-fuel-stats.png', 'PUBLIC_ASSET', 'app-fuel-stats.png', 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'REAL', 'URL', NULL, '魔兽', '/app-icons/app-wow-character.png', 'PUBLIC_ASSET', 'app-wow-character.png', 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'DEMO', 'URL', NULL, '账单', '/app-icons/app-personal-bills.png', 'PUBLIC_ASSET', 'app-personal-bills.png', 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'DEMO', 'URL', NULL, '经验', '/app-icons/app-knowledge-base.png', 'PUBLIC_ASSET', 'app-knowledge-base.png', 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'DEMO', 'URL', NULL, '软件', '/app-icons/app-software-repo.png', 'PUBLIC_ASSET', 'app-software-repo.png', 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'DEMO', 'URL', NULL, '健康', '/app-icons/app-health-record.png', 'PUBLIC_ASSET', 'app-health-record.png', 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2011, 'APP_DATA_DICTIONARY', '数据字典', '/data-dictionary', '系统管理', 'REAL', 'URL', NULL, '字典', '/app-icons/app-data-dictionary.png', 'PUBLIC_ASSET', 'app-data-dictionary.png', 'INTERNAL', 'NONE', TRUE, 110, '维护系统可配置选项与字典项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (app_code) DO UPDATE SET
     app_name = EXCLUDED.app_name,
     route_path = EXCLUDED.route_path,
