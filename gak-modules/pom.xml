@@ -28,6 +28,8 @@
         <module>gak-data-migration</module>
         <module>gak-fuel-stats</module>
         <module>gak-personal-bills</module>
+        <module>gak-health-record</module>
+        <module>gak-knowledge-base</module>
     </modules>
 
 </project>

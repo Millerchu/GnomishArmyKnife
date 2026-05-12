@@ -94,6 +94,78 @@ CREATE TABLE IF NOT EXISTS gak_personal_budget (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_health_record (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    measure_date DATE NOT NULL,
+    height_cm NUMERIC(6, 1),
+    weight_kg NUMERIC(6, 1),
+    body_fat_rate NUMERIC(5, 1),
+    systolic_pressure INTEGER,
+    diastolic_pressure INTEGER,
+    total_cholesterol NUMERIC(6, 2),
+    triglycerides NUMERIC(6, 2),
+    hdl_cholesterol NUMERIC(6, 2),
+    ldl_cholesterol NUMERIC(6, 2),
+    fasting_glucose NUMERIC(6, 2),
+    heart_rate INTEGER,
+    uric_acid INTEGER,
+    alanine_aminotransferase INTEGER,
+    aspartate_aminotransferase INTEGER,
+    gamma_glutamyl_transferase INTEGER,
+    note VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_health_visit (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    visit_date DATE NOT NULL,
+    hospital_name VARCHAR(64) NOT NULL,
+    department_name VARCHAR(64),
+    doctor_name VARCHAR(64),
+    visit_type VARCHAR(24),
+    chief_complaint VARCHAR(240),
+    diagnosis_summary VARCHAR(500),
+    treatment_plan VARCHAR(500),
+    doctor_advice VARCHAR(500),
+    case_record_file_name VARCHAR(255),
+    case_record_url VARCHAR(255),
+    note VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_health_report (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    visit_id BIGINT,
+    exam_date DATE NOT NULL,
+    hospital_name VARCHAR(64),
+    report_title VARCHAR(64) NOT NULL,
+    summary VARCHAR(240),
+    doctor_advice VARCHAR(240),
+    report_file_name VARCHAR(255),
+    report_url VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_knowledge_entry (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    title VARCHAR(64) NOT NULL,
+    category_name VARCHAR(32) NOT NULL,
+    scenario VARCHAR(80) NOT NULL,
+    source_name VARCHAR(80),
+    tags_text VARCHAR(255),
+    summary VARCHAR(180) NOT NULL,
+    content VARCHAR(2000) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gak_todo_item (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -280,6 +352,12 @@ CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (ow
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_personal_budget_owner_year_category ON gak_personal_budget (owner_user_id, budget_year, category_name);
+CREATE INDEX IF NOT EXISTS idx_health_record_owner_measure_date ON gak_health_record (owner_user_id, measure_date DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_visit_owner_visit_date ON gak_health_visit (owner_user_id, visit_date DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_report_owner_exam_date ON gak_health_report (owner_user_id, exam_date DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_report_owner_visit_id ON gak_health_report (owner_user_id, visit_id, exam_date DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_updated_at ON gak_knowledge_entry (owner_user_id, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_category ON gak_knowledge_entry (owner_user_id, category_name, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_step_task_sort ON gak_todo_item_step (task_id, sort_no);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_system_app_code ON gak_system_app (app_code);
@@ -402,9 +480,9 @@ INSERT INTO gak_system_app (
     (2005, 'APP_FUEL_STATS', '油耗统计', '/fuel-stats', '生活管理', 'REAL', 'URL', NULL, '油耗', '/app-icons/app-fuel-stats.png', 'PUBLIC_ASSET', 'app-fuel-stats.png', 'PUBLIC', 'NONE', TRUE, 50, '记录车辆油耗与加油成本趋势。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2006, 'APP_WOW_CHARACTER', 'WoW角色统计', '/wow-character-stats', '娱乐收藏', 'REAL', 'URL', NULL, '魔兽', '/app-icons/app-wow-character.png', 'PUBLIC_ASSET', 'app-wow-character.png', 'PUBLIC', 'NONE', TRUE, 60, '维护角色装等、大秘境和职业分布。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2007, 'APP_PERSONAL_BILLS', '个人账单', '/personal-bills', '财务管理', 'REAL', 'URL', NULL, '账单', '/app-icons/app-personal-bills.png', 'PUBLIC_ASSET', 'app-personal-bills.png', 'CONFIDENTIAL', 'FIELD', TRUE, 70, '汇总个人收支、预算与消费明细。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'DEMO', 'URL', NULL, '经验', '/app-icons/app-knowledge-base.png', 'PUBLIC_ASSET', 'app-knowledge-base.png', 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'REAL', 'URL', NULL, '经验', '/app-icons/app-knowledge-base.png', 'PUBLIC_ASSET', 'app-knowledge-base.png', 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'DEMO', 'URL', NULL, '软件', '/app-icons/app-software-repo.png', 'PUBLIC_ASSET', 'app-software-repo.png', 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'DEMO', 'URL', NULL, '健康', '/app-icons/app-health-record.png', 'PUBLIC_ASSET', 'app-health-record.png', 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'REAL', 'URL', NULL, '健康', '/app-icons/app-health-record.png', 'PUBLIC_ASSET', 'app-health-record.png', 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2011, 'APP_DATA_DICTIONARY', '数据字典', '/data-dictionary', '系统管理', 'REAL', 'URL', NULL, '字典', '/app-icons/app-data-dictionary.png', 'PUBLIC_ASSET', 'app-data-dictionary.png', 'INTERNAL', 'NONE', TRUE, 110, '维护系统可配置选项与字典项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (app_code) DO UPDATE SET
     app_name = EXCLUDED.app_name,
@@ -1337,6 +1415,139 @@ ON CONFLICT (id) DO UPDATE SET
     merchant_name = EXCLUDED.merchant_name,
     bill_date = EXCLUDED.bill_date,
     note = EXCLUDED.note,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_health_record (
+    id, owner_user_id, measure_date, height_cm, weight_kg, body_fat_rate,
+    systolic_pressure, diastolic_pressure, total_cholesterol, triglycerides,
+    hdl_cholesterol, ldl_cholesterol, fasting_glucose, heart_rate, uric_acid,
+    alanine_aminotransferase, aspartate_aminotransferase, gamma_glutamyl_transferase,
+    note, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7501, 900000000000000001, DATE '2026-01-15', 175.0, 78.8, 23.1, 129, 85, 5.52, 1.96, 1.08, 3.45, 5.31, 76, 462, 54, 38, 75, '年初熬夜较多。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7502, 900000000000000001, DATE '2026-02-12', 175.0, 77.9, 22.4, 125, 82, 5.34, 1.74, 1.11, 3.28, 5.18, 74, 448, 46, 34, 69, '恢复晨练。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7503, 900000000000000001, DATE '2026-03-09', 175.0, 76.9, 21.8, 122, 80, 5.12, 1.58, 1.16, 3.14, 5.02, 72, 431, 38, 31, 61, '控制夜宵。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7504, 900000000000000001, DATE '2026-04-06', 175.0, 76.1, 21.1, 120, 79, 4.95, 1.42, 1.19, 3.02, 4.96, 71, 418, 33, 29, 55, '体检前一周规律作息。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7505, 900000000000000001, DATE '2026-04-28', 175.0, 75.6, 20.6, 118, 78, 4.86, 1.31, 1.22, 2.96, 4.90, 69, 402, 29, 27, 49, '复查指标继续改善。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7506, 900000000000000001, DATE '2026-05-10', 175.0, 75.2, 20.2, 117, 77, 4.79, 1.24, 1.25, 2.89, 4.87, 68, 396, 27, 25, 45, '晨起空腹测量。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_health_records (
+    id, owner_user_id, measure_date, height_cm, weight_kg, body_fat_rate,
+    systolic_pressure, diastolic_pressure, total_cholesterol, triglycerides,
+    hdl_cholesterol, ldl_cholesterol, fasting_glucose, heart_rate, uric_acid,
+    alanine_aminotransferase, aspartate_aminotransferase, gamma_glutamyl_transferase,
+    note, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    measure_date = EXCLUDED.measure_date,
+    height_cm = EXCLUDED.height_cm,
+    weight_kg = EXCLUDED.weight_kg,
+    body_fat_rate = EXCLUDED.body_fat_rate,
+    systolic_pressure = EXCLUDED.systolic_pressure,
+    diastolic_pressure = EXCLUDED.diastolic_pressure,
+    total_cholesterol = EXCLUDED.total_cholesterol,
+    triglycerides = EXCLUDED.triglycerides,
+    hdl_cholesterol = EXCLUDED.hdl_cholesterol,
+    ldl_cholesterol = EXCLUDED.ldl_cholesterol,
+    fasting_glucose = EXCLUDED.fasting_glucose,
+    heart_rate = EXCLUDED.heart_rate,
+    uric_acid = EXCLUDED.uric_acid,
+    alanine_aminotransferase = EXCLUDED.alanine_aminotransferase,
+    aspartate_aminotransferase = EXCLUDED.aspartate_aminotransferase,
+    gamma_glutamyl_transferase = EXCLUDED.gamma_glutamyl_transferase,
+    note = EXCLUDED.note,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_health_visit (
+    id, owner_user_id, visit_date, hospital_name, department_name, doctor_name, visit_type,
+    chief_complaint, diagnosis_summary, treatment_plan, doctor_advice,
+    case_record_file_name, case_record_url, note, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7601, 900000000000000001, DATE '2026-02-20', '市人民医院', '消化内科', '张医生', 'OUTPATIENT', '近期体检提示转氨酶偏高，来院复诊。', '考虑轻度脂肪肝伴肝功能轻度异常。', '建议继续减重，配合肝胆彩超和肝功能复查。', '减少夜宵与饮酒，8 周后复查。', NULL, NULL, '复诊记录。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7602, 900000000000000001, DATE '2026-03-18', '市人民医院', '风湿免疫科', '李医生', 'OUTPATIENT', '尿酸偏高，近期脚趾偶发酸胀。', '高尿酸血症，暂未见明确急性痛风发作。', '先饮食控制并增加饮水量，必要时药物干预。', '减少高嘌呤摄入，1 个月后复查尿酸。', NULL, NULL, '结合年度体检结果随访。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7603, 900000000000000001, DATE '2026-04-09', '市体检中心', '健康管理中心', '王医生', 'FOLLOW_UP', '年度体检后复盘异常指标。', '总体较上年改善，血脂与肝功能已回落。', '维持运动频率和体重控制。', '半年后复查血脂、血压。', NULL, NULL, '体检总检回访。', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_health_visits (
+    id, owner_user_id, visit_date, hospital_name, department_name, doctor_name, visit_type,
+    chief_complaint, diagnosis_summary, treatment_plan, doctor_advice,
+    case_record_file_name, case_record_url, note, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    visit_date = EXCLUDED.visit_date,
+    hospital_name = EXCLUDED.hospital_name,
+    department_name = EXCLUDED.department_name,
+    doctor_name = EXCLUDED.doctor_name,
+    visit_type = EXCLUDED.visit_type,
+    chief_complaint = EXCLUDED.chief_complaint,
+    diagnosis_summary = EXCLUDED.diagnosis_summary,
+    treatment_plan = EXCLUDED.treatment_plan,
+    doctor_advice = EXCLUDED.doctor_advice,
+    case_record_file_name = EXCLUDED.case_record_file_name,
+    case_record_url = EXCLUDED.case_record_url,
+    note = EXCLUDED.note,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_health_report (
+    id, owner_user_id, visit_id, exam_date, hospital_name, report_title,
+    summary, doctor_advice, report_file_name, report_url, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7701, 900000000000000001, NULL, DATE '2026-02-18', '市体检中心', '2026 年度体检报告', '体重、血脂较上年改善，肝功能和尿酸仍需继续观察。', '继续控制饮食并定期复查。', NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7702, 900000000000000001, 7601, DATE '2026-02-20', '市人民医院', '肝功能复查', 'ALT、GGT 较年初下降，趋势向好。', '维持减重和作息管理。', NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7703, 900000000000000001, 7602, DATE '2026-03-18', '市人民医院', '尿酸复查', '尿酸仍高于理想区间，但较前次有所回落。', '增加饮水量并继续饮食控制。', NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (7704, 900000000000000001, 7603, DATE '2026-04-09', '市体检中心', '总检回访摘要', '核心风险项均较去年改善，继续保持。', '半年后安排常规复查。', NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_health_reports (
+    id, owner_user_id, visit_id, exam_date, hospital_name, report_title,
+    summary, doctor_advice, report_file_name, report_url, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    visit_id = EXCLUDED.visit_id,
+    exam_date = EXCLUDED.exam_date,
+    hospital_name = EXCLUDED.hospital_name,
+    report_title = EXCLUDED.report_title,
+    summary = EXCLUDED.summary,
+    doctor_advice = EXCLUDED.doctor_advice,
+    report_file_name = EXCLUDED.report_file_name,
+    report_url = EXCLUDED.report_url,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO gak_knowledge_entry (
+    id, owner_user_id, title, category_name, scenario, source_name, tags_text,
+    summary, content, created_at, updated_at
+)
+SELECT *
+FROM (
+    VALUES
+        (7801, 900000000000000001, '需求评审先写“本期不做什么”', '工作', '需求评审 / 项目启动', '项目复盘', '需求,边界,沟通', '先把不做的范围说清楚，能显著降低后续返工。', '评审时先列出当前版本明确不做的功能、依赖前提和风险点，比只讲要做什么更容易对齐边界，后续也更少扯皮。', TIMESTAMP '2026-03-10 21:36:00', TIMESTAMP '2026-03-10 21:36:00'),
+        (7802, 900000000000000001, '复杂问题先做最小验证闭环', '工作', '技术排查 / 系统改造', '线上故障处理', '开发,排查,验证', '越复杂的问题越不能一次改太多变量。', '先找一条最小可验证路径，例如只替换一处接口返回或只改一个状态流，能快速判断方向是否正确，避免在错误路径上投入过多时间。', TIMESTAMP '2026-03-07 17:24:00', TIMESTAMP '2026-03-07 17:24:00'),
+        (7803, 900000000000000001, '囤货前先换算单位价格', '生活', '家庭采购 / 囤货', '消费复盘', '采购,预算,生活', '不要只看满减和大包装，先看每 100g 或每件单价。', '纸巾、洗衣液、米面粮油这类长期消耗品，统一换算到单位价格后再决定是否囤货，能避免“买便宜了但囤多了”的误判。', TIMESTAMP '2026-03-08 09:42:00', TIMESTAMP '2026-03-08 09:42:00'),
+        (7804, 900000000000000001, '晨间固定动作比宏大计划更稳定', '生活', '习惯养成 / 精力管理', '个人实践', '习惯,自律,健康', '每天稳定做少量动作，比复杂计划更能长期坚持。', '把早晨前 30 分钟固定成喝水、拉伸、列 3 个重点任务这类低摩擦动作，更容易形成长期稳定的正反馈。', TIMESTAMP '2026-03-06 08:12:00', TIMESTAMP '2026-03-06 08:12:00'),
+        (7805, 900000000000000001, '软件安装包统一带版本和平台', '工具', '软件归档 / 文件管理', '软件仓库整理', '文件管理,软件,规范', '命名统一后，后续检索和分发会轻松很多。', '建议统一成“软件名_版本号_平台_补充信息”的命名模式，后续做检索、同步和自动扫描时会省掉大量确认成本。', TIMESTAMP '2026-03-05 22:18:00', TIMESTAMP '2026-03-05 22:18:00'),
+        (7806, 900000000000000001, '记账时把固定支出单独看', '财务', '记账 / 预算复盘', '个人账单复盘', '记账,预算,复盘', '先拆出固定支出，才容易看清真正可优化的部分。', '房租、订阅、通勤等固定支出先单列，再看餐饮、购物、娱乐这些弹性支出，才能区分结构性问题和临时波动。', TIMESTAMP '2026-03-04 20:41:00', TIMESTAMP '2026-03-04 20:41:00'),
+        (7807, 900000000000000001, '学新东西时主动找反例', '学习', '学习新工具 / 新方法', '长期自学总结', '学习,方法论,边界', '除了看成功案例，也要主动找不适用场景。', '只看正例很容易高估方法的通用性，反例能更快帮助建立边界感，也更利于迁移到真实问题里。', TIMESTAMP '2026-03-03 19:55:00', TIMESTAMP '2026-03-03 19:55:00'),
+        (7808, 900000000000000001, '健康指标先看趋势再看单次异常', '健康', '体检复盘 / 日常自查', '个人健康记录', '健康,体检,复查', '单次异常值要结合趋势和上下文一起判断。', '血脂、尿酸、转氨酶这类指标不要只盯一次结果，更要结合近几次复查趋势、饮食作息和近期状态一起看，才更接近真实结论。', TIMESTAMP '2026-03-02 18:20:00', TIMESTAMP '2026-03-02 18:20:00')
+) AS seeded_knowledge_entries (
+    id, owner_user_id, title, category_name, scenario, source_name, tags_text,
+    summary, content, created_at, updated_at
+)
+ON CONFLICT (id) DO UPDATE SET
+    owner_user_id = EXCLUDED.owner_user_id,
+    title = EXCLUDED.title,
+    category_name = EXCLUDED.category_name,
+    scenario = EXCLUDED.scenario,
+    source_name = EXCLUDED.source_name,
+    tags_text = EXCLUDED.tags_text,
+    summary = EXCLUDED.summary,
+    content = EXCLUDED.content,
     updated_at = EXCLUDED.updated_at;
 
 INSERT INTO gak_user_app_permission (
