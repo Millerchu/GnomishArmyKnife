@@ -80,6 +80,7 @@ class DataDictionaryServiceTest {
 
         assertEquals(2, result.list().size());
         assertEquals(2, result.list().get(0).getItemCount());
+        assertEquals("PUBLIC", result.list().get(0).getDictScope());
         assertIterableEquals(List.of("工作日志"), result.list().get(0).getReferenceApps());
     }
 
@@ -98,6 +99,7 @@ class DataDictionaryServiceTest {
         ArgumentCaptor<DataDictionary> captor = ArgumentCaptor.forClass(DataDictionary.class);
         verify(dataDictionaryMapper).insert(captor.capture());
         assertEquals("WORK_LOG_TYPE", captor.getValue().getDictCode());
+        assertEquals("PUBLIC", captor.getValue().getDictScope());
         assertEquals("系统管理员", captor.getValue().getCreatorName());
         assertIterableEquals(List.of("工作日志"), result.getReferenceApps());
     }
@@ -194,6 +196,7 @@ class DataDictionaryServiceTest {
         dictionary.setId(id);
         dictionary.setDictCode(dictCode);
         dictionary.setDictName(dictName);
+        dictionary.setDictScope("PUBLIC");
         dictionary.setStatus("ENABLED");
         dictionary.setReferenceAppsJson("[\"工作日志\"]");
         dictionary.setDescription("说明");
@@ -226,6 +229,7 @@ class DataDictionaryServiceTest {
         SaveDataDictionaryRequest request = new SaveDataDictionaryRequest();
         request.setDictCode("WORK_LOG_TYPE");
         request.setDictName("工作日志类型");
+        request.setDictScope("PUBLIC");
         request.setStatus("ENABLED");
         request.setEnabled(true);
         request.setReferenceApps(List.of("工作日志"));

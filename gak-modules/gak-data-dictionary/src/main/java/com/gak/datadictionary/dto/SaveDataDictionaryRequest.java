@@ -17,6 +17,9 @@ public class SaveDataDictionaryRequest {
     @Size(max = 64, message = "dictName 长度不能超过 64")
     private String dictName;
 
+    @Size(max = 20, message = "dictScope 长度不能超过 20")
+    private String dictScope;
+
     @Size(max = 20, message = "status 长度不能超过 20")
     private String status;
 
@@ -49,6 +52,14 @@ public class SaveDataDictionaryRequest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getDictScope() {
+        return dictScope;
+    }
+
+    public void setDictScope(String dictScope) {
+        this.dictScope = dictScope;
     }
 
     public Boolean getEnabled() {

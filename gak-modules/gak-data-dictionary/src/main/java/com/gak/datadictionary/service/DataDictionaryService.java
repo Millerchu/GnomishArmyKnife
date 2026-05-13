@@ -14,6 +14,7 @@ import com.gak.datadictionary.dto.SaveDataDictionaryItemRequest;
 import com.gak.datadictionary.dto.SaveDataDictionaryRequest;
 import com.gak.datadictionary.dto.UpdateDataDictionaryItemStatusRequest;
 import com.gak.datadictionary.dto.UpdateDataDictionaryStatusRequest;
+import com.gak.datadictionary.enums.DataDictionaryScope;
 import com.gak.datadictionary.enums.DataDictionaryStatus;
 import com.gak.datadictionary.mapper.DataDictionaryItemMapper;
 import com.gak.datadictionary.mapper.DataDictionaryMapper;
@@ -86,6 +87,10 @@ public class DataDictionaryService {
         if (status != null) {
             wrapper.eq("status", status);
         }
+        String dictScope = normalizeOptionalScope(request.getDictScope(), "DICT_SCOPE_INVALID");
+        if (dictScope != null) {
+            wrapper.eq("dict_scope", dictScope);
+        }
         String referenceApp = trimToNull(request.getReferenceApp());
         if (referenceApp != null) {
             wrapper.like("reference_apps_json", referenceApp);
@@ -119,6 +124,7 @@ public class DataDictionaryService {
         DataDictionary dictionary = new DataDictionary();
         dictionary.setDictCode(normalized.dictCode());
         dictionary.setDictName(normalized.dictName());
+        dictionary.setDictScope(normalized.dictScope());
         dictionary.setStatus(normalized.status());
         dictionary.setReferenceAppsJson(writeReferenceApps(normalized.referenceApps()));
         dictionary.setDescription(normalized.description());
@@ -140,6 +146,7 @@ public class DataDictionaryService {
         ensureDictCodeImmutable(current, normalized.dictCode());
 
         current.setDictName(normalized.dictName());
+        current.setDictScope(normalized.dictScope());
         current.setStatus(normalized.status());
         current.setReferenceAppsJson(writeReferenceApps(normalized.referenceApps()));
         current.setDescription(normalized.description());
@@ -328,6 +335,7 @@ public class DataDictionaryService {
         vo.setId(dictionary.getId());
         vo.setDictCode(dictionary.getDictCode());
         vo.setDictName(dictionary.getDictName());
+        vo.setDictScope(dictionary.getDictScope());
         vo.setStatus(dictionary.getStatus());
         vo.setCreatorName(dictionary.getCreatorName());
         vo.setReferenceApps(readReferenceApps(dictionary.getReferenceAppsJson()));
@@ -379,6 +387,7 @@ public class DataDictionaryService {
         return new NormalizedDictionary(
                 normalizeDictCode(request.getDictCode()),
                 trimRequired(request.getDictName(), "dictName 不能为空"),
+                normalizeRequiredScope(request.getDictScope(), "DICT_SCOPE_INVALID"),
                 normalizeRequiredStatus(request.getStatus(), request.getEnabled(), true,
                         "DICT_STATUS_INVALID", "DICT_STATUS_MISMATCH"),
                 normalizeReferenceApps(request.getReferenceApps()),
@@ -528,6 +537,30 @@ public class DataDictionaryService {
         }
     }
 
+    private String normalizeRequiredScope(String dictScope, String invalidCode) {
+        String normalized = trimToNull(dictScope);
+        if (normalized == null) {
+            return DataDictionaryScope.PUBLIC.name();
+        }
+        try {
+            return DataDictionaryScope.fromCode(normalized).name();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(invalidCode, "dictScope 非法");
+        }
+    }
+
+    private String normalizeOptionalScope(String dictScope, String invalidCode) {
+        String normalized = trimToNull(dictScope);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return DataDictionaryScope.fromCode(normalized).name();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(invalidCode, "dictScope 非法");
+        }
+    }
+
     private List<String> normalizeReferenceApps(List<String> referenceApps) {
         if (referenceApps == null || referenceApps.isEmpty()) {
             return Collections.emptyList();
@@ -598,6 +631,7 @@ public class DataDictionaryService {
 
     private record NormalizedDictionary(String dictCode,
                                         String dictName,
+                                        String dictScope,
                                         String status,
                                         List<String> referenceApps,
                                         String description) {

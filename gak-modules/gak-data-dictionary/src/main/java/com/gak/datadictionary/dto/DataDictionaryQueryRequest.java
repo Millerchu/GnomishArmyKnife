@@ -22,6 +22,9 @@ public class DataDictionaryQueryRequest {
     @Size(max = 20, message = "status 长度不能超过 20")
     private String status;
 
+    @Size(max = 20, message = "dictScope 长度不能超过 20")
+    private String dictScope;
+
     @Size(max = 64, message = "referenceApp 长度不能超过 64")
     private String referenceApp;
 
@@ -63,5 +66,13 @@ public class DataDictionaryQueryRequest {
 
     public void setReferenceApp(String referenceApp) {
         this.referenceApp = referenceApp;
+    }
+
+    public String getDictScope() {
+        return dictScope;
+    }
+
+    public void setDictScope(String dictScope) {
+        this.dictScope = dictScope;
     }
 }

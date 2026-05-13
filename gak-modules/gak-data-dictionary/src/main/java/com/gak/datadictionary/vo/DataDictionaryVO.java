@@ -12,6 +12,7 @@ public class DataDictionaryVO {
     private Long id;
     private String dictCode;
     private String dictName;
+    private String dictScope;
     private String status;
     private String creatorName;
     private List<String> referenceApps;
@@ -52,6 +53,14 @@ public class DataDictionaryVO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getDictScope() {
+        return dictScope;
+    }
+
+    public void setDictScope(String dictScope) {
+        this.dictScope = dictScope;
     }
 
     public String getCreatorName() {

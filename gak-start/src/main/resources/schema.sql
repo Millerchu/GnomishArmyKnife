@@ -286,6 +286,7 @@ CREATE TABLE IF NOT EXISTS gak_data_dictionary (
     id BIGINT PRIMARY KEY,
     dict_code VARCHAR(64) NOT NULL,
     dict_name VARCHAR(64) NOT NULL,
+    dict_scope VARCHAR(20) NOT NULL DEFAULT 'PUBLIC',
     status VARCHAR(20) NOT NULL,
     reference_apps_json TEXT,
     description VARCHAR(255),
@@ -295,6 +296,10 @@ CREATE TABLE IF NOT EXISTS gak_data_dictionary (
     updated_at TIMESTAMP NOT NULL,
     deleted BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+ALTER TABLE gak_data_dictionary ADD COLUMN IF NOT EXISTS dict_scope VARCHAR(20);
+UPDATE gak_data_dictionary SET dict_scope = 'PUBLIC' WHERE dict_scope IS NULL OR TRIM(dict_scope) = '';
+ALTER TABLE gak_data_dictionary ALTER COLUMN dict_scope SET DEFAULT 'PUBLIC';
 
 CREATE TABLE IF NOT EXISTS gak_data_dictionary_item (
     id BIGINT PRIMARY KEY,

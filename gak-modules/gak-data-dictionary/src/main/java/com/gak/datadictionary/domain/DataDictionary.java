@@ -15,6 +15,7 @@ public class DataDictionary {
     private Long id;
     private String dictCode;
     private String dictName;
+    private String dictScope;
     private String status;
     private String referenceAppsJson;
     private String description;
@@ -54,6 +55,14 @@ public class DataDictionary {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getDictScope() {
+        return dictScope;
+    }
+
+    public void setDictScope(String dictScope) {
+        this.dictScope = dictScope;
     }
 
     public String getReferenceAppsJson() {
