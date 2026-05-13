@@ -747,8 +747,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5001 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5001 AND item.item_code = 'admin' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -758,8 +758,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5001 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5001 AND item.item_code = 'dev' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -769,8 +769,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5001 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5001 AND item.item_code = 'user' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -780,8 +780,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5002 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5002 AND item.item_code = 'enabled' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -791,7 +791,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5002 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5002 AND item.item_code = 'disabled' AND item.deleted = FALSE
-  );
+  )
+ON CONFLICT (id) DO NOTHING;
 
 UPDATE gak_data_dictionary_item
 SET deleted = TRUE,
@@ -802,7 +803,6 @@ WHERE dictionary_id = 5003
     item_code IN ('develop', 'meeting', 'test')
     OR item_value IN ('DEVELOP', 'MEETING', 'TEST')
   );
-
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -812,8 +812,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5003 AND item.item_code = 'normal' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -823,8 +823,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5003 AND item.item_code = 'leave' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -834,8 +834,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5003 AND item.item_code = 'business_trip' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -845,8 +845,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5003 AND item.item_code = 'sick_leave' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -856,8 +856,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5003 AND item.item_code = 'other' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -867,8 +867,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5004 AND item.item_code = 'gak' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -878,8 +878,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5004 AND item.item_code = 'client' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -889,8 +889,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5004 AND item.item_code = 'ops' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -900,8 +900,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5007 AND item.item_code = 'sh_office' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -911,8 +911,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5007 AND item.item_code = 'sz_office' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -922,8 +922,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5007 AND item.item_code = 'home' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -933,8 +933,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5007 AND item.item_code = 'client_site' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -944,8 +944,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5007 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5007 AND item.item_code = 'travel' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -955,8 +955,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5005 AND item.item_code = 'public' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -966,8 +966,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5005 AND item.item_code = 'internal' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -977,8 +977,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5005 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5005 AND item.item_code = 'confidential' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -988,8 +988,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5006 AND item.item_code = 'none' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -999,8 +999,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5006 AND item.item_code = 'field' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1010,8 +1010,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5006 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5006 AND item.item_code = 'end_to_end' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1021,8 +1021,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'food' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1032,8 +1032,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'transport' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1043,8 +1043,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'housing' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1054,8 +1054,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'entertainment' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1065,8 +1065,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'digital' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1076,8 +1076,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'learning' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1087,8 +1087,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'travel' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1098,8 +1098,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'salary' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1109,8 +1109,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5008 AND item.item_code = 'bonus' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1120,8 +1120,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'food' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1131,8 +1131,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'transport' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1142,8 +1142,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'housing' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1153,8 +1153,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'entertainment' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1164,8 +1164,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'digital' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1175,8 +1175,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'learning' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1186,8 +1186,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5009 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5009 AND item.item_code = 'travel' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1197,8 +1197,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5010 AND item.item_code = 'alipay' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1208,8 +1208,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5010 AND item.item_code = 'wechat_pay' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1219,8 +1219,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5010 AND item.item_code = 'bank_card' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1230,8 +1230,8 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5010 AND item.item_code = 'bank_transfer' AND item.deleted = FALSE
-  );
-
+  )
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1241,7 +1241,9 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5010 AND item.item_code = 'cash' AND item.deleted = FALSE
-  );
+  )
+ON CONFLICT (id) DO NOTHING;
+
 
 INSERT INTO gak_data_dictionary_usage (
     id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
