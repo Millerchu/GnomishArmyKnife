@@ -1,11 +1,14 @@
 package com.gak.wowcharacter.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.util.StringUtils;
 
 /**
@@ -42,8 +45,10 @@ public class SaveWowCharacterRequest {
     private Integer level;
 
     @NotNull(message = "itemLevel 不能为空")
-    @Min(value = 0, message = "itemLevel 不能小于 0")
-    private Integer itemLevel;
+    private BigDecimal itemLevel;
+
+    @NotNull(message = "isFeatured 不能为空")
+    private Boolean isFeatured;
 
     @Min(value = 0, message = "mythicBestLevel 不能小于 0")
     private Integer mythicBestLevel;
@@ -52,7 +57,7 @@ public class SaveWowCharacterRequest {
     private String mythicDungeonName;
 
     @Min(value = 0, message = "mythicScore 不能小于 0")
-    private Integer mythicScore;
+    private BigDecimal mythicScore;
 
     @Size(max = 32, message = "professionPrimary 长度不能超过 32")
     private String professionPrimary;
@@ -62,6 +67,12 @@ public class SaveWowCharacterRequest {
 
     @Size(max = 255, message = "note 长度不能超过 255")
     private String note;
+
+    @Valid
+    private List<SaveWowCharacterMythicRunRequest> mythicRuns;
+
+    @Valid
+    private List<SaveWowCharacterWeeklyVaultRequest> weeklyVaults;
 
     @AssertTrue(message = "mythicBestLevel > 0 时，mythicDungeonName 必填；mythicDungeonName 非空时，mythicBestLevel 必须 > 0")
     public boolean isMythicDungeonPairValid() {
@@ -129,12 +140,20 @@ public class SaveWowCharacterRequest {
         this.level = level;
     }
 
-    public Integer getItemLevel() {
+    public BigDecimal getItemLevel() {
         return itemLevel;
     }
 
-    public void setItemLevel(Integer itemLevel) {
+    public void setItemLevel(BigDecimal itemLevel) {
         this.itemLevel = itemLevel;
+    }
+
+    public Boolean getIsFeatured() {
+        return isFeatured;
+    }
+
+    public void setIsFeatured(Boolean isFeatured) {
+        this.isFeatured = isFeatured;
     }
 
     public Integer getMythicBestLevel() {
@@ -145,11 +164,11 @@ public class SaveWowCharacterRequest {
         this.mythicBestLevel = mythicBestLevel;
     }
 
-    public Integer getMythicScore() {
+    public BigDecimal getMythicScore() {
         return mythicScore;
     }
 
-    public void setMythicScore(Integer mythicScore) {
+    public void setMythicScore(BigDecimal mythicScore) {
         this.mythicScore = mythicScore;
     }
 
@@ -183,5 +202,21 @@ public class SaveWowCharacterRequest {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public List<SaveWowCharacterMythicRunRequest> getMythicRuns() {
+        return mythicRuns;
+    }
+
+    public void setMythicRuns(List<SaveWowCharacterMythicRunRequest> mythicRuns) {
+        this.mythicRuns = mythicRuns;
+    }
+
+    public List<SaveWowCharacterWeeklyVaultRequest> getWeeklyVaults() {
+        return weeklyVaults;
+    }
+
+    public void setWeeklyVaults(List<SaveWowCharacterWeeklyVaultRequest> weeklyVaults) {
+        this.weeklyVaults = weeklyVaults;
     }
 }

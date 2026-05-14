@@ -3,6 +3,7 @@ package com.gak.wowcharacter.domain;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -21,10 +22,11 @@ public class WowCharacter {
     private String realmName;
     private String faction;
     private Integer level;
-    private Integer itemLevel;
+    private BigDecimal itemLevel;
+    private Boolean isFeatured;
     private Integer mythicBestLevel;
     private String mythicDungeonName;
-    private Integer mythicScore;
+    private BigDecimal mythicScore;
     private String professionPrimary;
     private String professionSecondary;
     private String note;
@@ -103,12 +105,20 @@ public class WowCharacter {
         this.level = level;
     }
 
-    public Integer getItemLevel() {
+    public BigDecimal getItemLevel() {
         return itemLevel;
     }
 
-    public void setItemLevel(Integer itemLevel) {
+    public void setItemLevel(BigDecimal itemLevel) {
         this.itemLevel = itemLevel;
+    }
+
+    public Boolean getIsFeatured() {
+        return isFeatured;
+    }
+
+    public void setIsFeatured(Boolean isFeatured) {
+        this.isFeatured = isFeatured;
     }
 
     public Integer getMythicBestLevel() {
@@ -127,11 +137,11 @@ public class WowCharacter {
         this.mythicDungeonName = mythicDungeonName;
     }
 
-    public Integer getMythicScore() {
+    public BigDecimal getMythicScore() {
         return mythicScore;
     }
 
-    public void setMythicScore(Integer mythicScore) {
+    public void setMythicScore(BigDecimal mythicScore) {
         this.mythicScore = mythicScore;
     }
 

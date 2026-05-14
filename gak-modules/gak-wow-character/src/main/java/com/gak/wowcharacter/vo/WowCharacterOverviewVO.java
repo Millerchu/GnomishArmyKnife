@@ -1,5 +1,6 @@
 package com.gak.wowcharacter.vo;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -9,9 +10,9 @@ public class WowCharacterOverviewVO {
 
     private long totalCharacters;
     private long totalRealms;
-    private int highestItemLevel;
-    private int highestMythicScore;
-    private double averageItemLevel;
+    private BigDecimal highestItemLevel;
+    private BigDecimal highestMythicScore;
+    private BigDecimal averageItemLevel;
     private List<WowCharacterSimpleVO> featuredCharacters;
     private List<FactionStatVO> factionStats;
     private List<ClassStatVO> classStats;
@@ -33,27 +34,27 @@ public class WowCharacterOverviewVO {
         this.totalRealms = totalRealms;
     }
 
-    public int getHighestItemLevel() {
+    public BigDecimal getHighestItemLevel() {
         return highestItemLevel;
     }
 
-    public void setHighestItemLevel(int highestItemLevel) {
+    public void setHighestItemLevel(BigDecimal highestItemLevel) {
         this.highestItemLevel = highestItemLevel;
     }
 
-    public int getHighestMythicScore() {
+    public BigDecimal getHighestMythicScore() {
         return highestMythicScore;
     }
 
-    public void setHighestMythicScore(int highestMythicScore) {
+    public void setHighestMythicScore(BigDecimal highestMythicScore) {
         this.highestMythicScore = highestMythicScore;
     }
 
-    public double getAverageItemLevel() {
+    public BigDecimal getAverageItemLevel() {
         return averageItemLevel;
     }
 
-    public void setAverageItemLevel(double averageItemLevel) {
+    public void setAverageItemLevel(BigDecimal averageItemLevel) {
         this.averageItemLevel = averageItemLevel;
     }
 

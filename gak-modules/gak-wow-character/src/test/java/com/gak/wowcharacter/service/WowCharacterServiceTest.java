@@ -9,12 +9,21 @@ import com.gak.framework.response.PagedResult;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.domain.WowCharacter;
+import com.gak.wowcharacter.domain.WowCharacterMythicRun;
+import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
+import com.gak.wowcharacter.dto.SaveWowCharacterMythicRunRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
+import com.gak.wowcharacter.dto.SaveWowCharacterWeeklyVaultRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
+import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
+import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
 import com.gak.wowcharacter.vo.WowCharacterListVO;
 import com.gak.wowcharacter.vo.WowCharacterOverviewVO;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +35,6 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -42,6 +50,12 @@ class WowCharacterServiceTest {
 
     @Mock
     private WowCharacterMapper wowCharacterMapper;
+
+    @Mock
+    private WowCharacterMythicRunMapper wowCharacterMythicRunMapper;
+
+    @Mock
+    private WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper;
 
     @Mock
     private UserMapper userMapper;
@@ -68,6 +82,8 @@ class WowCharacterServiceTest {
                 .thenReturn(specOptions());
         lenient().when(dataDictionaryUsageSupport.listEnabledOptionsByUsage("APP_WOW_CHARACTER", "WOW_CHARACTER", "faction"))
                 .thenReturn(factionOptions());
+        lenient().when(dataDictionaryUsageSupport.listEnabledOptionsByUsage("APP_WOW_CHARACTER", "WOW_CHARACTER", "mythicDungeonName"))
+                .thenReturn(mythicDungeonOptions());
         lenient().when(dataDictionaryUsageSupport.normalizeValueByUsage(
                 eq("APP_WOW_CHARACTER"),
                 eq("WOW_CHARACTER"),
@@ -81,235 +97,69 @@ class WowCharacterServiceTest {
         ));
         lenient().when(dataDictionarySupport.getLabelByValue(eq("WOW_PRIMARY_PROFESSION"), any()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
+        lenient().when(wowCharacterMythicRunMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(wowCharacterWeeklyVaultMapper.selectList(any())).thenReturn(List.of());
     }
 
     @Test
-    void createShouldNormalizeOptionalFieldsAndDefaultMythicValues() {
+    void createShouldCalculateMythicScoreAndPersistChildren() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(wowCharacterMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WowCharacter character = invocation.getArgument(0);
             character.setId(101L);
             return 1;
         }).when(wowCharacterMapper).insert(any(WowCharacter.class));
 
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("安度因");
-        request.setClassName("牧师");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-
-        WowCharacterListVO result = wowCharacterService.create(1L, request);
-
-        ArgumentCaptor<WowCharacter> captor = ArgumentCaptor.forClass(WowCharacter.class);
-        verify(wowCharacterMapper).insert(captor.capture());
-        WowCharacter saved = captor.getValue();
-        assertEquals(1L, saved.getOwnerUserId());
-        assertEquals(90, saved.getLevel());
-        assertEquals(0, saved.getMythicBestLevel());
-        assertEquals(0, saved.getMythicScore());
-        assertNull(saved.getSpecName());
-        assertEquals(101L, result.getId());
-        assertNull(result.getSpecNameLabel());
-    }
-
-    @Test
-    void createShouldNormalizeLegacySpecLabelAndProfessions() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-        doAnswer(invocation -> {
-            WowCharacter character = invocation.getArgument(0);
-            character.setId(102L);
-            return 1;
-        }).when(wowCharacterMapper).insert(any(WowCharacter.class));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("安度因");
-        request.setClassName("牧师");
-        request.setSpecName("神圣");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-        request.setProfessionPrimary("附魔");
-        request.setProfessionSecondary("裁缝");
-
-        WowCharacterListVO result = wowCharacterService.create(1L, request);
-
-        ArgumentCaptor<WowCharacter> captor = ArgumentCaptor.forClass(WowCharacter.class);
-        verify(wowCharacterMapper).insert(captor.capture());
-        assertEquals("holy_priest", captor.getValue().getSpecName());
-        assertEquals("附魔", captor.getValue().getProfessionPrimary());
-        assertEquals("裁缝", captor.getValue().getProfessionSecondary());
-        assertEquals("holy_priest", result.getSpecName());
-        assertEquals("神圣", result.getSpecNameLabel());
-        assertEquals("附魔", result.getProfessionPrimaryLabel());
-        assertEquals("裁缝", result.getProfessionSecondaryLabel());
-    }
-
-    @Test
-    void createShouldRejectInvalidClassName() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试");
-        request.setClassName("剑圣");
-        request.setRaceName("兽人");
-        request.setRealmName("霜之哀伤");
-        request.setFaction("HORDE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_CLASS_INVALID", exception.getCode());
-    }
-
-    @Test
-    void createShouldRejectClassRaceMismatch() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试");
-        request.setClassName("恶魔猎手");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_CLASS_RACE_MISMATCH", exception.getCode());
-    }
-
-    @Test
-    void createShouldAllowVoidElfDemonHunterWithVengeance() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-        doAnswer(invocation -> {
-            WowCharacter character = invocation.getArgument(0);
-            character.setId(103L);
-            return 1;
-        }).when(wowCharacterMapper).insert(any(WowCharacter.class));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("奥蕾莉亚");
-        request.setClassName("恶魔猎手");
-        request.setSpecName("vengeance");
-        request.setRaceName("虚空精灵");
-        request.setRealmName("银月");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(668);
-
-        WowCharacterListVO result = wowCharacterService.create(1L, request);
-
-        ArgumentCaptor<WowCharacter> captor = ArgumentCaptor.forClass(WowCharacter.class);
-        verify(wowCharacterMapper).insert(captor.capture());
-        assertEquals("虚空精灵", captor.getValue().getRaceName());
-        assertEquals("vengeance", captor.getValue().getSpecName());
-        assertEquals("vengeance", result.getSpecName());
-        assertEquals("复仇", result.getSpecNameLabel());
-    }
-
-    @Test
-    void createShouldRejectRaceFactionMismatch() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试");
-        request.setClassName("牧师");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("HORDE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_RACE_FACTION_MISMATCH", exception.getCode());
-    }
-
-    @Test
-    void createShouldRejectClassSpecMismatch() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试");
-        request.setClassName("牧师");
-        request.setSpecName("holy_paladin");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_CLASS_SPEC_MISMATCH", exception.getCode());
-    }
-
-    @Test
-    void createShouldRejectDuplicateProfessions() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试");
-        request.setClassName("牧师");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-        request.setProfessionPrimary("附魔");
-        request.setProfessionSecondary("附魔");
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_PROFESSION_DUPLICATE", exception.getCode());
-    }
-
-    @Test
-    void createShouldRequireDungeonNameWhenMythicLevelIsPositive() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试角色");
-        request.setClassName("法师");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-        request.setMythicBestLevel(12);
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_MYTHIC_DUNGEON_REQUIRED", exception.getCode());
-    }
-
-    @Test
-    void createShouldRejectDungeonNameWhenMythicLevelIsZero() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-
-        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
-        request.setCharacterName("测试角色");
-        request.setClassName("法师");
-        request.setRaceName("人类");
-        request.setRealmName("国王之谷");
-        request.setFaction("ALLIANCE");
-        request.setLevel(90);
-        request.setItemLevel(650);
-        request.setMythicBestLevel(0);
+        SaveWowCharacterRequest request = buildSaveRequest();
+        request.setMythicRuns(List.of(
+                buildRun("通天峰", 318),
+                buildRun("魔导师平台", 287)
+        ));
+        request.setMythicBestLevel(14);
         request.setMythicDungeonName("通天峰");
+        request.setWeeklyVaults(List.of(buildWeeklyVault(LocalDate.of(2026, 5, 11), 4, 8, 4)));
+
+        WowCharacterListVO result = wowCharacterService.create(1L, request);
+
+        ArgumentCaptor<WowCharacter> characterCaptor = ArgumentCaptor.forClass(WowCharacter.class);
+        verify(wowCharacterMapper).insert(characterCaptor.capture());
+        assertEquals(new BigDecimal("652.34"), characterCaptor.getValue().getItemLevel());
+        assertEquals(Boolean.TRUE, characterCaptor.getValue().getIsFeatured());
+        assertEquals(new BigDecimal("605.00"), characterCaptor.getValue().getMythicScore());
+        assertEquals(14, characterCaptor.getValue().getMythicBestLevel());
+        assertEquals("通天峰", characterCaptor.getValue().getMythicDungeonName());
+        assertEquals(8, result.getMythicRuns().size());
+        assertEquals(1, result.getWeeklyVaults().size());
+        assertEquals(2, result.getWeeklyVaults().get(0).getRaidUnlockedCount());
+        assertEquals(Boolean.TRUE, result.getIsFeatured());
+        assertEquals(new BigDecimal("605.00"), result.getMythicScore());
+    }
+
+    @Test
+    void createShouldRejectDuplicateMythicDungeon() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        SaveWowCharacterRequest request = buildSaveRequest();
+        request.setMythicRuns(List.of(
+                buildRun("通天峰", 318),
+                buildRun("通天峰", 350)
+        ));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
-        assertEquals("WOW_MYTHIC_LEVEL_REQUIRED", exception.getCode());
+        assertEquals("WOW_MYTHIC_DUNGEON_DUPLICATE", exception.getCode());
     }
 
     @Test
     void pageShouldSortByItemLevelAndMythicScore() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         when(wowCharacterMapper.selectList(any())).thenReturn(List.of(
-                buildCharacter(2L, "B", "战士", "ALLIANCE", "熊猫酒仙", 645, 2800),
-                buildCharacter(1L, "A", "法师", "ALLIANCE", "熊猫酒仙", 650, 2600),
-                buildCharacter(3L, "C", "牧师", "ALLIANCE", "熊猫酒仙", 650, 3000)
+                buildCharacter(2L, "B", "战士", "ALLIANCE", "熊猫酒仙", "645.22", "2800.00", false),
+                buildCharacter(1L, "A", "法师", "ALLIANCE", "熊猫酒仙", "650.50", "2600.00", false),
+                buildCharacter(3L, "C", "牧师", "ALLIANCE", "熊猫酒仙", "650.50", "3000.00", true)
+        ));
+        when(wowCharacterMythicRunMapper.selectList(any())).thenReturn(List.of(
+                buildMythicRun(3L, "通天峰", 350),
+                buildMythicRun(1L, "艾杰斯亚学院", 320)
         ));
 
         WowCharacterQueryRequest request = new WowCharacterQueryRequest();
@@ -319,35 +169,75 @@ class WowCharacterServiceTest {
 
         assertEquals(3, result.list().size());
         assertEquals("C", result.list().get(0).getCharacterName());
-        assertEquals("通天峰", result.list().get(0).getMythicDungeonName());
         assertEquals("A", result.list().get(1).getCharacterName());
         assertEquals("B", result.list().get(2).getCharacterName());
     }
 
     @Test
-    void overviewShouldAggregateFeaturedAndStats() {
+    void overviewShouldReturnFourFeaturedCharacters() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         when(wowCharacterMapper.selectList(any())).thenReturn(List.of(
-                buildCharacter(1L, "安度因", "牧师", "ALLIANCE", "国王之谷", 650, 3000),
-                buildCharacter(2L, "希尔瓦娜斯", "猎人", "HORDE", "凤凰之神", 660, 2900),
-                buildCharacter(3L, "萨尔", "萨满", "HORDE", "凤凰之神", 640, 3100),
-                buildCharacter(4L, "乌瑟尔", "圣骑士", "ALLIANCE", "白银之手", 655, 2800)
+                buildCharacter(1L, "安度因", "牧师", "ALLIANCE", "国王之谷", "650.00", "3000.00", true),
+                buildCharacter(2L, "希尔瓦娜斯", "猎人", "HORDE", "凤凰之神", "660.25", "2900.00", true),
+                buildCharacter(3L, "萨尔", "萨满", "HORDE", "凤凰之神", "640.80", "3100.00", false),
+                buildCharacter(4L, "乌瑟尔", "圣骑士", "ALLIANCE", "白银之手", "655.40", "2800.00", true),
+                buildCharacter(5L, "吉安娜", "法师", "ALLIANCE", "塞拉摩", "632.10", "2500.00", true)
         ));
 
-        WowCharacterOverviewQueryRequest request = new WowCharacterOverviewQueryRequest();
-        WowCharacterOverviewVO result = wowCharacterService.overview(1L, request);
+        WowCharacterOverviewVO result = wowCharacterService.overview(1L, new WowCharacterOverviewQueryRequest());
 
-        assertEquals(4, result.getTotalCharacters());
-        assertEquals(3, result.getTotalRealms());
-        assertEquals(660, result.getHighestItemLevel());
-        assertEquals(3100, result.getHighestMythicScore());
-        assertEquals(2, result.getFeaturedCharacters().size());
+        assertEquals(5, result.getTotalCharacters());
+        assertEquals(new BigDecimal("660.25"), result.getHighestItemLevel());
+        assertEquals(new BigDecimal("3100.00"), result.getHighestMythicScore());
+        assertEquals(4, result.getFeaturedCharacters().size());
         assertEquals("希尔瓦娜斯", result.getFeaturedCharacters().get(0).getCharacterName());
-        assertEquals("风行者之塔", result.getFeaturedCharacters().get(0).getMythicDungeonName());
-        assertNull(result.getFeaturedCharacters().get(0).getSpecNameLabel());
-        assertEquals(2, result.getFactionStats().size());
-        assertEquals("部落", result.getFactionStats().get(1).getLabel());
-        assertEquals(2, result.getRealmStats().get(0).getCount());
+        assertEquals("吉安娜", result.getFeaturedCharacters().get(3).getCharacterName());
+    }
+
+    @Test
+    void createShouldRejectMoreThanFourFeaturedCharacters() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(wowCharacterMapper.selectCount(any())).thenReturn(4L);
+
+        SaveWowCharacterRequest request = buildSaveRequest();
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
+        assertEquals("WOW_FEATURED_CHARACTER_LIMIT", exception.getCode());
+    }
+
+    private SaveWowCharacterRequest buildSaveRequest() {
+        SaveWowCharacterRequest request = new SaveWowCharacterRequest();
+        request.setCharacterName("安度因");
+        request.setClassName("牧师");
+        request.setSpecName("神圣");
+        request.setRaceName("人类");
+        request.setRealmName("国王之谷");
+        request.setFaction("ALLIANCE");
+        request.setLevel(90);
+        request.setItemLevel(new BigDecimal("652.34"));
+        request.setIsFeatured(true);
+        request.setProfessionPrimary("附魔");
+        request.setProfessionSecondary("裁缝");
+        return request;
+    }
+
+    private SaveWowCharacterMythicRunRequest buildRun(String dungeonName, int score) {
+        SaveWowCharacterMythicRunRequest request = new SaveWowCharacterMythicRunRequest();
+        request.setDungeonName(dungeonName);
+        request.setScore(BigDecimal.valueOf(score));
+        return request;
+    }
+
+    private SaveWowCharacterWeeklyVaultRequest buildWeeklyVault(LocalDate weekStartDate,
+                                                                int raidProgressCount,
+                                                                int mythicProgressCount,
+                                                                int worldProgressCount) {
+        SaveWowCharacterWeeklyVaultRequest request = new SaveWowCharacterWeeklyVaultRequest();
+        request.setWeekStartDate(weekStartDate);
+        request.setRaidProgressCount(raidProgressCount);
+        request.setMythicProgressCount(mythicProgressCount);
+        request.setWorldProgressCount(worldProgressCount);
+        return request;
     }
 
     private User buildUser(Long id) {
@@ -361,8 +251,9 @@ class WowCharacterServiceTest {
                                         String className,
                                         String faction,
                                         String realmName,
-                                        int itemLevel,
-                                        int mythicScore) {
+                                        String itemLevel,
+                                        String mythicScore,
+                                        boolean isFeatured) {
         WowCharacter character = new WowCharacter();
         character.setId(id);
         character.setOwnerUserId(1L);
@@ -372,24 +263,23 @@ class WowCharacterServiceTest {
         character.setRealmName(realmName);
         character.setFaction(faction);
         character.setLevel(80);
-        character.setItemLevel(itemLevel);
+        character.setItemLevel(new BigDecimal(itemLevel));
         character.setMythicBestLevel(12);
-        character.setMythicDungeonName(resolveDungeonName(name));
-        character.setMythicScore(mythicScore);
+        character.setMythicDungeonName("通天峰");
+        character.setMythicScore(new BigDecimal(mythicScore));
+        character.setIsFeatured(isFeatured);
+        character.setCreatedAt(LocalDateTime.now());
+        character.setUpdatedAt(LocalDateTime.now());
         return character;
     }
 
-    private String resolveDungeonName(String name) {
-        return switch (name) {
-            case "A" -> "艾杰斯亚学院";
-            case "B" -> "魔导师平台";
-            case "C" -> "通天峰";
-            case "安度因" -> "执政团之座";
-            case "希尔瓦娜斯" -> "风行者之塔";
-            case "萨尔" -> "萨隆矿坑";
-            case "乌瑟尔" -> "节点希纳斯";
-            default -> "迈萨拉洞窟";
-        };
+    private WowCharacterMythicRun buildMythicRun(Long characterId, String dungeonName, int score) {
+        WowCharacterMythicRun run = new WowCharacterMythicRun();
+        run.setCharacterId(characterId);
+        run.setDungeonName(dungeonName);
+        run.setBestTimedLevel(0);
+        run.setScore(BigDecimal.valueOf(score).setScale(2));
+        return run;
     }
 
     private String normalizeWowField(String field, String value, boolean required) {
@@ -436,10 +326,8 @@ class WowCharacterServiceTest {
         return List.of(
                 option("human", "人类", "人类",
                         "{\"factions\":[\"ALLIANCE\"],\"allowedClassCodes\":[\"priest\",\"mage\",\"paladin\",\"hunter\",\"warrior\"]}"),
-                option("void_elf", "虚空精灵", "虚空精灵",
-                        "{\"factions\":[\"ALLIANCE\"],\"allowedClassCodes\":[\"death_knight\",\"demon_hunter\",\"hunter\",\"mage\",\"monk\",\"priest\",\"rogue\",\"warlock\",\"warrior\"]}"),
                 option("blood_elf", "血精灵", "血精灵",
-                        "{\"factions\":[\"HORDE\"],\"allowedClassCodes\":[\"demon_hunter\",\"priest\",\"mage\",\"paladin\",\"hunter\",\"warrior\"]}"),
+                        "{\"factions\":[\"HORDE\"],\"allowedClassCodes\":[\"hunter\",\"priest\",\"mage\",\"paladin\",\"warrior\"]}"),
                 option("orc", "兽人", "兽人",
                         "{\"factions\":[\"HORDE\"],\"allowedClassCodes\":[\"hunter\",\"warrior\",\"shaman\"]}")
         );
@@ -450,10 +338,7 @@ class WowCharacterServiceTest {
                 option("holy_priest", "神圣", "holy_priest", "{\"classCode\":\"priest\"}"),
                 option("discipline", "戒律", "discipline", "{\"classCode\":\"priest\"}"),
                 option("holy_paladin", "神圣", "holy_paladin", "{\"classCode\":\"paladin\"}"),
-                option("frost_mage", "冰霜", "frost_mage", "{\"classCode\":\"mage\"}"),
-                option("havoc", "浩劫", "havoc", "{\"classCode\":\"demon_hunter\"}"),
-                option("devourer", "Devourer", "devourer", "{\"classCode\":\"demon_hunter\"}"),
-                option("vengeance", "复仇", "vengeance", "{\"classCode\":\"demon_hunter\"}")
+                option("frost_mage", "冰霜", "frost_mage", "{\"classCode\":\"mage\"}")
         );
     }
 

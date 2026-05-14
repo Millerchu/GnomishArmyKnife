@@ -54,10 +54,11 @@ CREATE TABLE IF NOT EXISTS gak_wow_character (
     realm_name VARCHAR(32) NOT NULL,
     faction VARCHAR(16) NOT NULL,
     level INTEGER NOT NULL,
-    item_level INTEGER NOT NULL,
+    item_level NUMERIC(8, 2) NOT NULL,
+    is_featured BOOLEAN NOT NULL DEFAULT FALSE,
     mythic_best_level INTEGER,
     mythic_dungeon_name VARCHAR(32),
-    mythic_score INTEGER,
+    mythic_score NUMERIC(10, 2),
     profession_primary VARCHAR(32),
     profession_secondary VARCHAR(32),
     note VARCHAR(255),
@@ -66,6 +67,34 @@ CREATE TABLE IF NOT EXISTS gak_wow_character (
 );
 
 ALTER TABLE gak_wow_character ADD COLUMN IF NOT EXISTS mythic_dungeon_name VARCHAR(32);
+ALTER TABLE gak_wow_character ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE gak_wow_character SET is_featured = FALSE WHERE is_featured IS NULL;
+ALTER TABLE gak_wow_character ALTER COLUMN item_level TYPE NUMERIC(8, 2) USING item_level::NUMERIC(8, 2);
+ALTER TABLE gak_wow_character ALTER COLUMN mythic_score TYPE NUMERIC(10, 2) USING mythic_score::NUMERIC(10, 2);
+
+CREATE TABLE IF NOT EXISTS gak_wow_character_mythic_run (
+    id BIGINT PRIMARY KEY,
+    character_id BIGINT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    dungeon_name VARCHAR(32) NOT NULL,
+    best_timed_level INTEGER NOT NULL DEFAULT 0,
+    score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gak_wow_character_weekly_vault (
+    id BIGINT PRIMARY KEY,
+    character_id BIGINT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    week_start_date DATE NOT NULL,
+    raid_progress_count INTEGER NOT NULL DEFAULT 0,
+    mythic_progress_count INTEGER NOT NULL DEFAULT 0,
+    world_progress_count INTEGER NOT NULL DEFAULT 0,
+    note VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS gak_personal_bill (
     id BIGINT PRIMARY KEY,
@@ -353,6 +382,12 @@ CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wow_character_owner_sort ON gak_wow_character (owner_user_id, item_level DESC, mythic_score DESC);
+CREATE INDEX IF NOT EXISTS idx_wow_character_owner_featured ON gak_wow_character (owner_user_id, is_featured, item_level DESC, mythic_score DESC);
+CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
+CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_owner_character ON gak_wow_character_mythic_run (owner_user_id, character_id, dungeon_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
+CREATE INDEX IF NOT EXISTS idx_wow_weekly_vault_owner_character_week ON gak_wow_character_weekly_vault (owner_user_id, character_id, week_start_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_weekly_vault_character_week ON gak_wow_character_weekly_vault (character_id, week_start_date);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (owner_user_id, bill_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);
@@ -1363,6 +1398,297 @@ WHERE dictionary.dict_code = 'PERSONAL_BILLS_PAYMENT_METHOD'
       AND usage.module_code = 'PERSONAL_BILLS'
       AND usage.biz_field_code = 'paymentMethod'
   );
+
+CREATE TEMP TABLE seed_wow_dictionaries (
+    id BIGINT PRIMARY KEY,
+    dict_code VARCHAR(64) NOT NULL,
+    dict_name VARCHAR(64) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    reference_apps_json TEXT,
+    description VARCHAR(255),
+    creator_user_id BIGINT,
+    creator_name VARCHAR(64)
+);
+
+INSERT INTO seed_wow_dictionaries (
+    id, dict_code, dict_name, status, reference_apps_json, description, creator_user_id, creator_name
+)
+VALUES
+    (6013, 'WOW_FACTION', '魔兽阵营', 'ENABLED', '["WoW角色统计"]', 'WoW 阵营选项', 900000000000000001, '系统管理员'),
+    (6014, 'WOW_CLASS_NAME', '魔兽职业', 'ENABLED', '["WoW角色统计"]', 'WoW 职业选项', 900000000000000001, '系统管理员'),
+    (6015, 'WOW_MYTHIC_DUNGEON', '大秘境副本', 'ENABLED', '["WoW角色统计"]', 'WoW 大秘境副本选项', 900000000000000001, '系统管理员'),
+    (2035628832674516994, 'WOW_CHARACTER_RACE', '魔兽角色种族', 'ENABLED', '["WoW角色统计"]', 'WoW 可玩种族选项，含阵营与职业限制元数据', 900000000000000001, '系统管理员'),
+    (6018, 'WOW_CLASS_SPEC', '魔兽职业专精', 'ENABLED', '["WoW角色统计"]', 'WoW 职业专精选项，itemValue 使用唯一 code', 900000000000000001, '系统管理员'),
+    (6019, 'WOW_PRIMARY_PROFESSION', '魔兽主专业', 'ENABLED', '["WoW角色统计"]', 'WoW 主专业选项', 900000000000000001, '系统管理员');
+
+UPDATE gak_data_dictionary target
+SET dict_name = source.dict_name,
+    status = source.status,
+    reference_apps_json = source.reference_apps_json,
+    description = source.description,
+    creator_user_id = source.creator_user_id,
+    creator_name = source.creator_name,
+    updated_at = CURRENT_TIMESTAMP,
+    deleted = FALSE
+FROM seed_wow_dictionaries source
+WHERE target.dict_code = source.dict_code;
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    source.id, source.dict_code, source.dict_name, source.status, source.reference_apps_json,
+    source.description, source.creator_user_id, source.creator_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM seed_wow_dictionaries source
+WHERE NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary existing WHERE existing.dict_code = source.dict_code
+);
+
+CREATE TEMP TABLE seed_wow_dictionary_items (
+    id BIGINT PRIMARY KEY,
+    dict_code VARCHAR(64) NOT NULL,
+    item_code VARCHAR(64) NOT NULL,
+    item_label VARCHAR(64) NOT NULL,
+    item_value VARCHAR(64) NOT NULL,
+    sort_no INTEGER NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    is_default BOOLEAN NOT NULL,
+    description VARCHAR(255),
+    extra_json TEXT
+);
+
+INSERT INTO seed_wow_dictionary_items (
+    id, dict_code, item_code, item_label, item_value, sort_no, status, is_default, description, extra_json
+)
+VALUES
+    (6013001, 'WOW_FACTION', 'alliance', '联盟', 'ALLIANCE', 1, 'ENABLED', TRUE, '联盟阵营', NULL),
+    (6013002, 'WOW_FACTION', 'horde', '部落', 'HORDE', 2, 'ENABLED', FALSE, '部落阵营', NULL),
+    (6014001, 'WOW_CLASS_NAME', 'death_knight', '死亡骑士', '死亡骑士', 1, 'ENABLED', FALSE, '死亡骑士', '{"color":"#C41F3B","textColor":"#ffffff"}'),
+    (6014002, 'WOW_CLASS_NAME', 'demon_hunter', '恶魔猎手', '恶魔猎手', 2, 'ENABLED', FALSE, '恶魔猎手', '{"color":"#A330C9","textColor":"#ffffff"}'),
+    (6014003, 'WOW_CLASS_NAME', 'druid', '德鲁伊', '德鲁伊', 3, 'ENABLED', FALSE, '德鲁伊', '{"color":"#FF7D0A","textColor":"#1f1607"}'),
+    (6014004, 'WOW_CLASS_NAME', 'evoker', '唤魔师', '唤魔师', 4, 'ENABLED', FALSE, '唤魔师', '{"color":"#33937F","textColor":"#ffffff"}'),
+    (6014005, 'WOW_CLASS_NAME', 'hunter', '猎人', '猎人', 5, 'ENABLED', FALSE, '猎人', '{"color":"#ABD473","textColor":"#1f2910"}'),
+    (6014006, 'WOW_CLASS_NAME', 'mage', '法师', '法师', 6, 'ENABLED', FALSE, '法师', '{"color":"#69CCF0","textColor":"#07202f"}'),
+    (6014007, 'WOW_CLASS_NAME', 'monk', '武僧', '武僧', 7, 'ENABLED', FALSE, '武僧', '{"color":"#00FF96","textColor":"#062119"}'),
+    (6014008, 'WOW_CLASS_NAME', 'paladin', '圣骑士', '圣骑士', 8, 'ENABLED', FALSE, '圣骑士', '{"color":"#F58CBA","textColor":"#2d0f1d"}'),
+    (6014009, 'WOW_CLASS_NAME', 'priest', '牧师', '牧师', 9, 'ENABLED', FALSE, '牧师', '{"color":"#F4F4F4","textColor":"#111111"}'),
+    (6014010, 'WOW_CLASS_NAME', 'rogue', '潜行者', '潜行者', 10, 'ENABLED', FALSE, '潜行者', '{"color":"#FFF569","textColor":"#312b07"}'),
+    (6014011, 'WOW_CLASS_NAME', 'shaman', '萨满', '萨满', 11, 'ENABLED', FALSE, '萨满', '{"color":"#0070DE","textColor":"#ffffff"}'),
+    (6014012, 'WOW_CLASS_NAME', 'warlock', '术士', '术士', 12, 'ENABLED', FALSE, '术士', '{"color":"#9482C9","textColor":"#100d1d"}'),
+    (6014013, 'WOW_CLASS_NAME', 'warrior', '战士', '战士', 13, 'ENABLED', TRUE, '战士', '{"color":"#C79C6E","textColor":"#23170d"}'),
+    (6015001, 'WOW_MYTHIC_DUNGEON', 'magisters_terrace', '魔导师平台', '魔导师平台', 1, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015002, 'WOW_MYTHIC_DUNGEON', 'myssara_caverns', '迈萨拉洞窟', '迈萨拉洞窟', 2, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015003, 'WOW_MYTHIC_DUNGEON', 'the_nexus_sinnus', '节点希纳斯', '节点希纳斯', 3, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015004, 'WOW_MYTHIC_DUNGEON', 'windrunner_spire', '风行者之塔', '风行者之塔', 4, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015005, 'WOW_MYTHIC_DUNGEON', 'aegis_academy', '艾杰斯亚学院', '艾杰斯亚学院', 5, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015006, 'WOW_MYTHIC_DUNGEON', 'saron_mine', '萨隆矿坑', '萨隆矿坑', 6, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015007, 'WOW_MYTHIC_DUNGEON', 'seat_of_the_triumvirate', '执政团之座', '执政团之座', 7, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015008, 'WOW_MYTHIC_DUNGEON', 'skyreach', '通天峰', '通天峰', 8, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6018001, 'WOW_CHARACTER_RACE', 'human', '人类', '人类', 1, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","warlock","warrior"]}'),
+    (6018002, 'WOW_CHARACTER_RACE', 'dwarf', '矮人', '矮人', 2, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018003, 'WOW_CHARACTER_RACE', 'night_elf', '暗夜精灵', '暗夜精灵', 3, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","demon_hunter","druid","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018004, 'WOW_CHARACTER_RACE', 'gnome', '侏儒', '侏儒', 4, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018005, 'WOW_CHARACTER_RACE', 'draenei', '德莱尼', '德莱尼', 5, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018006, 'WOW_CHARACTER_RACE', 'worgen', '狼人', '狼人', 6, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","druid","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018007, 'WOW_CHARACTER_RACE', 'pandaren', '熊猫人', '熊猫人', 7, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE","HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018008, 'WOW_CHARACTER_RACE', 'dracthyr', '龙希尔', '龙希尔', 8, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE","HORDE"],"allowedClassCodes":["evoker","hunter","mage","priest","rogue","warlock","warrior"]}'),
+    (6018009, 'WOW_CHARACTER_RACE', 'void_elf', '虚空精灵', '虚空精灵', 9, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","demon_hunter","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018010, 'WOW_CHARACTER_RACE', 'lightforged_draenei', '光铸德莱尼', '光铸德莱尼', 10, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","warlock","warrior"]}'),
+    (6018011, 'WOW_CHARACTER_RACE', 'dark_iron_dwarf', '黑铁矮人', '黑铁矮人', 11, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018012, 'WOW_CHARACTER_RACE', 'kul_tiran', '库尔提拉斯人', '库尔提拉斯人', 12, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","druid","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018013, 'WOW_CHARACTER_RACE', 'mechagnome', '机械侏儒', '机械侏儒', 13, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018014, 'WOW_CHARACTER_RACE', 'earthen', '土灵', '土灵', 14, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE","HORDE"],"allowedClassCodes":["hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018015, 'WOW_CHARACTER_RACE', 'orc', '兽人', '兽人', 15, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018016, 'WOW_CHARACTER_RACE', 'undead', '亡灵', '亡灵', 16, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018017, 'WOW_CHARACTER_RACE', 'tauren', '牛头人', '牛头人', 17, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","druid","hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018018, 'WOW_CHARACTER_RACE', 'troll', '巨魔', '巨魔', 18, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","druid","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018019, 'WOW_CHARACTER_RACE', 'blood_elf', '血精灵', '血精灵', 19, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","demon_hunter","hunter","mage","monk","paladin","priest","rogue","warlock","warrior"]}'),
+    (6018020, 'WOW_CHARACTER_RACE', 'goblin', '地精', '地精', 20, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018021, 'WOW_CHARACTER_RACE', 'nightborne', '夜之子', '夜之子', 21, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
+    (6018022, 'WOW_CHARACTER_RACE', 'highmountain_tauren', '至高岭牛头人', '至高岭牛头人', 22, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","druid","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018023, 'WOW_CHARACTER_RACE', 'maghar_orc', '玛格汉兽人', '玛格汉兽人', 23, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018024, 'WOW_CHARACTER_RACE', 'zandalari_troll', '赞达拉巨魔', '赞达拉巨魔', 24, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","druid","hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018025, 'WOW_CHARACTER_RACE', 'vulpera', '狐人', '狐人', 25, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["HORDE"],"allowedClassCodes":["death_knight","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6018026, 'WOW_CHARACTER_RACE', 'haranir', '哈拉尼尔', '哈拉尼尔', 26, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE","HORDE"],"allowedClassCodes":["druid","hunter","mage","monk","priest","rogue","shaman","warlock","warrior"]}'),
+    (6019001, 'WOW_CLASS_SPEC', 'blood_death_knight', '鲜血', 'blood_death_knight', 1, 'ENABLED', TRUE, 'WoW 职业专精', '{"classCode":"death_knight"}'),
+    (6019002, 'WOW_CLASS_SPEC', 'frost_death_knight', '冰霜', 'frost_death_knight', 2, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"death_knight"}'),
+    (6019003, 'WOW_CLASS_SPEC', 'unholy_death_knight', '邪恶', 'unholy_death_knight', 3, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"death_knight"}'),
+    (6019004, 'WOW_CLASS_SPEC', 'devourer', 'Devourer', 'devourer', 4, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"demon_hunter"}'),
+    (6019005, 'WOW_CLASS_SPEC', 'havoc', '浩劫', 'havoc', 5, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"demon_hunter"}'),
+    (6019006, 'WOW_CLASS_SPEC', 'vengeance', '复仇', 'vengeance', 6, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"demon_hunter"}'),
+    (6019007, 'WOW_CLASS_SPEC', 'balance', '平衡', 'balance', 7, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"druid"}'),
+    (6019008, 'WOW_CLASS_SPEC', 'feral', '野性', 'feral', 8, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"druid"}'),
+    (6019009, 'WOW_CLASS_SPEC', 'guardian', '守护', 'guardian', 9, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"druid"}'),
+    (6019010, 'WOW_CLASS_SPEC', 'restoration_druid', '恢复', 'restoration_druid', 10, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"druid"}'),
+    (6019011, 'WOW_CLASS_SPEC', 'augmentation', '增辉', 'augmentation', 11, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"evoker"}'),
+    (6019012, 'WOW_CLASS_SPEC', 'devastation', '湮灭', 'devastation', 12, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"evoker"}'),
+    (6019013, 'WOW_CLASS_SPEC', 'preservation', '恩护', 'preservation', 13, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"evoker"}'),
+    (6019014, 'WOW_CLASS_SPEC', 'beast_mastery', '野兽控制', 'beast_mastery', 14, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"hunter"}'),
+    (6019015, 'WOW_CLASS_SPEC', 'marksmanship', '射击', 'marksmanship', 15, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"hunter"}'),
+    (6019016, 'WOW_CLASS_SPEC', 'survival', '生存', 'survival', 16, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"hunter"}'),
+    (6019017, 'WOW_CLASS_SPEC', 'arcane', '奥术', 'arcane', 17, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"mage"}'),
+    (6019018, 'WOW_CLASS_SPEC', 'fire', '火焰', 'fire', 18, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"mage"}'),
+    (6019019, 'WOW_CLASS_SPEC', 'frost_mage', '冰霜', 'frost_mage', 19, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"mage"}'),
+    (6019020, 'WOW_CLASS_SPEC', 'brewmaster', '酒仙', 'brewmaster', 20, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"monk"}'),
+    (6019021, 'WOW_CLASS_SPEC', 'mistweaver', '织雾', 'mistweaver', 21, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"monk"}'),
+    (6019022, 'WOW_CLASS_SPEC', 'windwalker', '踏风', 'windwalker', 22, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"monk"}'),
+    (6019023, 'WOW_CLASS_SPEC', 'holy_paladin', '神圣', 'holy_paladin', 23, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"paladin"}'),
+    (6019024, 'WOW_CLASS_SPEC', 'protection_paladin', '防护', 'protection_paladin', 24, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"paladin"}'),
+    (6019025, 'WOW_CLASS_SPEC', 'retribution', '惩戒', 'retribution', 25, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"paladin"}'),
+    (6019026, 'WOW_CLASS_SPEC', 'discipline', '戒律', 'discipline', 26, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"priest"}'),
+    (6019027, 'WOW_CLASS_SPEC', 'holy_priest', '神圣', 'holy_priest', 27, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"priest"}'),
+    (6019028, 'WOW_CLASS_SPEC', 'shadow', '暗影', 'shadow', 28, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"priest"}'),
+    (6019029, 'WOW_CLASS_SPEC', 'assassination', '奇袭', 'assassination', 29, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"rogue"}'),
+    (6019030, 'WOW_CLASS_SPEC', 'outlaw', '狂徒', 'outlaw', 30, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"rogue"}'),
+    (6019031, 'WOW_CLASS_SPEC', 'subtlety', '敏锐', 'subtlety', 31, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"rogue"}'),
+    (6019032, 'WOW_CLASS_SPEC', 'elemental', '元素', 'elemental', 32, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"shaman"}'),
+    (6019033, 'WOW_CLASS_SPEC', 'enhancement', '增强', 'enhancement', 33, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"shaman"}'),
+    (6019034, 'WOW_CLASS_SPEC', 'restoration_shaman', '恢复', 'restoration_shaman', 34, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"shaman"}'),
+    (6019035, 'WOW_CLASS_SPEC', 'affliction', '痛苦', 'affliction', 35, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"warlock"}'),
+    (6019036, 'WOW_CLASS_SPEC', 'demonology', '恶魔学识', 'demonology', 36, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"warlock"}'),
+    (6019037, 'WOW_CLASS_SPEC', 'destruction', '毁灭', 'destruction', 37, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"warlock"}'),
+    (6019038, 'WOW_CLASS_SPEC', 'arms', '武器', 'arms', 38, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"warrior"}'),
+    (6019039, 'WOW_CLASS_SPEC', 'fury', '狂怒', 'fury', 39, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"warrior"}'),
+    (6019040, 'WOW_CLASS_SPEC', 'protection_warrior', '防护', 'protection_warrior', 40, 'ENABLED', FALSE, 'WoW 职业专精', '{"classCode":"warrior"}'),
+    (6019101, 'WOW_PRIMARY_PROFESSION', 'alchemy', '炼金术', '炼金术', 1, 'ENABLED', TRUE, 'WoW 主专业', NULL),
+    (6019102, 'WOW_PRIMARY_PROFESSION', 'blacksmithing', '锻造', '锻造', 2, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019103, 'WOW_PRIMARY_PROFESSION', 'enchanting', '附魔', '附魔', 3, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019104, 'WOW_PRIMARY_PROFESSION', 'engineering', '工程学', '工程学', 4, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019105, 'WOW_PRIMARY_PROFESSION', 'herbalism', '草药学', '草药学', 5, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019106, 'WOW_PRIMARY_PROFESSION', 'inscription', '铭文', '铭文', 6, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019107, 'WOW_PRIMARY_PROFESSION', 'jewelcrafting', '珠宝加工', '珠宝加工', 7, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019108, 'WOW_PRIMARY_PROFESSION', 'leatherworking', '制皮', '制皮', 8, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019109, 'WOW_PRIMARY_PROFESSION', 'mining', '采矿', '采矿', 9, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019110, 'WOW_PRIMARY_PROFESSION', 'skinning', '剥皮', '剥皮', 10, 'ENABLED', FALSE, 'WoW 主专业', NULL),
+    (6019111, 'WOW_PRIMARY_PROFESSION', 'tailoring', '裁缝', '裁缝', 11, 'ENABLED', FALSE, 'WoW 主专业', NULL);
+
+CREATE TEMP TABLE existing_wow_item_targets AS
+SELECT DISTINCT ON (target.dict_code, target.item_code)
+    target.id AS target_id,
+    target.dict_code,
+    target.item_code
+FROM gak_data_dictionary_item target
+JOIN seed_wow_dictionary_items source
+    ON source.dict_code = target.dict_code
+   AND source.item_code = target.item_code
+ORDER BY target.dict_code, target.item_code, target.deleted ASC, target.id ASC;
+
+UPDATE gak_data_dictionary_item target
+SET item_label = source.item_label,
+    item_value = source.item_value,
+    sort_no = source.sort_no,
+    status = source.status,
+    is_default = source.is_default,
+    description = source.description,
+    extra_json = source.extra_json,
+    updated_at = CURRENT_TIMESTAMP,
+    deleted = FALSE
+FROM seed_wow_dictionary_items source
+JOIN existing_wow_item_targets keep
+    ON keep.dict_code = source.dict_code
+   AND keep.item_code = source.item_code
+WHERE target.id = keep.target_id;
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT
+    source.id, dictionary.id, source.dict_code, source.item_code, source.item_label, source.item_value,
+    source.sort_no, source.status, source.is_default, source.description, source.extra_json,
+    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM seed_wow_dictionary_items source
+JOIN gak_data_dictionary dictionary ON dictionary.dict_code = source.dict_code
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM existing_wow_item_targets keep
+    WHERE keep.dict_code = source.dict_code
+      AND keep.item_code = source.item_code
+);
+
+UPDATE gak_data_dictionary_item target
+SET deleted = TRUE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE target.dict_code IN ('WOW_FACTION', 'WOW_CLASS_NAME', 'WOW_MYTHIC_DUNGEON', 'WOW_CHARACTER_RACE', 'WOW_CLASS_SPEC', 'WOW_PRIMARY_PROFESSION')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM seed_wow_dictionary_items source
+    LEFT JOIN existing_wow_item_targets keep
+        ON keep.dict_code = source.dict_code
+       AND keep.item_code = source.item_code
+    WHERE target.dict_code = source.dict_code
+      AND target.item_code = source.item_code
+      AND target.id = COALESCE(keep.target_id, source.id)
+  );
+
+CREATE TEMP TABLE seed_wow_dictionary_usage (
+    id BIGINT PRIMARY KEY,
+    dict_code VARCHAR(64) NOT NULL,
+    app_code VARCHAR(64) NOT NULL,
+    app_name VARCHAR(64),
+    module_code VARCHAR(64) NOT NULL,
+    module_name VARCHAR(64),
+    biz_field_code VARCHAR(64) NOT NULL,
+    biz_field_name VARCHAR(64),
+    usage_type VARCHAR(32) NOT NULL,
+    value_mode VARCHAR(32) NOT NULL,
+    allow_multiple BOOLEAN NOT NULL,
+    required_flag BOOLEAN NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    remark VARCHAR(255)
+);
+
+INSERT INTO seed_wow_dictionary_usage (
+    id, dict_code, app_code, app_name, module_code, module_name, biz_field_code, biz_field_name,
+    usage_type, value_mode, allow_multiple, required_flag, status, remark
+)
+VALUES
+    (7001022, 'WOW_FACTION', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'faction', '阵营', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, TRUE, 'ENABLED', 'WoW 阵营字段'),
+    (7001023, 'WOW_CLASS_NAME', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'className', '职业', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, TRUE, 'ENABLED', '当前类名字段存中文标签，使用 itemValue 校验'),
+    (7001024, 'WOW_MYTHIC_DUNGEON', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'mythicDungeonName', '大秘境副本', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, FALSE, 'ENABLED', '大秘境副本名称字段'),
+    (7001026, 'WOW_CHARACTER_RACE', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'raceName', '种族', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, TRUE, 'ENABLED', 'WoW 种族字段'),
+    (7001027, 'WOW_CLASS_SPEC', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'specName', '专精', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, TRUE, 'ENABLED', 'WoW 专精选项'),
+    (7001028, 'WOW_PRIMARY_PROFESSION', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'professionPrimary', '专业1', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, FALSE, 'ENABLED', 'WoW 主专业字段'),
+    (7001029, 'WOW_PRIMARY_PROFESSION', 'APP_WOW_CHARACTER', 'WoW角色统计', 'WOW_CHARACTER', 'WoW角色', 'professionSecondary', '专业2', 'VALUE_VALIDATION', 'ITEM_VALUE', FALSE, FALSE, 'ENABLED', 'WoW 主专业字段');
+
+UPDATE gak_data_dictionary_usage target
+SET dict_code = source.dict_code,
+    dictionary_id = dictionary.id,
+    app_name = source.app_name,
+    module_code = source.module_code,
+    module_name = source.module_name,
+    biz_field_name = source.biz_field_name,
+    usage_type = source.usage_type,
+    value_mode = source.value_mode,
+    allow_multiple = source.allow_multiple,
+    required_flag = source.required_flag,
+    status = source.status,
+    remark = source.remark,
+    updated_at = CURRENT_TIMESTAMP
+FROM seed_wow_dictionary_usage source
+JOIN gak_data_dictionary dictionary ON dictionary.dict_code = source.dict_code
+WHERE target.app_code = source.app_code
+  AND target.module_code = source.module_code
+  AND target.biz_field_code = source.biz_field_code;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name, biz_field_code, biz_field_name,
+    usage_type, value_mode, allow_multiple, required_flag, status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    source.id, source.dict_code, dictionary.id, source.app_code, source.app_name, source.module_code, source.module_name,
+    source.biz_field_code, source.biz_field_name, source.usage_type, source.value_mode, source.allow_multiple,
+    source.required_flag, source.status, 0, NULL, source.remark, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM seed_wow_dictionary_usage source
+JOIN gak_data_dictionary dictionary ON dictionary.dict_code = source.dict_code
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM gak_data_dictionary_usage existing
+    WHERE existing.app_code = source.app_code
+      AND existing.module_code = source.module_code
+      AND existing.biz_field_code = source.biz_field_code
+);
 
 INSERT INTO gak_personal_budget (
     id, owner_user_id, budget_year, category_name, annual_limit, alert_threshold,

@@ -12,24 +12,36 @@ import com.gak.framework.response.PagedResult;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.domain.WowCharacter;
+import com.gak.wowcharacter.domain.WowCharacterMythicRun;
+import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
+import com.gak.wowcharacter.dto.SaveWowCharacterMythicRunRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
+import com.gak.wowcharacter.dto.SaveWowCharacterWeeklyVaultRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
+import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
+import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
 import com.gak.wowcharacter.vo.ClassStatVO;
 import com.gak.wowcharacter.vo.FactionStatVO;
 import com.gak.wowcharacter.vo.RealmStatVO;
 import com.gak.wowcharacter.vo.WowCharacterListVO;
+import com.gak.wowcharacter.vo.WowCharacterMythicRunVO;
 import com.gak.wowcharacter.vo.WowCharacterOverviewVO;
 import com.gak.wowcharacter.vo.WowCharacterSimpleVO;
+import com.gak.wowcharacter.vo.WowCharacterWeeklyVaultVO;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -56,23 +68,42 @@ public class WowCharacterService {
     private static final String PROFESSION_SECONDARY_FIELD = "professionSecondary";
     private static final String MYTHIC_DUNGEON_FIELD = "mythicDungeonName";
     private static final String PROFESSION_DICT_CODE = "WOW_PRIMARY_PROFESSION";
-    private static final Comparator<WowCharacter> DEFAULT_ORDER = Comparator
-            .comparing(WowCharacter::getItemLevel, Comparator.nullsLast(Comparator.reverseOrder()))
-            .thenComparing(WowCharacter::getMythicScore, Comparator.nullsLast(Comparator.reverseOrder()))
-            .thenComparing(WowCharacter::getCharacterName, Comparator.nullsLast(String::compareTo));
+    private static final String DEFAULT_FACTION = "ALLIANCE";
+    private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    private static final int FEATURED_CHARACTER_LIMIT = 4;
+    private static final int[] RAID_VAULT_THRESHOLDS = {2, 4, 6};
+    private static final int[] MYTHIC_VAULT_THRESHOLDS = {1, 4, 8};
+    private static final int[] WORLD_VAULT_THRESHOLDS = {2, 4, 8};
+    private static final Comparator<WowCharacter> DEFAULT_ORDER = (left, right) -> {
+        int itemLevelCompare = compareDecimalDesc(left.getItemLevel(), right.getItemLevel());
+        if (itemLevelCompare != 0) {
+            return itemLevelCompare;
+        }
+        int mythicScoreCompare = compareDecimalDesc(left.getMythicScore(), right.getMythicScore());
+        if (mythicScoreCompare != 0) {
+            return mythicScoreCompare;
+        }
+        return String.valueOf(left.getCharacterName()).compareTo(String.valueOf(right.getCharacterName()));
+    };
 
     private final WowCharacterMapper wowCharacterMapper;
+    private final WowCharacterMythicRunMapper wowCharacterMythicRunMapper;
+    private final WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper;
     private final UserMapper userMapper;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
     private final DataDictionarySupport dataDictionarySupport;
     private final ObjectMapper objectMapper;
 
     public WowCharacterService(WowCharacterMapper wowCharacterMapper,
+                               WowCharacterMythicRunMapper wowCharacterMythicRunMapper,
+                               WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper,
                                UserMapper userMapper,
                                DataDictionaryUsageSupport dataDictionaryUsageSupport,
                                DataDictionarySupport dataDictionarySupport,
                                ObjectMapper objectMapper) {
         this.wowCharacterMapper = wowCharacterMapper;
+        this.wowCharacterMythicRunMapper = wowCharacterMythicRunMapper;
+        this.wowCharacterWeeklyVaultMapper = wowCharacterWeeklyVaultMapper;
         this.userMapper = userMapper;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
         this.dataDictionarySupport = dataDictionarySupport;
@@ -91,9 +122,17 @@ public class WowCharacterService {
             return new PagedResult<>(Collections.emptyList(), total);
         }
 
+        List<WowCharacter> pageRecords = records.subList((int) fromIndex, (int) toIndex);
+        Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(extractCharacterIds(pageRecords));
+        Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap = loadWeeklyVaultMap(extractCharacterIds(pageRecords));
+
         List<WowCharacterListVO> list = new ArrayList<>();
-        for (WowCharacter record : records.subList((int) fromIndex, (int) toIndex)) {
-            list.add(toListVO(record));
+        for (WowCharacter record : pageRecords) {
+            list.add(toListVO(
+                    record,
+                    mythicRunMap.getOrDefault(record.getId(), Collections.emptyList()),
+                    weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList())
+            ));
         }
         return new PagedResult<>(list, total);
     }
@@ -101,6 +140,7 @@ public class WowCharacterService {
     @Transactional
     public WowCharacterListVO create(Long currentUserId, SaveWowCharacterRequest request) {
         ensureCurrentUserExists(currentUserId);
+        validateFeaturedCharacterLimit(currentUserId, null, request.getIsFeatured());
         NormalizedCharacter normalized = normalizeRequest(request);
 
         LocalDateTime now = LocalDateTime.now();
@@ -110,25 +150,44 @@ public class WowCharacterService {
         character.setCreatedAt(now);
         character.setUpdatedAt(now);
         wowCharacterMapper.insert(character);
-        return toListVO(character);
+
+        syncMythicRuns(currentUserId, character.getId(), normalized.mythicRuns(), now);
+        syncWeeklyVaults(currentUserId, character.getId(), normalized.weeklyVaults(), now);
+        return toListVO(character, toDomainMythicRuns(character.getId(), currentUserId, normalized.mythicRuns(), now),
+                toDomainWeeklyVaults(character.getId(), currentUserId, normalized.weeklyVaults(), now));
     }
 
     @Transactional
     public WowCharacterListVO update(Long currentUserId, Long id, SaveWowCharacterRequest request) {
         ensureCurrentUserExists(currentUserId);
         WowCharacter current = getOwnedCharacterOrThrow(currentUserId, id);
+        validateFeaturedCharacterLimit(currentUserId, current, request.getIsFeatured());
         NormalizedCharacter normalized = normalizeRequest(request);
 
+        LocalDateTime now = LocalDateTime.now();
         applyNormalized(current, normalized);
-        current.setUpdatedAt(LocalDateTime.now());
+        current.setUpdatedAt(now);
         wowCharacterMapper.updateById(current);
-        return toListVO(current);
+
+        syncMythicRuns(currentUserId, current.getId(), normalized.mythicRuns(), now);
+        syncWeeklyVaults(currentUserId, current.getId(), normalized.weeklyVaults(), now);
+        return toListVO(current, toDomainMythicRuns(current.getId(), currentUserId, normalized.mythicRuns(), now),
+                toDomainWeeklyVaults(current.getId(), currentUserId, normalized.weeklyVaults(), now));
     }
 
     @Transactional
     public void delete(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         WowCharacter current = getOwnedCharacterOrThrow(currentUserId, id);
+
+        QueryWrapper<WowCharacterMythicRun> mythicRunWrapper = new QueryWrapper<>();
+        mythicRunWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
+        wowCharacterMythicRunMapper.delete(mythicRunWrapper);
+
+        QueryWrapper<WowCharacterWeeklyVault> weeklyVaultWrapper = new QueryWrapper<>();
+        weeklyVaultWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
+        wowCharacterWeeklyVaultMapper.delete(weeklyVaultWrapper);
+
         wowCharacterMapper.deleteById(current.getId());
     }
 
@@ -136,14 +195,17 @@ public class WowCharacterService {
         ensureCurrentUserExists(currentUserId);
         List<WowCharacter> records = filterCharacters(currentUserId, request.getKeyword(), request.getFaction(), request.getClassName());
         records.sort(DEFAULT_ORDER);
+        List<Long> characterIds = extractCharacterIds(records);
+        Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(characterIds);
+        Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap = loadWeeklyVaultMap(characterIds);
 
         WowCharacterOverviewVO overviewVO = new WowCharacterOverviewVO();
         overviewVO.setTotalCharacters(records.size());
         overviewVO.setTotalRealms(countDistinctRealms(records));
-        overviewVO.setHighestItemLevel(records.stream().mapToInt(this::safeItemLevel).max().orElse(0));
-        overviewVO.setHighestMythicScore(records.stream().mapToInt(this::safeMythicScore).max().orElse(0));
+        overviewVO.setHighestItemLevel(findHighestItemLevel(records));
+        overviewVO.setHighestMythicScore(findHighestMythicScore(records));
         overviewVO.setAverageItemLevel(calculateAverageItemLevel(records));
-        overviewVO.setFeaturedCharacters(buildFeaturedCharacters(records));
+        overviewVO.setFeaturedCharacters(buildFeaturedCharacters(records, mythicRunMap, weeklyVaultMap));
         overviewVO.setFactionStats(buildFactionStats(records));
         overviewVO.setClassStats(buildClassStats(records));
         overviewVO.setRealmStats(buildRealmStats(records));
@@ -217,22 +279,111 @@ public class WowCharacterService {
         validateRaceFactionRelation(raceOption, faction);
         validateClassSpecRelation(classOption, specOption);
 
+        BigDecimal itemLevel = normalizeScaledDecimal(request.getItemLevel(), "itemLevel 不能为空");
+        Boolean isFeatured = Boolean.TRUE.equals(request.getIsFeatured());
+        BestMythicRun bestMythicRun = normalizeCurrentMythicKey(
+                request.getMythicBestLevel(),
+                request.getMythicDungeonName()
+        );
+        List<NormalizedMythicRun> mythicRuns = normalizeMythicRuns(request);
+        BigDecimal mythicScore = calculateMythicScore(mythicRuns);
+        List<NormalizedWeeklyVault> weeklyVaults = normalizeWeeklyVaults(request.getWeeklyVaults());
+
         return new NormalizedCharacter(
-                trimToNull(request.getCharacterName()),
+                trimRequired(request.getCharacterName(), "characterName 不能为空"),
                 classOption.className(),
                 specOption != null ? specOption.code() : null,
                 raceOption.raceName(),
-                trimToNull(request.getRealmName()),
+                trimRequired(request.getRealmName(), "realmName 不能为空"),
                 faction,
                 request.getLevel(),
-                request.getItemLevel(),
-                normalizeMythicBestLevel(request.getMythicBestLevel()),
-                normalizeMythicDungeonName(request.getMythicBestLevel(), request.getMythicDungeonName()),
-                request.getMythicScore() == null ? 0 : request.getMythicScore(),
+                itemLevel,
+                isFeatured,
+                bestMythicRun.bestTimedLevel(),
+                bestMythicRun.dungeonName(),
+                mythicScore,
                 professionPrimary,
                 professionSecondary,
-                trimToNull(request.getNote())
+                trimToNull(request.getNote()),
+                mythicRuns,
+                weeklyVaults
         );
+    }
+
+    private List<NormalizedMythicRun> normalizeMythicRuns(SaveWowCharacterRequest request) {
+        List<NormalizedMythicRun> result = new ArrayList<>();
+        Set<String> dungeonNames = new LinkedHashSet<>();
+        if (request.getMythicRuns() != null && !request.getMythicRuns().isEmpty()) {
+            for (SaveWowCharacterMythicRunRequest item : request.getMythicRuns()) {
+                String dungeonName = normalizeUsageValue(
+                        MYTHIC_DUNGEON_FIELD,
+                        item.getDungeonName(),
+                        true,
+                        "WOW_MYTHIC_DUNGEON_INVALID",
+                        "mythicRuns.dungeonName 非法"
+                );
+                if (!dungeonNames.add(dungeonName)) {
+                    throw new BusinessException("WOW_MYTHIC_DUNGEON_DUPLICATE", "mythicRuns 存在重复副本");
+                }
+                result.add(new NormalizedMythicRun(
+                        dungeonName,
+                        normalizeIntegerScore(item.getScore())
+                ));
+            }
+            return result;
+        }
+        return result;
+    }
+
+    private BestMythicRun normalizeCurrentMythicKey(Integer bestLevelValue, String mythicDungeonName) {
+        int bestLevel = bestLevelValue == null ? 0 : bestLevelValue;
+        if (bestLevel <= 0 && mythicDungeonName == null) {
+            return new BestMythicRun(null, 0);
+        }
+        if (bestLevel > 0 && mythicDungeonName == null) {
+            throw new BusinessException("WOW_MYTHIC_DUNGEON_REQUIRED", "mythicBestLevel > 0 时，mythicDungeonName 必填");
+        }
+        if (mythicDungeonName != null && bestLevel <= 0) {
+            throw new BusinessException("WOW_MYTHIC_LEVEL_REQUIRED", "mythicDungeonName 非空时，mythicBestLevel 必须 > 0");
+        }
+        return new BestMythicRun(
+                normalizeUsageValue(
+                        MYTHIC_DUNGEON_FIELD,
+                        mythicDungeonName,
+                        true,
+                        "WOW_MYTHIC_DUNGEON_INVALID",
+                        "mythicDungeonName 非法"
+                ),
+                bestLevel
+        );
+    }
+
+    private List<NormalizedWeeklyVault> normalizeWeeklyVaults(List<SaveWowCharacterWeeklyVaultRequest> requestList) {
+        if (requestList == null || requestList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<LocalDate, NormalizedWeeklyVault> result = new LinkedHashMap<>();
+        for (SaveWowCharacterWeeklyVaultRequest item : requestList) {
+            if (item.getWeekStartDate() == null) {
+                throw new BusinessException("WOW_WEEKLY_VAULT_WEEK_REQUIRED", "weekStartDate 不能为空");
+            }
+            if (result.containsKey(item.getWeekStartDate())) {
+                throw new BusinessException("WOW_WEEKLY_VAULT_DUPLICATE_WEEK", "weeklyVaults 存在重复周起始日期");
+            }
+            result.put(item.getWeekStartDate(), new NormalizedWeeklyVault(
+                    item.getId(),
+                    item.getWeekStartDate(),
+                    normalizeProgressCount(item.getRaidProgressCount()),
+                    normalizeProgressCount(item.getMythicProgressCount()),
+                    normalizeProgressCount(item.getWorldProgressCount()),
+                    trimToNull(item.getNote())
+            ));
+        }
+        return new ArrayList<>(result.values());
+    }
+
+    private int normalizeProgressCount(Integer progressCount) {
+        return progressCount == null ? 0 : Math.max(progressCount, 0);
     }
 
     private void applyNormalized(WowCharacter character, NormalizedCharacter normalized) {
@@ -244,6 +395,7 @@ public class WowCharacterService {
         character.setFaction(normalized.faction());
         character.setLevel(normalized.level());
         character.setItemLevel(normalized.itemLevel());
+        character.setIsFeatured(normalized.isFeatured());
         character.setMythicBestLevel(normalized.mythicBestLevel());
         character.setMythicDungeonName(normalized.mythicDungeonName());
         character.setMythicScore(normalized.mythicScore());
@@ -252,12 +404,106 @@ public class WowCharacterService {
         character.setNote(normalized.note());
     }
 
-    private String normalizeOptionalFaction(String faction) {
-        return normalizeUsageValue(FACTION_FIELD, faction, false, "WOW_FACTION_INVALID", "faction 非法");
+    private void syncMythicRuns(Long currentUserId, Long characterId, List<NormalizedMythicRun> normalizedRuns, LocalDateTime now) {
+        QueryWrapper<WowCharacterMythicRun> deleteWrapper = new QueryWrapper<>();
+        deleteWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
+        wowCharacterMythicRunMapper.delete(deleteWrapper);
+        for (WowCharacterMythicRun run : toDomainMythicRuns(characterId, currentUserId, normalizedRuns, now)) {
+            wowCharacterMythicRunMapper.insert(run);
+        }
     }
 
-    private String normalizeOptionalClassName(String className) {
-        return normalizeUsageValue(CLASS_NAME_FIELD, className, false, "WOW_CLASS_INVALID", "className 非法");
+    private void syncWeeklyVaults(Long currentUserId, Long characterId, List<NormalizedWeeklyVault> normalizedVaults, LocalDateTime now) {
+        QueryWrapper<WowCharacterWeeklyVault> deleteWrapper = new QueryWrapper<>();
+        deleteWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
+        wowCharacterWeeklyVaultMapper.delete(deleteWrapper);
+        for (WowCharacterWeeklyVault vault : toDomainWeeklyVaults(characterId, currentUserId, normalizedVaults, now)) {
+            wowCharacterWeeklyVaultMapper.insert(vault);
+        }
+    }
+
+    private List<WowCharacterMythicRun> toDomainMythicRuns(Long characterId,
+                                                           Long currentUserId,
+                                                           List<NormalizedMythicRun> normalizedRuns,
+                                                           LocalDateTime now) {
+        if (normalizedRuns == null || normalizedRuns.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<WowCharacterMythicRun> result = new ArrayList<>();
+        for (NormalizedMythicRun item : normalizedRuns) {
+            WowCharacterMythicRun run = new WowCharacterMythicRun();
+            run.setCharacterId(characterId);
+            run.setOwnerUserId(currentUserId);
+            run.setDungeonName(item.dungeonName());
+            run.setBestTimedLevel(0);
+            run.setScore(item.score());
+            run.setCreatedAt(now);
+            run.setUpdatedAt(now);
+            result.add(run);
+        }
+        return result;
+    }
+
+    private List<WowCharacterWeeklyVault> toDomainWeeklyVaults(Long characterId,
+                                                               Long currentUserId,
+                                                               List<NormalizedWeeklyVault> normalizedVaults,
+                                                               LocalDateTime now) {
+        if (normalizedVaults == null || normalizedVaults.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<WowCharacterWeeklyVault> result = new ArrayList<>();
+        for (NormalizedWeeklyVault item : normalizedVaults) {
+            WowCharacterWeeklyVault vault = new WowCharacterWeeklyVault();
+            vault.setId(item.id());
+            vault.setCharacterId(characterId);
+            vault.setOwnerUserId(currentUserId);
+            vault.setWeekStartDate(item.weekStartDate());
+            vault.setRaidProgressCount(item.raidProgressCount());
+            vault.setMythicProgressCount(item.mythicProgressCount());
+            vault.setWorldProgressCount(item.worldProgressCount());
+            vault.setNote(item.note());
+            vault.setCreatedAt(now);
+            vault.setUpdatedAt(now);
+            result.add(vault);
+        }
+        return result;
+    }
+
+    private Map<Long, List<WowCharacterMythicRun>> loadMythicRunMap(List<Long> characterIds) {
+        if (characterIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        QueryWrapper<WowCharacterMythicRun> wrapper = new QueryWrapper<>();
+        wrapper.in("character_id", characterIds).orderByAsc("character_id").orderByAsc("dungeon_name").orderByAsc("id");
+        Map<Long, List<WowCharacterMythicRun>> result = new HashMap<>();
+        for (WowCharacterMythicRun item : wowCharacterMythicRunMapper.selectList(wrapper)) {
+            result.computeIfAbsent(item.getCharacterId(), key -> new ArrayList<>()).add(item);
+        }
+        return result;
+    }
+
+    private Map<Long, List<WowCharacterWeeklyVault>> loadWeeklyVaultMap(List<Long> characterIds) {
+        if (characterIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        QueryWrapper<WowCharacterWeeklyVault> wrapper = new QueryWrapper<>();
+        wrapper.in("character_id", characterIds).orderByDesc("week_start_date").orderByDesc("id");
+        Map<Long, List<WowCharacterWeeklyVault>> result = new HashMap<>();
+        for (WowCharacterWeeklyVault item : wowCharacterWeeklyVaultMapper.selectList(wrapper)) {
+            result.computeIfAbsent(item.getCharacterId(), key -> new ArrayList<>()).add(item);
+        }
+        return result;
+    }
+
+    private List<Long> extractCharacterIds(Collection<WowCharacter> records) {
+        if (records == null || records.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (WowCharacter record : records) {
+            ids.add(record.getId());
+        }
+        return ids;
     }
 
     private long countDistinctRealms(List<WowCharacter> records) {
@@ -268,40 +514,51 @@ public class WowCharacterService {
         return realms.size();
     }
 
-    private double calculateAverageItemLevel(List<WowCharacter> records) {
+    private BigDecimal calculateAverageItemLevel(List<WowCharacter> records) {
         if (records.isEmpty()) {
-            return 0D;
+            return ZERO_DECIMAL;
         }
-        double sum = 0;
+        BigDecimal sum = ZERO_DECIMAL;
         for (WowCharacter record : records) {
-            sum += safeItemLevel(record);
+            sum = sum.add(safeItemLevel(record));
         }
-        return round(sum / records.size());
+        return sum.divide(BigDecimal.valueOf(records.size()), 2, RoundingMode.HALF_UP);
     }
 
-    private List<WowCharacterSimpleVO> buildFeaturedCharacters(List<WowCharacter> records) {
+    private BigDecimal findHighestItemLevel(List<WowCharacter> records) {
+        BigDecimal result = ZERO_DECIMAL;
+        for (WowCharacter record : records) {
+            if (safeItemLevel(record).compareTo(result) > 0) {
+                result = safeItemLevel(record);
+            }
+        }
+        return result;
+    }
+
+    private BigDecimal findHighestMythicScore(List<WowCharacter> records) {
+        BigDecimal result = ZERO_DECIMAL;
+        for (WowCharacter record : records) {
+            if (safeMythicScore(record).compareTo(result) > 0) {
+                result = safeMythicScore(record);
+            }
+        }
+        return result;
+    }
+
+    private List<WowCharacterSimpleVO> buildFeaturedCharacters(List<WowCharacter> records,
+                                                               Map<Long, List<WowCharacterMythicRun>> mythicRunMap,
+                                                               Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap) {
         List<WowCharacterSimpleVO> result = new ArrayList<>();
-        for (WowCharacter record : records.stream().sorted(DEFAULT_ORDER).limit(2).toList()) {
-            ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
-            WowCharacterSimpleVO vo = new WowCharacterSimpleVO();
-            vo.setId(record.getId());
-            vo.setCharacterName(record.getCharacterName());
-            vo.setClassName(record.getClassName());
-            vo.setSpecName(resolvedSpec.value());
-            vo.setSpecNameLabel(resolvedSpec.label());
-            vo.setRaceName(record.getRaceName());
-            vo.setRealmName(record.getRealmName());
-            vo.setFaction(record.getFaction());
-            vo.setLevel(record.getLevel());
-            vo.setItemLevel(safeItemLevel(record));
-            vo.setMythicBestLevel(safeMythicBestLevel(record));
-            vo.setMythicDungeonName(record.getMythicDungeonName());
-            vo.setMythicScore(safeMythicScore(record));
-            vo.setProfessionPrimary(record.getProfessionPrimary());
-            vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
-            vo.setProfessionSecondary(record.getProfessionSecondary());
-            vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
-            result.add(vo);
+        for (WowCharacter record : records.stream()
+                .filter(item -> Boolean.TRUE.equals(item.getIsFeatured()))
+                .sorted(DEFAULT_ORDER)
+                .limit(FEATURED_CHARACTER_LIMIT)
+                .toList()) {
+            result.add(toSimpleVO(
+                    record,
+                    mythicRunMap.getOrDefault(record.getId(), Collections.emptyList()),
+                    weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList())
+            ));
         }
         return result;
     }
@@ -327,7 +584,7 @@ public class WowCharacterService {
             FactionStatVO vo = new FactionStatVO();
             vo.setLabel(option.getItemLabel());
             vo.setCount(count);
-            vo.setRatio(total == 0 ? 0D : round((double) count / total));
+            vo.setRatio(total == 0 ? 0D : roundDouble((double) count / total));
             result.add(vo);
         }
         return result;
@@ -344,7 +601,11 @@ public class WowCharacterService {
             ClassStatVO vo = new ClassStatVO();
             vo.setClassName(entry.getKey());
             vo.setCount(entry.getValue().size());
-            vo.setAverageItemLevel(round(entry.getValue().stream().mapToInt(this::safeItemLevel).average().orElse(0D)));
+            vo.setAverageItemLevel(roundDouble(entry.getValue().stream()
+                    .map(this::safeItemLevel)
+                    .mapToDouble(BigDecimal::doubleValue)
+                    .average()
+                    .orElse(0D)));
             result.add(vo);
         }
         result.sort(Comparator.comparing(ClassStatVO::getCount).reversed()
@@ -364,7 +625,11 @@ public class WowCharacterService {
             RealmStatVO vo = new RealmStatVO();
             vo.setRealmName(entry.getKey());
             vo.setCount(entry.getValue().size());
-            vo.setHighestItemLevel(entry.getValue().stream().mapToInt(this::safeItemLevel).max().orElse(0));
+            vo.setHighestItemLevel(entry.getValue().stream()
+                    .map(this::safeItemLevel)
+                    .max(BigDecimal::compareTo)
+                    .orElse(ZERO_DECIMAL)
+                    .intValue());
             result.add(vo);
         }
         result.sort(Comparator.comparing(RealmStatVO::getCount).reversed()
@@ -373,8 +638,11 @@ public class WowCharacterService {
         return result.size() > 5 ? new ArrayList<>(result.subList(0, 5)) : result;
     }
 
-    private WowCharacterListVO toListVO(WowCharacter record) {
+    private WowCharacterListVO toListVO(WowCharacter record,
+                                        List<WowCharacterMythicRun> mythicRuns,
+                                        List<WowCharacterWeeklyVault> weeklyVaults) {
         ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
+        List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(record, mythicRuns);
         WowCharacterListVO vo = new WowCharacterListVO();
         vo.setId(record.getId());
         vo.setCharacterName(record.getCharacterName());
@@ -386,57 +654,188 @@ public class WowCharacterService {
         vo.setFaction(record.getFaction());
         vo.setLevel(record.getLevel());
         vo.setItemLevel(safeItemLevel(record));
+        vo.setIsFeatured(Boolean.TRUE.equals(record.getIsFeatured()));
         vo.setMythicBestLevel(safeMythicBestLevel(record));
         vo.setMythicDungeonName(record.getMythicDungeonName());
         vo.setMythicScore(safeMythicScore(record));
+        vo.setMythicCompletedDungeonCount(countCompletedMythicRuns(mythicRunVOs));
         vo.setProfessionPrimary(record.getProfessionPrimary());
         vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
         vo.setProfessionSecondary(record.getProfessionSecondary());
         vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
         vo.setNote(record.getNote());
         vo.setUpdatedAt(record.getUpdatedAt());
+        vo.setMythicRuns(mythicRunVOs);
+        vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
         return vo;
     }
 
-    private int safeItemLevel(WowCharacter record) {
-        return record.getItemLevel() == null ? 0 : record.getItemLevel();
+    private WowCharacterSimpleVO toSimpleVO(WowCharacter record,
+                                            List<WowCharacterMythicRun> mythicRuns,
+                                            List<WowCharacterWeeklyVault> weeklyVaults) {
+        ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
+        List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(record, mythicRuns);
+        WowCharacterSimpleVO vo = new WowCharacterSimpleVO();
+        vo.setId(record.getId());
+        vo.setCharacterName(record.getCharacterName());
+        vo.setClassName(record.getClassName());
+        vo.setSpecName(resolvedSpec.value());
+        vo.setSpecNameLabel(resolvedSpec.label());
+        vo.setRaceName(record.getRaceName());
+        vo.setRealmName(record.getRealmName());
+        vo.setFaction(record.getFaction());
+        vo.setLevel(record.getLevel());
+        vo.setItemLevel(safeItemLevel(record));
+        vo.setIsFeatured(Boolean.TRUE.equals(record.getIsFeatured()));
+        vo.setMythicBestLevel(safeMythicBestLevel(record));
+        vo.setMythicDungeonName(record.getMythicDungeonName());
+        vo.setMythicScore(safeMythicScore(record));
+        vo.setMythicCompletedDungeonCount(countCompletedMythicRuns(mythicRunVOs));
+        vo.setProfessionPrimary(record.getProfessionPrimary());
+        vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
+        vo.setProfessionSecondary(record.getProfessionSecondary());
+        vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
+        vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
+        return vo;
+    }
+
+    private List<WowCharacterMythicRunVO> buildMythicRunVOs(WowCharacter record, List<WowCharacterMythicRun> mythicRuns) {
+        Map<String, WowCharacterMythicRun> runMap = new HashMap<>();
+        for (WowCharacterMythicRun item : mythicRuns) {
+            runMap.put(item.getDungeonName(), item);
+        }
+
+        List<WowCharacterMythicRunVO> result = new ArrayList<>();
+        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, MYTHIC_DUNGEON_FIELD)) {
+            WowCharacterMythicRun item = runMap.get(option.getItemValue());
+            WowCharacterMythicRunVO vo = new WowCharacterMythicRunVO();
+            vo.setDungeonName(option.getItemValue());
+            if (item != null) {
+                vo.setBestTimedLevel(item.getBestTimedLevel() == null ? 0 : item.getBestTimedLevel());
+                vo.setScore(scale2(item.getScore()));
+            } else {
+                vo.setBestTimedLevel(0);
+                vo.setScore(ZERO_DECIMAL);
+            }
+            result.add(vo);
+        }
+
+        return result;
+    }
+
+    private List<WowCharacterWeeklyVaultVO> buildWeeklyVaultVOs(List<WowCharacterWeeklyVault> weeklyVaults) {
+        if (weeklyVaults == null || weeklyVaults.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<WowCharacterWeeklyVaultVO> result = new ArrayList<>();
+        for (WowCharacterWeeklyVault item : weeklyVaults) {
+            WowCharacterWeeklyVaultVO vo = new WowCharacterWeeklyVaultVO();
+            vo.setId(item.getId());
+            vo.setWeekStartDate(item.getWeekStartDate());
+            vo.setRaidProgressCount(defaultInt(item.getRaidProgressCount()));
+            vo.setMythicProgressCount(defaultInt(item.getMythicProgressCount()));
+            vo.setWorldProgressCount(defaultInt(item.getWorldProgressCount()));
+            vo.setRaidUnlockedCount(calculateUnlockedCount(defaultInt(item.getRaidProgressCount()), RAID_VAULT_THRESHOLDS));
+            vo.setMythicUnlockedCount(calculateUnlockedCount(defaultInt(item.getMythicProgressCount()), MYTHIC_VAULT_THRESHOLDS));
+            vo.setWorldUnlockedCount(calculateUnlockedCount(defaultInt(item.getWorldProgressCount()), WORLD_VAULT_THRESHOLDS));
+            vo.setNote(item.getNote());
+            result.add(vo);
+        }
+        return result;
+    }
+
+    private int countCompletedMythicRuns(List<WowCharacterMythicRunVO> mythicRuns) {
+        int count = 0;
+        for (WowCharacterMythicRunVO item : mythicRuns) {
+            if (item.getScore() != null && item.getScore().compareTo(BigDecimal.ZERO) > 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int calculateUnlockedCount(int progressCount, int[] thresholds) {
+        int unlockedCount = 0;
+        for (int threshold : thresholds) {
+            if (progressCount >= threshold) {
+                unlockedCount++;
+            }
+        }
+        return unlockedCount;
+    }
+
+    private BigDecimal calculateMythicScore(List<NormalizedMythicRun> mythicRuns) {
+        BigDecimal result = ZERO_DECIMAL;
+        if (mythicRuns == null) {
+            return result;
+        }
+        for (NormalizedMythicRun item : mythicRuns) {
+            result = result.add(item.score());
+        }
+        return scale2(result);
+    }
+
+    private BigDecimal safeItemLevel(WowCharacter record) {
+        return scale2(record.getItemLevel());
     }
 
     private int safeMythicBestLevel(WowCharacter record) {
         return record.getMythicBestLevel() == null ? 0 : record.getMythicBestLevel();
     }
 
-    private int safeMythicScore(WowCharacter record) {
-        return record.getMythicScore() == null ? 0 : record.getMythicScore();
+    private BigDecimal safeMythicScore(WowCharacter record) {
+        return scale2(record.getMythicScore());
     }
 
-    private double round(double value) {
+    private BigDecimal normalizeIntegerScore(BigDecimal value) {
+        BigDecimal normalized = value == null ? BigDecimal.ZERO : value;
+        if (normalized.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("WOW_MYTHIC_SCORE_INVALID", "mythicRuns.score 不能小于 0");
+        }
+        if (normalized.stripTrailingZeros().scale() > 0) {
+            throw new BusinessException("WOW_MYTHIC_SCORE_INVALID", "mythicRuns.score 必须为整数");
+        }
+        return normalized.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private void validateFeaturedCharacterLimit(Long currentUserId, WowCharacter current, Boolean isFeatured) {
+        if (!Boolean.TRUE.equals(isFeatured)) {
+            return;
+        }
+        if (current != null && Boolean.TRUE.equals(current.getIsFeatured())) {
+            return;
+        }
+        if (countFeaturedCharacters(currentUserId) >= FEATURED_CHARACTER_LIMIT) {
+            throw new BusinessException("WOW_FEATURED_CHARACTER_LIMIT", "主角色最多只能同时设置 4 个");
+        }
+    }
+
+    private long countFeaturedCharacters(Long currentUserId) {
+        QueryWrapper<WowCharacter> wrapper = new QueryWrapper<>();
+        wrapper.eq("owner_user_id", currentUserId).eq("is_featured", true);
+        return wowCharacterMapper.selectCount(wrapper);
+    }
+
+    private BigDecimal normalizeScaledDecimal(BigDecimal value, String requiredMessage) {
+        if (value == null) {
+            throw new BusinessException("400", requiredMessage);
+        }
+        if (value.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("WOW_NUMBER_NEGATIVE", "数值不能小于 0");
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal scale2(BigDecimal value) {
+        return value == null ? ZERO_DECIMAL : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private double roundDouble(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
-    private int normalizeMythicBestLevel(Integer mythicBestLevel) {
-        return mythicBestLevel == null ? 0 : mythicBestLevel;
-    }
-
-    private String normalizeMythicDungeonName(Integer mythicBestLevel, String mythicDungeonName) {
-        int bestLevel = normalizeMythicBestLevel(mythicBestLevel);
-        String trimmedDungeonName = trimToNull(mythicDungeonName);
-        if (bestLevel > 0 && trimmedDungeonName == null) {
-            throw new BusinessException("WOW_MYTHIC_DUNGEON_REQUIRED", "mythicBestLevel > 0 时，mythicDungeonName 必填");
-        }
-        if (trimmedDungeonName != null && bestLevel <= 0) {
-            throw new BusinessException("WOW_MYTHIC_LEVEL_REQUIRED", "mythicDungeonName 非空时，mythicBestLevel 必须 > 0");
-        }
-        if (trimmedDungeonName != null) {
-            return normalizeUsageValue(
-                    MYTHIC_DUNGEON_FIELD,
-                    trimmedDungeonName,
-                    true,
-                    "WOW_MYTHIC_DUNGEON_INVALID",
-                    "mythicDungeonName 非法"
-            );
-        }
-        return trimmedDungeonName;
+    private int defaultInt(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private String trimToNull(String value) {
@@ -446,8 +845,24 @@ public class WowCharacterService {
         return value.trim();
     }
 
+    private String trimRequired(String value, String message) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            throw new BusinessException("400", message);
+        }
+        return normalized;
+    }
+
     private String normalizeRequiredFaction(String faction) {
         return normalizeUsageValue(FACTION_FIELD, faction, true, "WOW_FACTION_INVALID", "faction 非法");
+    }
+
+    private String normalizeOptionalFaction(String faction) {
+        return normalizeUsageValue(FACTION_FIELD, faction, false, "WOW_FACTION_INVALID", "faction 非法");
+    }
+
+    private String normalizeOptionalClassName(String className) {
+        return normalizeUsageValue(CLASS_NAME_FIELD, className, false, "WOW_CLASS_INVALID", "className 非法");
     }
 
     private ClassOption normalizeRequiredClassOption(String className) {
@@ -482,7 +897,6 @@ public class WowCharacterService {
             }
             return option;
         } catch (BusinessException exception) {
-            // 兼容旧数据和旧前端仍提交中文专精名的场景，按职业+专精标签归一到当前唯一 code。
             SpecOption legacyOption = findSpecOptionByLabel(options, classCode, trimmed);
             if (legacyOption != null) {
                 return legacyOption;
@@ -492,9 +906,9 @@ public class WowCharacterService {
     }
 
     private String normalizeOptionalProfession(String bizFieldCode,
-                                              String profession,
-                                              String errorCode,
-                                              String message) {
+                                               String profession,
+                                               String errorCode,
+                                               String message) {
         return normalizeUsageValue(bizFieldCode, profession, false, errorCode, message);
     }
 
@@ -579,7 +993,6 @@ public class WowCharacterService {
         }
         for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, RACE_NAME_FIELD)) {
             if (normalized.equalsIgnoreCase(option.getItemValue())) {
-                // 联动关系直接消费字典 extraJson，避免在服务层维护第二套种族/职业/阵营映射。
                 return new RaceOption(
                         option.getItemValue(),
                         readNormalizedStringSet(option.getExtraJson(), "factions", true),
@@ -667,7 +1080,15 @@ public class WowCharacterService {
     }
 
     private String normalizeFactionCode(String faction) {
-        return faction == null ? null : faction.trim().toUpperCase(Locale.ROOT);
+        return faction == null ? DEFAULT_FACTION : faction.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static int compareDecimalDesc(BigDecimal left, BigDecimal right) {
+        return scaleStatic(right).compareTo(scaleStatic(left));
+    }
+
+    private static BigDecimal scaleStatic(BigDecimal value) {
+        return value == null ? ZERO_DECIMAL : value.setScale(2, RoundingMode.HALF_UP);
     }
 
     private record NormalizedCharacter(
@@ -678,14 +1099,36 @@ public class WowCharacterService {
             String realmName,
             String faction,
             Integer level,
-            Integer itemLevel,
+            BigDecimal itemLevel,
+            Boolean isFeatured,
             Integer mythicBestLevel,
             String mythicDungeonName,
-            Integer mythicScore,
+            BigDecimal mythicScore,
             String professionPrimary,
             String professionSecondary,
+            String note,
+            List<NormalizedMythicRun> mythicRuns,
+            List<NormalizedWeeklyVault> weeklyVaults
+    ) {
+    }
+
+    private record NormalizedMythicRun(
+            String dungeonName,
+            BigDecimal score
+    ) {
+    }
+
+    private record NormalizedWeeklyVault(
+            Long id,
+            LocalDate weekStartDate,
+            Integer raidProgressCount,
+            Integer mythicProgressCount,
+            Integer worldProgressCount,
             String note
     ) {
+    }
+
+    private record BestMythicRun(String dungeonName, Integer bestTimedLevel) {
     }
 
     private record ClassOption(String classCode, String className) {
