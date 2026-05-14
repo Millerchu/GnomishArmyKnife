@@ -83,6 +83,13 @@ CREATE TABLE IF NOT EXISTS gak_wow_character_mythic_run (
     updated_at TIMESTAMP NOT NULL
 );
 
+ALTER TABLE gak_wow_character_mythic_run ADD COLUMN IF NOT EXISTS score NUMERIC(10, 2) NOT NULL DEFAULT 0;
+ALTER TABLE gak_wow_character_mythic_run ALTER COLUMN score TYPE NUMERIC(10, 2) USING score::NUMERIC(10, 2);
+UPDATE gak_wow_character_mythic_run
+SET score = (best_timed_level * 25)::NUMERIC(10, 2)
+WHERE best_timed_level > 0
+  AND (score IS NULL OR score = 0);
+
 CREATE TABLE IF NOT EXISTS gak_wow_character_weekly_vault (
     id BIGINT PRIMARY KEY,
     character_id BIGINT NOT NULL,
