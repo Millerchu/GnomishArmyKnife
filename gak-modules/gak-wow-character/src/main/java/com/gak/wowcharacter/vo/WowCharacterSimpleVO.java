@@ -27,6 +27,7 @@ public class WowCharacterSimpleVO {
     private String professionPrimaryLabel;
     private String professionSecondary;
     private String professionSecondaryLabel;
+    private List<WowCharacterMythicRunVO> mythicRuns;
     private List<WowCharacterWeeklyVaultVO> weeklyVaults;
 
     public Long getId() {
@@ -179,6 +180,14 @@ public class WowCharacterSimpleVO {
 
     public void setProfessionSecondaryLabel(String professionSecondaryLabel) {
         this.professionSecondaryLabel = professionSecondaryLabel;
+    }
+
+    public List<WowCharacterMythicRunVO> getMythicRuns() {
+        return mythicRuns;
+    }
+
+    public void setMythicRuns(List<WowCharacterMythicRunVO> mythicRuns) {
+        this.mythicRuns = mythicRuns;
     }
 
     public List<WowCharacterWeeklyVaultVO> getWeeklyVaults() {

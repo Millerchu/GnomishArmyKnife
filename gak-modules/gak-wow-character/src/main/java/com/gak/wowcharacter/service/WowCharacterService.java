@@ -695,6 +695,7 @@ public class WowCharacterService {
         vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
         vo.setProfessionSecondary(record.getProfessionSecondary());
         vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
+        vo.setMythicRuns(mythicRunVOs);
         vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
         return vo;
     }
