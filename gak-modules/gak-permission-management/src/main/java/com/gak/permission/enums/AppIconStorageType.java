@@ -5,6 +5,7 @@ package com.gak.permission.enums;
  */
 public enum AppIconStorageType {
 
+    PUBLIC_ASSET,
     FILE_SERVER,
     DB,
     OSS,

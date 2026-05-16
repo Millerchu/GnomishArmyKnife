@@ -10,6 +10,7 @@ public class UserAppPermissionVO {
     private Long userId;
     private List<String> grantedFeatureCodes;
     private List<AppCatalogVO> apps;
+    private String permissionSource;
 
     public Long getUserId() {
         return userId;
@@ -33,5 +34,13 @@ public class UserAppPermissionVO {
 
     public void setApps(List<AppCatalogVO> apps) {
         this.apps = apps;
+    }
+
+    public String getPermissionSource() {
+        return permissionSource;
+    }
+
+    public void setPermissionSource(String permissionSource) {
+        this.permissionSource = permissionSource;
     }
 }

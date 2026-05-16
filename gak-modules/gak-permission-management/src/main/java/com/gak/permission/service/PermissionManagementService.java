@@ -60,6 +60,9 @@ public class PermissionManagementService {
     private static final String ROLE_CODE_FIELD = "roleCode";
     private static final String ENABLED_STATUS = "ENABLED";
     private static final String DISABLED_STATUS = "DISABLED";
+    private static final String PERMISSION_SOURCE_DIRECT = "DIRECT";
+    private static final String PERMISSION_SOURCE_ADMIN_FALLBACK = "ADMIN_FALLBACK";
+    private static final String CATALOG_SOURCE_SYSTEM_APP = "SYSTEM_APP";
     private static final String ICON_TYPE_PRESET = "PRESET";
     private static final String ICON_TYPE_UPLOAD = "UPLOAD";
     private static final String ICON_TYPE_URL = "URL";
@@ -140,6 +143,7 @@ public class PermissionManagementService {
 
         AppCatalogListVO result = new AppCatalogListVO();
         result.setList(toAppCatalogList(apps));
+        result.setCatalogSource(CATALOG_SOURCE_SYSTEM_APP);
         return result;
     }
 
@@ -206,10 +210,14 @@ public class PermissionManagementService {
     }
 
     public UserAppPermissionVO getCurrentUserApps(Long currentUserId, String traceId, String ip, String userAgent) {
-        getUserOrThrow(currentUserId);
+        User currentUser = getUserOrThrow(currentUserId);
 
         // 主页显示必须以授权表为准，而不是让前端继续写死应用常量。
         UserAppPermissionVO result = buildUserAppPermissionVO(currentUserId);
+        if (result.getGrantedFeatureCodes().isEmpty()
+                && UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(resolveRoleCode(currentUser))) {
+            result = buildCurrentAdminFallbackPermissionVO(currentUserId);
+        }
         saveAuditLog(currentUserId,
                 currentUserId,
                 PermissionAuditActionType.QUERY_CURRENT_USER_APPS,
@@ -259,6 +267,18 @@ public class PermissionManagementService {
         vo.setUserId(userId);
         vo.setGrantedFeatureCodes(apps.stream().map(SystemApp::getAppCode).toList());
         vo.setApps(toAppCatalogList(apps));
+        vo.setPermissionSource(PERMISSION_SOURCE_DIRECT);
+        return vo;
+    }
+
+    private UserAppPermissionVO buildCurrentAdminFallbackPermissionVO(Long userId) {
+        List<SystemApp> apps = loadAllEnabledApps();
+
+        UserAppPermissionVO vo = new UserAppPermissionVO();
+        vo.setUserId(userId);
+        vo.setGrantedFeatureCodes(apps.stream().map(SystemApp::getAppCode).toList());
+        vo.setApps(toAppCatalogList(apps));
+        vo.setPermissionSource(PERMISSION_SOURCE_ADMIN_FALLBACK);
         return vo;
     }
 
@@ -286,6 +306,13 @@ public class PermissionManagementService {
         return apps;
     }
 
+    private List<SystemApp> loadAllEnabledApps() {
+        QueryWrapper<SystemApp> wrapper = new QueryWrapper<>();
+        wrapper.eq("enabled", true).orderByAsc("sort_no").orderByAsc("id");
+        List<SystemApp> apps = systemAppMapper.selectList(wrapper);
+        return toValidatedAppList(apps);
+    }
+
     private Map<String, SystemApp> loadEnabledAppMap(List<String> appCodes) {
         if (appCodes.isEmpty()) {
             return Collections.emptyMap();
@@ -296,10 +323,19 @@ public class PermissionManagementService {
         List<SystemApp> apps = systemAppMapper.selectList(wrapper);
 
         Map<String, SystemApp> result = new LinkedHashMap<>();
-        for (SystemApp app : apps) {
-            validateCatalogMetadata(app);
+        for (SystemApp app : toValidatedAppList(apps)) {
             result.put(app.getAppCode(), app);
         }
+        return result;
+    }
+
+    private List<SystemApp> toValidatedAppList(List<SystemApp> apps) {
+        List<SystemApp> result = new ArrayList<>();
+        for (SystemApp app : apps) {
+            validateCatalogMetadata(app);
+            result.add(app);
+        }
+        result.sort(APP_ORDER);
         return result;
     }
 

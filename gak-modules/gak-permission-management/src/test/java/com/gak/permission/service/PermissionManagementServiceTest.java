@@ -12,6 +12,7 @@ import com.gak.permission.dto.UpdateUserAppPermissionRequest;
 import com.gak.permission.mapper.PermissionAuditLogMapper;
 import com.gak.permission.mapper.SystemAppMapper;
 import com.gak.permission.mapper.UserAppPermissionMapper;
+import com.gak.permission.vo.AppCatalogListVO;
 import com.gak.permission.vo.PermissionUserListItemVO;
 import com.gak.permission.vo.UpdateUserAppPermissionVO;
 import com.gak.permission.vo.UserAppPermissionVO;
@@ -199,7 +200,43 @@ class PermissionManagementServiceTest {
         verify(permissionAuditLogMapper).insert(captor.capture());
         assertEquals(2L, result.getUserId());
         assertIterableEquals(List.of("APP_CALCULATOR"), result.getGrantedFeatureCodes());
+        assertEquals("DIRECT", result.getPermissionSource());
         assertEquals("QUERY_CURRENT_USER_APPS", captor.getValue().getActionType());
+    }
+
+    @Test
+    void getCurrentUserAppsShouldFallbackToAllEnabledAppsForAdminWhenPermissionTableIsEmpty() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "admin", "ADMIN"));
+        when(userAppPermissionMapper.selectList(any())).thenReturn(List.of());
+        when(systemAppMapper.selectList(any())).thenReturn(List.of(
+                buildApp(2001L, "APP_CALCULATOR", "计算器", true, 10),
+                buildApp(2004L, "APP_TODO_LIST", "待办列表", true, 40)
+        ));
+
+        UserAppPermissionVO result = permissionManagementService.getCurrentUserApps(
+                1L,
+                "trace-4",
+                "127.0.0.1",
+                "JUnit"
+        );
+
+        assertEquals(1L, result.getUserId());
+        assertIterableEquals(List.of("APP_CALCULATOR", "APP_TODO_LIST"), result.getGrantedFeatureCodes());
+        assertEquals(2, result.getApps().size());
+        assertEquals("ADMIN_FALLBACK", result.getPermissionSource());
+    }
+
+    @Test
+    void listAppsShouldExposeSystemCatalogSource() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "admin", "ADMIN"));
+        when(systemAppMapper.selectList(any())).thenReturn(List.of(
+                buildApp(2001L, "APP_CALCULATOR", "计算器", true, 10)
+        ));
+
+        AppCatalogListVO result = permissionManagementService.listApps(1L);
+
+        assertEquals("SYSTEM_APP", result.getCatalogSource());
+        assertEquals(1, result.getList().size());
     }
 
     @Test
