@@ -4,6 +4,7 @@ import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.knowledgebase.dto.KnowledgeEntryQueryRequest;
 import com.gak.knowledgebase.dto.KnowledgeHighlightQueryRequest;
+import com.gak.knowledgebase.dto.ReviewKnowledgeEntryRequest;
 import com.gak.knowledgebase.dto.SaveKnowledgeEntryRequest;
 import com.gak.knowledgebase.service.KnowledgeBaseService;
 import com.gak.knowledgebase.vo.KnowledgeEntryVO;
@@ -70,10 +71,31 @@ public class KnowledgeBaseController {
         return ApiResponse.success();
     }
 
+    @PutMapping("/entries/{id}/publish")
+    public ApiResponse<KnowledgeEntryVO> publish(@PathVariable Long id,
+                                                 @Valid @RequestBody ReviewKnowledgeEntryRequest request,
+                                                 HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(knowledgeBaseService.publish(currentUserId, id, request));
+    }
+
+    @PutMapping("/entries/{id}/reject")
+    public ApiResponse<KnowledgeEntryVO> reject(@PathVariable Long id,
+                                                @Valid @RequestBody ReviewKnowledgeEntryRequest request,
+                                                HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(knowledgeBaseService.reject(currentUserId, id, request));
+    }
+
     @GetMapping("/highlights")
     public ApiResponse<List<KnowledgeEntryVO>> highlights(@Valid KnowledgeHighlightQueryRequest request,
                                                           HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(knowledgeBaseService.highlights(currentUserId, request));
+    }
+
+    @GetMapping("/public-highlights")
+    public ApiResponse<List<KnowledgeEntryVO>> publicHighlights(@Valid KnowledgeHighlightQueryRequest request) {
+        return ApiResponse.success(knowledgeBaseService.publicHighlights(request));
     }
 }

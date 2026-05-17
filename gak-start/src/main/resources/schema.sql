@@ -202,6 +202,15 @@ CREATE TABLE IF NOT EXISTS gak_knowledge_entry (
     updated_at TIMESTAMP NOT NULL
 );
 
+ALTER TABLE gak_knowledge_entry ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED';
+ALTER TABLE gak_knowledge_entry ADD COLUMN IF NOT EXISTS reviewed_by BIGINT;
+ALTER TABLE gak_knowledge_entry ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;
+ALTER TABLE gak_knowledge_entry ADD COLUMN IF NOT EXISTS review_remark VARCHAR(200);
+
+UPDATE gak_knowledge_entry
+SET status = 'PUBLISHED'
+WHERE status IS NULL;
+
 CREATE TABLE IF NOT EXISTS gak_todo_item (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -405,6 +414,8 @@ CREATE INDEX IF NOT EXISTS idx_health_report_owner_exam_date ON gak_health_repor
 CREATE INDEX IF NOT EXISTS idx_health_report_owner_visit_id ON gak_health_report (owner_user_id, visit_id, exam_date DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_updated_at ON gak_knowledge_entry (owner_user_id, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_category ON gak_knowledge_entry (owner_user_id, category_name, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entry_status_updated_at ON gak_knowledge_entry (status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_status_updated_at ON gak_knowledge_entry (owner_user_id, status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_step_task_sort ON gak_todo_item_step (task_id, sort_no);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_system_app_code ON gak_system_app (app_code);
@@ -1862,22 +1873,22 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO gak_knowledge_entry (
     id, owner_user_id, title, category_name, scenario, source_name, tags_text,
-    summary, content, created_at, updated_at
+    summary, content, status, reviewed_by, reviewed_at, review_remark, created_at, updated_at
 )
 SELECT *
 FROM (
     VALUES
-        (7801, 900000000000000001, '需求评审先写“本期不做什么”', '工作', '需求评审 / 项目启动', '项目复盘', '需求,边界,沟通', '先把不做的范围说清楚，能显著降低后续返工。', '评审时先列出当前版本明确不做的功能、依赖前提和风险点，比只讲要做什么更容易对齐边界，后续也更少扯皮。', TIMESTAMP '2026-03-10 21:36:00', TIMESTAMP '2026-03-10 21:36:00'),
-        (7802, 900000000000000001, '复杂问题先做最小验证闭环', '工作', '技术排查 / 系统改造', '线上故障处理', '开发,排查,验证', '越复杂的问题越不能一次改太多变量。', '先找一条最小可验证路径，例如只替换一处接口返回或只改一个状态流，能快速判断方向是否正确，避免在错误路径上投入过多时间。', TIMESTAMP '2026-03-07 17:24:00', TIMESTAMP '2026-03-07 17:24:00'),
-        (7803, 900000000000000001, '囤货前先换算单位价格', '生活', '家庭采购 / 囤货', '消费复盘', '采购,预算,生活', '不要只看满减和大包装，先看每 100g 或每件单价。', '纸巾、洗衣液、米面粮油这类长期消耗品，统一换算到单位价格后再决定是否囤货，能避免“买便宜了但囤多了”的误判。', TIMESTAMP '2026-03-08 09:42:00', TIMESTAMP '2026-03-08 09:42:00'),
-        (7804, 900000000000000001, '晨间固定动作比宏大计划更稳定', '生活', '习惯养成 / 精力管理', '个人实践', '习惯,自律,健康', '每天稳定做少量动作，比复杂计划更能长期坚持。', '把早晨前 30 分钟固定成喝水、拉伸、列 3 个重点任务这类低摩擦动作，更容易形成长期稳定的正反馈。', TIMESTAMP '2026-03-06 08:12:00', TIMESTAMP '2026-03-06 08:12:00'),
-        (7805, 900000000000000001, '软件安装包统一带版本和平台', '工具', '软件归档 / 文件管理', '软件仓库整理', '文件管理,软件,规范', '命名统一后，后续检索和分发会轻松很多。', '建议统一成“软件名_版本号_平台_补充信息”的命名模式，后续做检索、同步和自动扫描时会省掉大量确认成本。', TIMESTAMP '2026-03-05 22:18:00', TIMESTAMP '2026-03-05 22:18:00'),
-        (7806, 900000000000000001, '记账时把固定支出单独看', '财务', '记账 / 预算复盘', '个人账单复盘', '记账,预算,复盘', '先拆出固定支出，才容易看清真正可优化的部分。', '房租、订阅、通勤等固定支出先单列，再看餐饮、购物、娱乐这些弹性支出，才能区分结构性问题和临时波动。', TIMESTAMP '2026-03-04 20:41:00', TIMESTAMP '2026-03-04 20:41:00'),
-        (7807, 900000000000000001, '学新东西时主动找反例', '学习', '学习新工具 / 新方法', '长期自学总结', '学习,方法论,边界', '除了看成功案例，也要主动找不适用场景。', '只看正例很容易高估方法的通用性，反例能更快帮助建立边界感，也更利于迁移到真实问题里。', TIMESTAMP '2026-03-03 19:55:00', TIMESTAMP '2026-03-03 19:55:00'),
-        (7808, 900000000000000001, '健康指标先看趋势再看单次异常', '健康', '体检复盘 / 日常自查', '个人健康记录', '健康,体检,复查', '单次异常值要结合趋势和上下文一起判断。', '血脂、尿酸、转氨酶这类指标不要只盯一次结果，更要结合近几次复查趋势、饮食作息和近期状态一起看，才更接近真实结论。', TIMESTAMP '2026-03-02 18:20:00', TIMESTAMP '2026-03-02 18:20:00')
+        (7801, 900000000000000001, '需求评审先写“本期不做什么”', '工作', '需求评审 / 项目启动', '项目复盘', '需求,边界,沟通', '先把不做的范围说清楚，能显著降低后续返工。', '评审时先列出当前版本明确不做的功能、依赖前提和风险点，比只讲要做什么更容易对齐边界，后续也更少扯皮。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-10 21:36:00', '初始化发布', TIMESTAMP '2026-03-10 21:36:00', TIMESTAMP '2026-03-10 21:36:00'),
+        (7802, 900000000000000001, '复杂问题先做最小验证闭环', '工作', '技术排查 / 系统改造', '线上故障处理', '开发,排查,验证', '越复杂的问题越不能一次改太多变量。', '先找一条最小可验证路径，例如只替换一处接口返回或只改一个状态流，能快速判断方向是否正确，避免在错误路径上投入过多时间。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-07 17:24:00', '初始化发布', TIMESTAMP '2026-03-07 17:24:00', TIMESTAMP '2026-03-07 17:24:00'),
+        (7803, 900000000000000001, '囤货前先换算单位价格', '生活', '家庭采购 / 囤货', '消费复盘', '采购,预算,生活', '不要只看满减和大包装，先看每 100g 或每件单价。', '纸巾、洗衣液、米面粮油这类长期消耗品，统一换算到单位价格后再决定是否囤货，能避免“买便宜了但囤多了”的误判。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-08 09:42:00', '初始化发布', TIMESTAMP '2026-03-08 09:42:00', TIMESTAMP '2026-03-08 09:42:00'),
+        (7804, 900000000000000001, '晨间固定动作比宏大计划更稳定', '生活', '习惯养成 / 精力管理', '个人实践', '习惯,自律,健康', '每天稳定做少量动作，比复杂计划更能长期坚持。', '把早晨前 30 分钟固定成喝水、拉伸、列 3 个重点任务这类低摩擦动作，更容易形成长期稳定的正反馈。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-06 08:12:00', '初始化发布', TIMESTAMP '2026-03-06 08:12:00', TIMESTAMP '2026-03-06 08:12:00'),
+        (7805, 900000000000000001, '软件安装包统一带版本和平台', '工具', '软件归档 / 文件管理', '软件仓库整理', '文件管理,软件,规范', '命名统一后，后续检索和分发会轻松很多。', '建议统一成“软件名_版本号_平台_补充信息”的命名模式，后续做检索、同步和自动扫描时会省掉大量确认成本。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-05 22:18:00', '初始化发布', TIMESTAMP '2026-03-05 22:18:00', TIMESTAMP '2026-03-05 22:18:00'),
+        (7806, 900000000000000001, '记账时把固定支出单独看', '财务', '记账 / 预算复盘', '个人账单复盘', '记账,预算,复盘', '先拆出固定支出，才容易看清真正可优化的部分。', '房租、订阅、通勤等固定支出先单列，再看餐饮、购物、娱乐这些弹性支出，才能区分结构性问题和临时波动。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-04 20:41:00', '初始化发布', TIMESTAMP '2026-03-04 20:41:00', TIMESTAMP '2026-03-04 20:41:00'),
+        (7807, 900000000000000001, '学新东西时主动找反例', '学习', '学习新工具 / 新方法', '长期自学总结', '学习,方法论,边界', '除了看成功案例，也要主动找不适用场景。', '只看正例很容易高估方法的通用性，反例能更快帮助建立边界感，也更利于迁移到真实问题里。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-03 19:55:00', '初始化发布', TIMESTAMP '2026-03-03 19:55:00', TIMESTAMP '2026-03-03 19:55:00'),
+        (7808, 900000000000000001, '健康指标先看趋势再看单次异常', '健康', '体检复盘 / 日常自查', '个人健康记录', '健康,体检,复查', '单次异常值要结合趋势和上下文一起判断。', '血脂、尿酸、转氨酶这类指标不要只盯一次结果，更要结合近几次复查趋势、饮食作息和近期状态一起看，才更接近真实结论。', 'PUBLISHED', 900000000000000001, TIMESTAMP '2026-03-02 18:20:00', '初始化发布', TIMESTAMP '2026-03-02 18:20:00', TIMESTAMP '2026-03-02 18:20:00')
 ) AS seeded_knowledge_entries (
     id, owner_user_id, title, category_name, scenario, source_name, tags_text,
-    summary, content, created_at, updated_at
+    summary, content, status, reviewed_by, reviewed_at, review_remark, created_at, updated_at
 )
 ON CONFLICT (id) DO UPDATE SET
     owner_user_id = EXCLUDED.owner_user_id,
@@ -1888,6 +1899,10 @@ ON CONFLICT (id) DO UPDATE SET
     tags_text = EXCLUDED.tags_text,
     summary = EXCLUDED.summary,
     content = EXCLUDED.content,
+    status = EXCLUDED.status,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
+    review_remark = EXCLUDED.review_remark,
     updated_at = EXCLUDED.updated_at;
 
 INSERT INTO gak_user_app_permission (

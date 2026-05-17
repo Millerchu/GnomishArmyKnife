@@ -9,6 +9,7 @@ import java.util.List;
 public class KnowledgeEntryVO {
 
     private Long id;
+    private Long ownerUserId;
     private String title;
     private String category;
     private String scenario;
@@ -16,6 +17,10 @@ public class KnowledgeEntryVO {
     private List<String> tags;
     private String summary;
     private String content;
+    private String status;
+    private Long reviewedBy;
+    private LocalDateTime reviewedAt;
+    private String reviewRemark;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -25,6 +30,14 @@ public class KnowledgeEntryVO {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(Long ownerUserId) {
+        this.ownerUserId = ownerUserId;
     }
 
     public String getTitle() {
@@ -81,6 +94,38 @@ public class KnowledgeEntryVO {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public Long getReviewedBy() {
+        return reviewedBy;
+    }
+
+    public void setReviewedBy(Long reviewedBy) {
+        this.reviewedBy = reviewedBy;
+    }
+
+    public LocalDateTime getReviewedAt() {
+        return reviewedAt;
+    }
+
+    public void setReviewedAt(LocalDateTime reviewedAt) {
+        this.reviewedAt = reviewedAt;
+    }
+
+    public String getReviewRemark() {
+        return reviewRemark;
+    }
+
+    public void setReviewRemark(String reviewRemark) {
+        this.reviewRemark = reviewRemark;
     }
 
     public LocalDateTime getCreatedAt() {
