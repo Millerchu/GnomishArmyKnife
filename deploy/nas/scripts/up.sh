@@ -3,8 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DOCKER_CMD="${DOCKER_CMD:-docker}"
 
-if ! command -v docker >/dev/null 2>&1; then
+if ! command -v "${DOCKER_CMD%% *}" >/dev/null 2>&1; then
   echo "docker is required"
   exit 1
 fi
@@ -19,7 +20,11 @@ if [[ ! -f ".env" ]]; then
 fi
 
 echo "[1/2] Starting containers ..."
-docker compose --env-file .env -f docker-compose.yml up -d
+if [[ "${ENABLE_REDIS:-false}" == "true" ]]; then
+  ${DOCKER_CMD} compose --env-file .env -f docker-compose.yml --profile redis up -d
+else
+  ${DOCKER_CMD} compose --env-file .env -f docker-compose.yml up -d
+fi
 
 echo "[2/2] Current status:"
-docker compose --env-file .env -f docker-compose.yml ps
+${DOCKER_CMD} compose --env-file .env -f docker-compose.yml ps

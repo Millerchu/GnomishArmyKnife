@@ -1,0 +1,10 @@
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+
+ENV TZ=Asia/Shanghai
+ENV JAVA_OPTS="-Xms256m -Xmx768m"
+
+COPY gak-start/target/gak-start-1.0.0-SNAPSHOT.jar /app/app.jar
+
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+**/target
+!gak-start/target
+!gak-start/target/*.jar
+**/*.log
+deploy/nas/data
+deploy/nas/dist
+deploy/nas/*.tar
+deploy/nas/*.tar.gz
+.DS_Store

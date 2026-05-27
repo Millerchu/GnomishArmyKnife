@@ -1,20 +1,39 @@
 services:
+  gak-web:
+    image: gak-web:${IMAGE_TAG:-1.0.0}
+    container_name: gak-web
+    restart: unless-stopped
+    depends_on:
+      gak-app:
+        condition: service_started
+    ports:
+      - "${WEB_PORT:-18080}:80"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    networks:
+      - gak-net
+
   gak-app:
-    image: gak-app:1.0.0
+    image: gak-app:${IMAGE_TAG:-1.0.0}
     container_name: gak-app
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-18081}:8080"
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-      - JAVA_OPTS=${JAVA_OPTS:-"-Xms256m -Xmx768m"}
+      - JAVA_OPTS=${JAVA_OPTS:--Xms256m -Xmx768m}
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_SQL_INIT_MODE=${SPRING_SQL_INIT_MODE:-always}
+      - GAK_APP_ICON_LOCAL_DIR=/app/data/app-icons
+      - GAK_DATA_MIGRATION_STORAGE_DIR=/app/data/data-migrations
+      - GAK_HEALTH_FILE_LOCAL_DIR=/app/data/health-records
+    volumes:
+      - ./data/app:/app/data
     networks:
       - gak-net
 
@@ -23,7 +42,7 @@ services:
     container_name: gak-postgres
     restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-25432}:5432"
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -33,6 +52,26 @@ services:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - gak-net
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: gak-redis
+    restart: unless-stopped
+    profiles:
+      - redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
