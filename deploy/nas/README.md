@@ -236,21 +236,40 @@ docker logs -f --tail=200 gak-web
 
 ## 八、升级发布
 
-推荐流程：
+推荐直接执行一键升级脚本：
 
-1. 本地确认后端、前端代码已经可构建。
-2. 重新执行上传脚本：
+```bash
+cd /Users/millerchu/workspace/gak/GnomishArmyKnife
+./deploy-greennas.sh
+```
+
+这个脚本会使用当前绿联 NAS 的默认配置：
+
+- `REMOTE_DOCKER_CMD="sudo docker"`
+- `NAS_USER=millerchu`
+- `NAS_HOST=greennas`
+- `NAS_SCP_DIR=/Projects/GAK-App`
+- `NAS_SSH_DIR=/volume1/Projects/GAK-App`
+- `SSH_PORT=22`
+
+如需临时覆盖镜像版本或 NAS 参数，可以在命令前加环境变量：
+
+```bash
+IMAGE_TAG=1.0.1 ./deploy-greennas.sh
+```
+
+如果只想上传镜像和部署文件，不自动重启容器，可以执行上传脚本：
 
 ```bash
 cd /Users/millerchu/workspace/gak/GnomishArmyKnife
 ./deploy/nas/scripts/package-and-upload.sh millerchu@greennas /Projects/GAK-App /volume1/Projects/GAK-App 22
 ```
 
-3. SSH 到 NAS 后重启：
+上传后需要手动在 NAS 上重启：
 
 ```bash
 cd /volume1/Projects/GAK-App
-./scripts/up.sh
+DOCKER_CMD="sudo docker" ./scripts/up.sh
 ```
 
 `./data/postgres` 和 `./data/app` 是持久化目录，不会因为镜像升级丢失。
