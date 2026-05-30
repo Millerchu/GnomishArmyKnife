@@ -29,6 +29,7 @@ public class WowCharacterSimpleVO {
     private String professionSecondaryLabel;
     private List<WowCharacterMythicRunVO> mythicRuns;
     private List<WowCharacterWeeklyVaultVO> weeklyVaults;
+    private List<WowCharacterKeybindingVO> keybindings;
 
     public Long getId() {
         return id;
@@ -196,5 +197,13 @@ public class WowCharacterSimpleVO {
 
     public void setWeeklyVaults(List<WowCharacterWeeklyVaultVO> weeklyVaults) {
         this.weeklyVaults = weeklyVaults;
+    }
+
+    public List<WowCharacterKeybindingVO> getKeybindings() {
+        return keybindings;
+    }
+
+    public void setKeybindings(List<WowCharacterKeybindingVO> keybindings) {
+        this.keybindings = keybindings;
     }
 }

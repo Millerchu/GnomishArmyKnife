@@ -17,6 +17,9 @@ public class SaveWowCharacterMythicRunRequest {
     @Min(value = 0, message = "score 不能小于 0")
     private BigDecimal score;
 
+    @Min(value = 0, message = "bestTimedLevel 不能小于 0")
+    private Integer bestTimedLevel;
+
     public String getDungeonName() {
         return dungeonName;
     }
@@ -31,5 +34,13 @@ public class SaveWowCharacterMythicRunRequest {
 
     public void setScore(BigDecimal score) {
         this.score = score;
+    }
+
+    public Integer getBestTimedLevel() {
+        return bestTimedLevel;
+    }
+
+    public void setBestTimedLevel(Integer bestTimedLevel) {
+        this.bestTimedLevel = bestTimedLevel;
     }
 }

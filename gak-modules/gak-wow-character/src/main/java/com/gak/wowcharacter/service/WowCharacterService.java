@@ -12,19 +12,23 @@ import com.gak.framework.response.PagedResult;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.domain.WowCharacter;
+import com.gak.wowcharacter.domain.WowCharacterKeybinding;
 import com.gak.wowcharacter.domain.WowCharacterMythicRun;
 import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
+import com.gak.wowcharacter.dto.SaveWowCharacterKeybindingRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterMythicRunRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterWeeklyVaultRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
+import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
 import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
 import com.gak.wowcharacter.vo.ClassStatVO;
 import com.gak.wowcharacter.vo.FactionStatVO;
 import com.gak.wowcharacter.vo.RealmStatVO;
+import com.gak.wowcharacter.vo.WowCharacterKeybindingVO;
 import com.gak.wowcharacter.vo.WowCharacterListVO;
 import com.gak.wowcharacter.vo.WowCharacterMythicRunVO;
 import com.gak.wowcharacter.vo.WowCharacterOverviewVO;
@@ -89,6 +93,7 @@ public class WowCharacterService {
     private final WowCharacterMapper wowCharacterMapper;
     private final WowCharacterMythicRunMapper wowCharacterMythicRunMapper;
     private final WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper;
+    private final WowCharacterKeybindingMapper wowCharacterKeybindingMapper;
     private final UserMapper userMapper;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
     private final DataDictionarySupport dataDictionarySupport;
@@ -97,6 +102,7 @@ public class WowCharacterService {
     public WowCharacterService(WowCharacterMapper wowCharacterMapper,
                                WowCharacterMythicRunMapper wowCharacterMythicRunMapper,
                                WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper,
+                               WowCharacterKeybindingMapper wowCharacterKeybindingMapper,
                                UserMapper userMapper,
                                DataDictionaryUsageSupport dataDictionaryUsageSupport,
                                DataDictionarySupport dataDictionarySupport,
@@ -104,6 +110,7 @@ public class WowCharacterService {
         this.wowCharacterMapper = wowCharacterMapper;
         this.wowCharacterMythicRunMapper = wowCharacterMythicRunMapper;
         this.wowCharacterWeeklyVaultMapper = wowCharacterWeeklyVaultMapper;
+        this.wowCharacterKeybindingMapper = wowCharacterKeybindingMapper;
         this.userMapper = userMapper;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
         this.dataDictionarySupport = dataDictionarySupport;
@@ -123,15 +130,18 @@ public class WowCharacterService {
         }
 
         List<WowCharacter> pageRecords = records.subList((int) fromIndex, (int) toIndex);
-        Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(extractCharacterIds(pageRecords));
-        Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap = loadWeeklyVaultMap(extractCharacterIds(pageRecords));
+        List<Long> pageCharacterIds = extractCharacterIds(pageRecords);
+        Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(pageCharacterIds);
+        Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap = loadWeeklyVaultMap(pageCharacterIds);
+        Map<Long, List<WowCharacterKeybinding>> keybindingMap = loadKeybindingMap(pageCharacterIds);
 
         List<WowCharacterListVO> list = new ArrayList<>();
         for (WowCharacter record : pageRecords) {
             list.add(toListVO(
                     record,
                     mythicRunMap.getOrDefault(record.getId(), Collections.emptyList()),
-                    weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList())
+                    weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList()),
+                    keybindingMap.getOrDefault(record.getId(), Collections.emptyList())
             ));
         }
         return new PagedResult<>(list, total);
@@ -153,8 +163,10 @@ public class WowCharacterService {
 
         syncMythicRuns(currentUserId, character.getId(), normalized.mythicRuns(), now);
         syncWeeklyVaults(currentUserId, character.getId(), normalized.weeklyVaults(), now);
+        syncKeybindings(currentUserId, character.getId(), normalized.keybindings(), now);
         return toListVO(character, toDomainMythicRuns(character.getId(), currentUserId, normalized.mythicRuns(), now),
-                toDomainWeeklyVaults(character.getId(), currentUserId, normalized.weeklyVaults(), now));
+                toDomainWeeklyVaults(character.getId(), currentUserId, normalized.weeklyVaults(), now),
+                toDomainKeybindings(character.getId(), currentUserId, normalized.keybindings(), now));
     }
 
     @Transactional
@@ -171,8 +183,10 @@ public class WowCharacterService {
 
         syncMythicRuns(currentUserId, current.getId(), normalized.mythicRuns(), now);
         syncWeeklyVaults(currentUserId, current.getId(), normalized.weeklyVaults(), now);
+        syncKeybindings(currentUserId, current.getId(), normalized.keybindings(), now);
         return toListVO(current, toDomainMythicRuns(current.getId(), currentUserId, normalized.mythicRuns(), now),
-                toDomainWeeklyVaults(current.getId(), currentUserId, normalized.weeklyVaults(), now));
+                toDomainWeeklyVaults(current.getId(), currentUserId, normalized.weeklyVaults(), now),
+                toDomainKeybindings(current.getId(), currentUserId, normalized.keybindings(), now));
     }
 
     @Transactional
@@ -188,6 +202,10 @@ public class WowCharacterService {
         weeklyVaultWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
         wowCharacterWeeklyVaultMapper.delete(weeklyVaultWrapper);
 
+        QueryWrapper<WowCharacterKeybinding> keybindingWrapper = new QueryWrapper<>();
+        keybindingWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
+        wowCharacterKeybindingMapper.delete(keybindingWrapper);
+
         wowCharacterMapper.deleteById(current.getId());
     }
 
@@ -198,6 +216,7 @@ public class WowCharacterService {
         List<Long> characterIds = extractCharacterIds(records);
         Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(characterIds);
         Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap = loadWeeklyVaultMap(characterIds);
+        Map<Long, List<WowCharacterKeybinding>> keybindingMap = loadKeybindingMap(characterIds);
 
         WowCharacterOverviewVO overviewVO = new WowCharacterOverviewVO();
         overviewVO.setTotalCharacters(records.size());
@@ -205,7 +224,7 @@ public class WowCharacterService {
         overviewVO.setHighestItemLevel(findHighestItemLevel(records));
         overviewVO.setHighestMythicScore(findHighestMythicScore(records));
         overviewVO.setAverageItemLevel(calculateAverageItemLevel(records));
-        overviewVO.setFeaturedCharacters(buildFeaturedCharacters(records, mythicRunMap, weeklyVaultMap));
+        overviewVO.setFeaturedCharacters(buildFeaturedCharacters(records, mythicRunMap, weeklyVaultMap, keybindingMap));
         overviewVO.setFactionStats(buildFactionStats(records));
         overviewVO.setClassStats(buildClassStats(records));
         overviewVO.setRealmStats(buildRealmStats(records));
@@ -288,6 +307,7 @@ public class WowCharacterService {
         List<NormalizedMythicRun> mythicRuns = normalizeMythicRuns(request);
         BigDecimal mythicScore = calculateMythicScore(mythicRuns);
         List<NormalizedWeeklyVault> weeklyVaults = normalizeWeeklyVaults(request.getWeeklyVaults());
+        List<NormalizedKeybinding> keybindings = normalizeKeybindings(classOption.classCode(), request.getKeybindings());
 
         return new NormalizedCharacter(
                 trimRequired(request.getCharacterName(), "characterName 不能为空"),
@@ -306,7 +326,8 @@ public class WowCharacterService {
                 professionSecondary,
                 trimToNull(request.getNote()),
                 mythicRuns,
-                weeklyVaults
+                weeklyVaults,
+                keybindings
         );
     }
 
@@ -327,12 +348,43 @@ public class WowCharacterService {
                 }
                 result.add(new NormalizedMythicRun(
                         dungeonName,
+                        normalizeBestTimedLevel(item.getBestTimedLevel()),
                         normalizeIntegerScore(item.getScore())
                 ));
             }
             return result;
         }
         return result;
+    }
+
+    private List<NormalizedKeybinding> normalizeKeybindings(String classCode,
+                                                            List<SaveWowCharacterKeybindingRequest> requestList) {
+        if (requestList == null || requestList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<String, NormalizedKeybinding> result = new LinkedHashMap<>();
+        for (SaveWowCharacterKeybindingRequest item : requestList) {
+            SpecOption specOption = normalizeOptionalSpecName(classCode, item.getSpecName());
+            if (specOption == null) {
+                throw new BusinessException("WOW_KEYBINDING_SPEC_REQUIRED", "keybindings.specName 不能为空");
+            }
+            if (result.containsKey(specOption.code())) {
+                throw new BusinessException("WOW_KEYBINDING_SPEC_DUPLICATE", "keybindings 存在重复专精");
+            }
+            result.put(specOption.code(), new NormalizedKeybinding(
+                    specOption.code(),
+                    trimToNull(item.getBindingContent())
+            ));
+        }
+        return new ArrayList<>(result.values());
+    }
+
+    private int normalizeBestTimedLevel(Integer bestTimedLevel) {
+        int normalized = bestTimedLevel == null ? 0 : bestTimedLevel;
+        if (normalized < 0) {
+            throw new BusinessException("WOW_MYTHIC_TIMED_LEVEL_INVALID", "mythicRuns.bestTimedLevel 不能小于 0");
+        }
+        return normalized;
     }
 
     private BestMythicRun normalizeCurrentMythicKey(Integer bestLevelValue, String mythicDungeonName) {
@@ -422,6 +474,15 @@ public class WowCharacterService {
         }
     }
 
+    private void syncKeybindings(Long currentUserId, Long characterId, List<NormalizedKeybinding> normalizedKeybindings, LocalDateTime now) {
+        QueryWrapper<WowCharacterKeybinding> deleteWrapper = new QueryWrapper<>();
+        deleteWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
+        wowCharacterKeybindingMapper.delete(deleteWrapper);
+        for (WowCharacterKeybinding keybinding : toDomainKeybindings(characterId, currentUserId, normalizedKeybindings, now)) {
+            wowCharacterKeybindingMapper.insert(keybinding);
+        }
+    }
+
     private List<WowCharacterMythicRun> toDomainMythicRuns(Long characterId,
                                                            Long currentUserId,
                                                            List<NormalizedMythicRun> normalizedRuns,
@@ -435,11 +496,32 @@ public class WowCharacterService {
             run.setCharacterId(characterId);
             run.setOwnerUserId(currentUserId);
             run.setDungeonName(item.dungeonName());
-            run.setBestTimedLevel(0);
+            run.setBestTimedLevel(item.bestTimedLevel());
             run.setScore(item.score());
             run.setCreatedAt(now);
             run.setUpdatedAt(now);
             result.add(run);
+        }
+        return result;
+    }
+
+    private List<WowCharacterKeybinding> toDomainKeybindings(Long characterId,
+                                                             Long currentUserId,
+                                                             List<NormalizedKeybinding> normalizedKeybindings,
+                                                             LocalDateTime now) {
+        if (normalizedKeybindings == null || normalizedKeybindings.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<WowCharacterKeybinding> result = new ArrayList<>();
+        for (NormalizedKeybinding item : normalizedKeybindings) {
+            WowCharacterKeybinding keybinding = new WowCharacterKeybinding();
+            keybinding.setCharacterId(characterId);
+            keybinding.setOwnerUserId(currentUserId);
+            keybinding.setSpecName(item.specName());
+            keybinding.setBindingContent(item.bindingContent());
+            keybinding.setCreatedAt(now);
+            keybinding.setUpdatedAt(now);
+            result.add(keybinding);
         }
         return result;
     }
@@ -490,6 +572,19 @@ public class WowCharacterService {
         wrapper.in("character_id", characterIds).orderByDesc("week_start_date").orderByDesc("id");
         Map<Long, List<WowCharacterWeeklyVault>> result = new HashMap<>();
         for (WowCharacterWeeklyVault item : wowCharacterWeeklyVaultMapper.selectList(wrapper)) {
+            result.computeIfAbsent(item.getCharacterId(), key -> new ArrayList<>()).add(item);
+        }
+        return result;
+    }
+
+    private Map<Long, List<WowCharacterKeybinding>> loadKeybindingMap(List<Long> characterIds) {
+        if (characterIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        QueryWrapper<WowCharacterKeybinding> wrapper = new QueryWrapper<>();
+        wrapper.in("character_id", characterIds).orderByAsc("character_id").orderByAsc("spec_name").orderByAsc("id");
+        Map<Long, List<WowCharacterKeybinding>> result = new HashMap<>();
+        for (WowCharacterKeybinding item : wowCharacterKeybindingMapper.selectList(wrapper)) {
             result.computeIfAbsent(item.getCharacterId(), key -> new ArrayList<>()).add(item);
         }
         return result;
@@ -547,7 +642,8 @@ public class WowCharacterService {
 
     private List<WowCharacterSimpleVO> buildFeaturedCharacters(List<WowCharacter> records,
                                                                Map<Long, List<WowCharacterMythicRun>> mythicRunMap,
-                                                               Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap) {
+                                                               Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap,
+                                                               Map<Long, List<WowCharacterKeybinding>> keybindingMap) {
         List<WowCharacterSimpleVO> result = new ArrayList<>();
         for (WowCharacter record : records.stream()
                 .filter(item -> Boolean.TRUE.equals(item.getIsFeatured()))
@@ -557,7 +653,8 @@ public class WowCharacterService {
             result.add(toSimpleVO(
                     record,
                     mythicRunMap.getOrDefault(record.getId(), Collections.emptyList()),
-                    weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList())
+                    weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList()),
+                    keybindingMap.getOrDefault(record.getId(), Collections.emptyList())
             ));
         }
         return result;
@@ -640,7 +737,8 @@ public class WowCharacterService {
 
     private WowCharacterListVO toListVO(WowCharacter record,
                                         List<WowCharacterMythicRun> mythicRuns,
-                                        List<WowCharacterWeeklyVault> weeklyVaults) {
+                                        List<WowCharacterWeeklyVault> weeklyVaults,
+                                        List<WowCharacterKeybinding> keybindings) {
         ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
         List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(record, mythicRuns);
         WowCharacterListVO vo = new WowCharacterListVO();
@@ -667,12 +765,14 @@ public class WowCharacterService {
         vo.setUpdatedAt(record.getUpdatedAt());
         vo.setMythicRuns(mythicRunVOs);
         vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
+        vo.setKeybindings(buildKeybindingVOs(record.getClassName(), keybindings));
         return vo;
     }
 
     private WowCharacterSimpleVO toSimpleVO(WowCharacter record,
                                             List<WowCharacterMythicRun> mythicRuns,
-                                            List<WowCharacterWeeklyVault> weeklyVaults) {
+                                            List<WowCharacterWeeklyVault> weeklyVaults,
+                                            List<WowCharacterKeybinding> keybindings) {
         ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
         List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(record, mythicRuns);
         WowCharacterSimpleVO vo = new WowCharacterSimpleVO();
@@ -697,6 +797,7 @@ public class WowCharacterService {
         vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
         vo.setMythicRuns(mythicRunVOs);
         vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
+        vo.setKeybindings(buildKeybindingVOs(record.getClassName(), keybindings));
         return vo;
     }
 
@@ -721,6 +822,35 @@ public class WowCharacterService {
             result.add(vo);
         }
 
+        return result;
+    }
+
+    private List<WowCharacterKeybindingVO> buildKeybindingVOs(String className, List<WowCharacterKeybinding> keybindings) {
+        ClassOption classOption = findClassOption(className);
+        if (classOption == null) {
+            return Collections.emptyList();
+        }
+        Map<String, WowCharacterKeybinding> keybindingMap = new HashMap<>();
+        if (keybindings != null) {
+            for (WowCharacterKeybinding item : keybindings) {
+                keybindingMap.put(item.getSpecName(), item);
+            }
+        }
+
+        List<WowCharacterKeybindingVO> result = new ArrayList<>();
+        for (SpecOption option : listSpecOptions()) {
+            if (!classOption.classCode().equals(option.classCode())) {
+                continue;
+            }
+            WowCharacterKeybinding keybinding = keybindingMap.get(option.code());
+            String bindingContent = keybinding == null ? null : trimToNull(keybinding.getBindingContent());
+            WowCharacterKeybindingVO vo = new WowCharacterKeybindingVO();
+            vo.setSpecName(option.code());
+            vo.setSpecNameLabel(option.label());
+            vo.setBindingContent(bindingContent);
+            vo.setHasKeybinding(bindingContent != null);
+            result.add(vo);
+        }
         return result;
     }
 
@@ -1109,12 +1239,14 @@ public class WowCharacterService {
             String professionSecondary,
             String note,
             List<NormalizedMythicRun> mythicRuns,
-            List<NormalizedWeeklyVault> weeklyVaults
+            List<NormalizedWeeklyVault> weeklyVaults,
+            List<NormalizedKeybinding> keybindings
     ) {
     }
 
     private record NormalizedMythicRun(
             String dungeonName,
+            Integer bestTimedLevel,
             BigDecimal score
     ) {
     }
@@ -1126,6 +1258,12 @@ public class WowCharacterService {
             Integer mythicProgressCount,
             Integer worldProgressCount,
             String note
+    ) {
+    }
+
+    private record NormalizedKeybinding(
+            String specName,
+            String bindingContent
     ) {
     }
 

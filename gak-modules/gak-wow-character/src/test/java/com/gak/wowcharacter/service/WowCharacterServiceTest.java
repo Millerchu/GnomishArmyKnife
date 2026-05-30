@@ -9,13 +9,16 @@ import com.gak.framework.response.PagedResult;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.domain.WowCharacter;
+import com.gak.wowcharacter.domain.WowCharacterKeybinding;
 import com.gak.wowcharacter.domain.WowCharacterMythicRun;
 import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
+import com.gak.wowcharacter.dto.SaveWowCharacterKeybindingRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterMythicRunRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterWeeklyVaultRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
+import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
 import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
@@ -56,6 +59,9 @@ class WowCharacterServiceTest {
 
     @Mock
     private WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper;
+
+    @Mock
+    private WowCharacterKeybindingMapper wowCharacterKeybindingMapper;
 
     @Mock
     private UserMapper userMapper;
@@ -99,10 +105,11 @@ class WowCharacterServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(1));
         lenient().when(wowCharacterMythicRunMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterWeeklyVaultMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(wowCharacterKeybindingMapper.selectList(any())).thenReturn(List.of());
     }
 
     @Test
-    void createShouldCalculateMythicScoreAndPersistChildren() {
+    void createShouldCalculateMythicScoreTimedLevelKeybindingsAndPersistChildren() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         when(wowCharacterMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
@@ -113,12 +120,16 @@ class WowCharacterServiceTest {
 
         SaveWowCharacterRequest request = buildSaveRequest();
         request.setMythicRuns(List.of(
-                buildRun("通天峰", 318),
-                buildRun("魔导师平台", 287)
+                buildRun("通天峰", 318, 14),
+                buildRun("魔导师平台", 287, 12)
         ));
         request.setMythicBestLevel(14);
         request.setMythicDungeonName("通天峰");
         request.setWeeklyVaults(List.of(buildWeeklyVault(LocalDate.of(2026, 5, 11), 4, 8, 4)));
+        request.setKeybindings(List.of(
+                buildKeybinding("holy_priest", "YmluZGluZ3MtaG9seQ=="),
+                buildKeybinding("discipline", "")
+        ));
 
         WowCharacterListVO result = wowCharacterService.create(1L, request);
 
@@ -130,10 +141,28 @@ class WowCharacterServiceTest {
         assertEquals(14, characterCaptor.getValue().getMythicBestLevel());
         assertEquals("通天峰", characterCaptor.getValue().getMythicDungeonName());
         assertEquals(8, result.getMythicRuns().size());
+        assertEquals(14, result.getMythicRuns().stream()
+                .filter(item -> "通天峰".equals(item.getDungeonName()))
+                .findFirst()
+                .orElseThrow()
+                .getBestTimedLevel());
         assertEquals(1, result.getWeeklyVaults().size());
         assertEquals(2, result.getWeeklyVaults().get(0).getRaidUnlockedCount());
+        assertEquals(2, result.getKeybindings().size());
+        assertEquals(Boolean.TRUE, result.getKeybindings().get(0).getHasKeybinding());
+        assertEquals("YmluZGluZ3MtaG9seQ==", result.getKeybindings().get(0).getBindingContent());
+        assertEquals(Boolean.FALSE, result.getKeybindings().get(1).getHasKeybinding());
         assertEquals(Boolean.TRUE, result.getIsFeatured());
         assertEquals(new BigDecimal("605.00"), result.getMythicScore());
+
+        ArgumentCaptor<WowCharacterMythicRun> runCaptor = ArgumentCaptor.forClass(WowCharacterMythicRun.class);
+        verify(wowCharacterMythicRunMapper, org.mockito.Mockito.times(2)).insert(runCaptor.capture());
+        assertEquals(14, runCaptor.getAllValues().get(0).getBestTimedLevel());
+
+        ArgumentCaptor<WowCharacterKeybinding> keybindingCaptor = ArgumentCaptor.forClass(WowCharacterKeybinding.class);
+        verify(wowCharacterKeybindingMapper, org.mockito.Mockito.times(2)).insert(keybindingCaptor.capture());
+        assertEquals("holy_priest", keybindingCaptor.getAllValues().get(0).getSpecName());
+        assertEquals("YmluZGluZ3MtaG9seQ==", keybindingCaptor.getAllValues().get(0).getBindingContent());
     }
 
     @Test
@@ -141,8 +170,8 @@ class WowCharacterServiceTest {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         SaveWowCharacterRequest request = buildSaveRequest();
         request.setMythicRuns(List.of(
-                buildRun("通天峰", 318),
-                buildRun("通天峰", 350)
+                buildRun("通天峰", 318, 14),
+                buildRun("通天峰", 350, 15)
         ));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
@@ -221,10 +250,18 @@ class WowCharacterServiceTest {
         return request;
     }
 
-    private SaveWowCharacterMythicRunRequest buildRun(String dungeonName, int score) {
+    private SaveWowCharacterMythicRunRequest buildRun(String dungeonName, int score, int bestTimedLevel) {
         SaveWowCharacterMythicRunRequest request = new SaveWowCharacterMythicRunRequest();
         request.setDungeonName(dungeonName);
         request.setScore(BigDecimal.valueOf(score));
+        request.setBestTimedLevel(bestTimedLevel);
+        return request;
+    }
+
+    private SaveWowCharacterKeybindingRequest buildKeybinding(String specName, String bindingContent) {
+        SaveWowCharacterKeybindingRequest request = new SaveWowCharacterKeybindingRequest();
+        request.setSpecName(specName);
+        request.setBindingContent(bindingContent);
         return request;
     }
 

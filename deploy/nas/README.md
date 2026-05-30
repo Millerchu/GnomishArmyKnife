@@ -82,13 +82,11 @@ cd /Users/millerchu/workspace/gak/GnomishArmyKnife
 ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
 ```
 
-如果 SSH 用户不在 NAS 的 `docker` 用户组里，执行 `docker load` 时会看到 `/var/run/docker.sock: permission denied`。这时改用：
+脚本会自动探测远端 Docker 权限：普通 `docker` 可用时直接使用；如果 SSH 用户不在 NAS 的 `docker` 用户组里，会自动改用 `sudo docker`，并在远端执行时提示输入 NAS 用户密码。也可以手动指定：
 
 ```bash
 REMOTE_DOCKER_CMD="sudo docker" ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
 ```
-
-脚本进入远端 `sudo` 时会要求输入 NAS 用户密码。
 
 参数含义：
 
@@ -245,7 +243,7 @@ docker logs -f --tail=200 gak-web
 
 ```bash
 cd /Users/millerchu/workspace/gak/GnomishArmyKnife
-./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
+./deploy/nas/scripts/package-and-upload.sh millerchu@greennas /Projects/GAK-App /volume1/Projects/GAK-App 22
 ```
 
 3. SSH 到 NAS 后重启：

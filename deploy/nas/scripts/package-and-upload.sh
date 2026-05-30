@@ -29,9 +29,24 @@ DEPLOY_DIR="${BACKEND_ROOT}/deploy/nas"
 DIST_DIR="${DEPLOY_DIR}/dist"
 IMAGE_TAG="${IMAGE_TAG:-1.0.0}"
 TARGET_PLATFORM="${TARGET_PLATFORM:-linux/amd64}"
-REMOTE_DOCKER_CMD="${REMOTE_DOCKER_CMD:-docker}"
+REMOTE_DOCKER_CMD="${REMOTE_DOCKER_CMD:-}"
+
+resolve_remote_docker_cmd() {
+  if [[ -n "${REMOTE_DOCKER_CMD}" ]]; then
+    return
+  fi
+
+  echo "[0/6] Detect remote docker command ..."
+  if ssh -p "${SSH_PORT}" "${NAS_HOST}" "docker version >/dev/null 2>&1"; then
+    REMOTE_DOCKER_CMD="docker"
+  else
+    REMOTE_DOCKER_CMD="sudo docker"
+    echo "Remote docker requires elevated permission; sudo password may be requested on NAS."
+  fi
+}
 
 mkdir -p "${DIST_DIR}"
+resolve_remote_docker_cmd
 
 echo ""
 echo "======================================"

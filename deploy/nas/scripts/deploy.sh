@@ -15,7 +15,7 @@ BACKEND_IMAGE_NAME="gak-app"
 FRONTEND_IMAGE_NAME="gak-web"
 IMAGE_TAG="${IMAGE_TAG:-1.0.0}"
 TARGET_PLATFORM="${TARGET_PLATFORM:-linux/amd64}"
-REMOTE_DOCKER_CMD="${REMOTE_DOCKER_CMD:-docker}"
+REMOTE_DOCKER_CMD="${REMOTE_DOCKER_CMD:-}"
 
 TIME="$(date +"%Y%m%d_%H%M%S")"
 IMAGE_TAR="gak_images_${IMAGE_TAG}_${TIME}.tar"
@@ -27,6 +27,22 @@ DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_ROOT="$(cd "${DEPLOY_DIR}/../.." && pwd)"
 WORKSPACE_ROOT="$(cd "${BACKEND_ROOT}/.." && pwd)"
 FRONTEND_ROOT="${FRONTEND_ROOT:-${WORKSPACE_ROOT}/GnomishArmyKnife-Web}"
+
+resolve_remote_docker_cmd() {
+  if [[ -n "${REMOTE_DOCKER_CMD}" ]]; then
+    return
+  fi
+
+  echo "[0/7] Detect remote docker command ..."
+  if ssh -p "${SSH_PORT}" "${NAS_USER}@${NAS_HOST}" "docker version >/dev/null 2>&1"; then
+    REMOTE_DOCKER_CMD="docker"
+  else
+    REMOTE_DOCKER_CMD="sudo docker"
+    echo "Remote docker requires elevated permission; sudo password may be requested on NAS."
+  fi
+}
+
+resolve_remote_docker_cmd
 
 ########################
 # Banner
