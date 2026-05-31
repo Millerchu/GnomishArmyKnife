@@ -11,16 +11,20 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.permission.mapper.SystemAppMapper;
 import com.gak.user.domain.user.User;
 import jakarta.validation.Validation;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -117,10 +121,66 @@ class DataMigrationServiceTest {
         verify(taskMapper).deleteById(1001L);
     }
 
+    @Test
+    void createExportTaskShouldStartAsyncExecutionAfterTransactionCommit() {
+        User admin = new User();
+        admin.setId(1L);
+        admin.setRoleCode("ADMIN");
+        when(adminGuard.requireAdmin(1L)).thenReturn(admin);
+        doAnswer(invocation -> {
+            DataMigrationTask task = invocation.getArgument(0);
+            task.setId(1001L);
+            return 1;
+        }).when(taskMapper).insert(any(DataMigrationTask.class));
+
+        CapturingTaskExecutor taskExecutor = new CapturingTaskExecutor();
+        DataMigrationService service = new DataMigrationService(
+                taskMapper,
+                taskItemMapper,
+                systemAppMapper,
+                adminGuard,
+                storageService,
+                archiveService,
+                taskExecutionService,
+                new ObjectMapper().findAndRegisterModules(),
+                Validation.buildDefaultValidatorFactory().getValidator(),
+                taskExecutor,
+                List.of(new StubHandler()),
+                "/api/system/data-migrations/tasks/"
+        );
+        CreateDataMigrationExportRequest request = new CreateDataMigrationExportRequest();
+        request.setScopeMode(DataMigrationConstants.SCOPE_MODE_CUSTOM);
+        request.setPackageName("users-package");
+        request.setSystemResourceCodes(List.of(DataMigrationConstants.SYSTEM_RESOURCE_USERS));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.createExportTask(1L, request);
+
+            assertEquals(0, taskExecutor.tasks.size());
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            assertEquals(1, taskExecutor.tasks.size());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
     private static class NoopTaskExecutor implements TaskExecutor {
 
         @Override
         public void execute(Runnable task) {
+        }
+    }
+
+    private static class CapturingTaskExecutor implements TaskExecutor {
+
+        private final List<Runnable> tasks = new ArrayList<>();
+
+        @Override
+        public void execute(Runnable task) {
+            tasks.add(task);
         }
     }
 

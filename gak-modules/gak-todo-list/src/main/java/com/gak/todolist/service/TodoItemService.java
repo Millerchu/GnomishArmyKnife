@@ -50,11 +50,13 @@ public class TodoItemService {
     private static final String IMPORTANCE_FIELD = "importance";
     private static final String MY_DAY_LIST_CODE = "MY_DAY";
     private static final String COMPLETED_STATUS = "COMPLETED";
+    private static final int UPCOMING_LIMIT = 5;
     private static final Comparator<TodoItem> ITEM_ORDER = Comparator
             .comparing(TodoItemService::isCompleted)
             .thenComparing(item -> !Boolean.TRUE.equals(item.getImportant()))
             .thenComparing(TodoItem::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(TodoItem::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
+            .thenComparing(TodoItem::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(TodoItem::getId, Comparator.nullsLast(Comparator.reverseOrder()));
 
     private final TodoItemMapper todoItemMapper;
     private final TodoItemStepMapper todoItemStepMapper;
@@ -218,7 +220,8 @@ public class TodoItemService {
         wrapper.in("task_id", ids);
         List<TodoItemStep> steps = new ArrayList<>(todoItemStepMapper.selectList(wrapper));
         steps.sort(Comparator.comparing(TodoItemStep::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(TodoItemStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+                .thenComparing(TodoItemStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(TodoItemStep::getId, Comparator.nullsLast(Comparator.naturalOrder())));
         for (TodoItemStep step : steps) {
             result.computeIfAbsent(step.getTaskId(), key -> new ArrayList<>()).add(step);
         }
@@ -228,7 +231,7 @@ public class TodoItemService {
     private List<TodoItemStep> loadStepsByTaskId(Long taskId) {
         QueryWrapper<TodoItemStep> wrapper = new QueryWrapper<>();
         wrapper.eq("task_id", taskId);
-        wrapper.orderByAsc("sort_no").orderByAsc("created_at");
+        wrapper.orderByAsc("sort_no").orderByAsc("created_at").orderByAsc("id");
         return todoItemStepMapper.selectList(wrapper);
     }
 
@@ -319,9 +322,11 @@ public class TodoItemService {
                 candidates.add(item);
             }
         }
-        candidates.sort(Comparator.comparing(TodoItem::getDueDate).thenComparing(TodoItem::getUpdatedAt, Comparator.reverseOrder()));
+        candidates.sort(Comparator.comparing(TodoItem::getDueDate)
+                .thenComparing(TodoItem::getUpdatedAt, Comparator.reverseOrder())
+                .thenComparing(TodoItem::getId, Comparator.reverseOrder()));
         List<TodoItemSimpleVO> result = new ArrayList<>();
-        int limit = Math.min(5, candidates.size());
+        int limit = Math.min(UPCOMING_LIMIT, candidates.size());
         for (TodoItem item : candidates.subList(0, limit)) {
             TodoItemSimpleVO vo = new TodoItemSimpleVO();
             vo.setId(item.getId());

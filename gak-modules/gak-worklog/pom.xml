@@ -23,6 +23,11 @@
             <artifactId>gak-framework</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-user</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>com.baomidou</groupId>

@@ -1,10 +1,13 @@
 package com.gak.worklog.controller;
 
+import com.gak.framework.response.ApiResponse;
+import com.gak.user.service.user.TokenService;
 import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.service.WorkLogService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
@@ -27,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkLogController {
 
     private final WorkLogService workLogService;
+    private final TokenService tokenService;
 
-    public WorkLogController(WorkLogService workLogService) {
+    public WorkLogController(WorkLogService workLogService, TokenService tokenService) {
         this.workLogService = workLogService;
+        this.tokenService = tokenService;
     }
 
     /**
@@ -39,8 +44,10 @@ public class WorkLogController {
      * @return 工作日志详情
      */
     @PostMapping
-    public WorkLogResponse create(@Valid @RequestBody CreateWorkLogRequest request) {
-        return workLogService.create(request);
+    public ApiResponse<WorkLogResponse> create(@Valid @RequestBody CreateWorkLogRequest request,
+                                               HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.create(currentUserId, request));
     }
 
     /**
@@ -49,8 +56,10 @@ public class WorkLogController {
      * @param id 主键 ID
      */
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
-        workLogService.delete(id);
+    public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        workLogService.delete(currentUserId, id);
+        return ApiResponse.success();
     }
 
     /**
@@ -61,8 +70,11 @@ public class WorkLogController {
      * @return 更新后详情
      */
     @PutMapping("/{id}")
-    public WorkLogResponse update(@PathVariable Long id, @Valid @RequestBody UpdateWorkLogRequest request) {
-        return workLogService.update(id, request);
+    public ApiResponse<WorkLogResponse> update(@PathVariable Long id,
+                                               @Valid @RequestBody UpdateWorkLogRequest request,
+                                               HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.update(currentUserId, id, request));
     }
 
     /**
@@ -72,42 +84,43 @@ public class WorkLogController {
      * @return 工作日志详情
      */
     @GetMapping("/{id}")
-    public WorkLogResponse get(@PathVariable Long id) {
-        return workLogService.get(id);
+    public ApiResponse<WorkLogResponse> get(@PathVariable Long id, HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.get(currentUserId, id));
     }
 
     /**
      * 条件查询工作日志列表。
      *
-     * @param userId 用户 ID
      * @param startDate 开始日期
      * @param endDate 结束日期
      * @param typeCode 类型编码
      * @return 工作日志列表
      */
     @GetMapping
-    public List<WorkLogResponse> list(
-            @RequestParam("userId") Long userId,
+    public ApiResponse<List<WorkLogResponse>> list(
             @RequestParam(value = "startDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(value = "endDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam(value = "typeCode", required = false) String typeCode) {
-        return workLogService.list(userId, startDate, endDate, typeCode);
+            @RequestParam(value = "typeCode", required = false) String typeCode,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.list(currentUserId, startDate, endDate, typeCode));
     }
 
     /**
      * 查询最近一周日志简述。
      *
-     * @param userId 用户 ID
      * @param refDate 参考日期
      * @return 最近一周日志简述
      */
     @GetMapping("/weekly-brief")
-    public List<WeeklyWorkLogBriefResponse> listWeeklyBrief(
-            @RequestParam("userId") Long userId,
+    public ApiResponse<List<WeeklyWorkLogBriefResponse>> listWeeklyBrief(
             @RequestParam(value = "refDate", required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate refDate) {
-        return workLogService.listWeeklyBrief(userId, refDate);
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate refDate,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.listWeeklyBrief(currentUserId, refDate));
     }
 }

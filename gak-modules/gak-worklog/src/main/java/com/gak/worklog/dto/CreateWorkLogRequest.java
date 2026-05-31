@@ -15,7 +15,9 @@ import java.util.List;
  */
 public class CreateWorkLogRequest {
 
-    @NotNull
+    /**
+     * 兼容旧前端提交字段，实际归属以后端登录态为准。
+     */
     private Long userId;
 
     @NotNull

@@ -42,6 +42,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -137,6 +139,7 @@ public class DataMigrationService {
         return toTaskVO(task, true);
     }
 
+    @Transactional
     public DataMigrationTaskVO createExportTask(Long currentUserId, CreateDataMigrationExportRequest request) {
         User operator = adminGuard.requireAdmin(currentUserId);
         ResolvedSelection selection = resolveExportSelection(request);
@@ -161,10 +164,11 @@ public class DataMigrationService {
         taskMapper.insert(task);
         createTaskItems(task.getId(), selection.handlers(), now);
 
-        taskExecutor.execute(() -> taskExecutionService.runExportTask(task.getId()));
+        executeAfterCommit(() -> taskExecutionService.runExportTask(task.getId()));
         return toTaskVO(task, true);
     }
 
+    @Transactional
     public DataMigrationTaskVO createImportTask(Long currentUserId, MultipartFile file, String metadataJson) {
         User operator = adminGuard.requireAdmin(currentUserId);
         CreateDataMigrationImportMetadata metadata = parseAndValidateMetadata(metadataJson);
@@ -205,7 +209,7 @@ public class DataMigrationService {
             taskMapper.insert(task);
             createTaskItems(task.getId(), handlers, now);
 
-            taskExecutor.execute(() -> taskExecutionService.runImportTask(task.getId()));
+            executeAfterCommit(() -> taskExecutionService.runImportTask(task.getId()));
             return toTaskVO(task, true);
         } catch (IOException exception) {
             if (storedFile != null) {
@@ -218,6 +222,20 @@ public class DataMigrationService {
             }
             throw exception;
         }
+    }
+
+    private void executeAfterCommit(Runnable task) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            taskExecutor.execute(task);
+            return;
+        }
+        // 异步任务依赖任务主表和明细，必须等事务提交后再读取。
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                taskExecutor.execute(task);
+            }
+        });
     }
 
     public DownloadFile download(Long currentUserId, Long taskId) {

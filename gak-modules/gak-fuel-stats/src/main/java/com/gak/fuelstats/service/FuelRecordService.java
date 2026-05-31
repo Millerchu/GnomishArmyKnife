@@ -48,6 +48,7 @@ public class FuelRecordService {
     private static final int UNIT_PRICE_SCALE = 3;
     private static final int RECENT_RECORD_LIMIT = 4;
     private static final int MONTH_REPORT_SIZE = 12;
+    private static final String LIMIT_ONE_SQL = "LIMIT 1";
     private static final String DEFAULT_VEHICLE_NAME = "未命名车辆";
     private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     private static final BigDecimal ZERO_VOLUME = BigDecimal.ZERO.setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
@@ -154,7 +155,7 @@ public class FuelRecordService {
      */
     public FuelLatestPricesVO getLatestPrices() {
         QueryWrapper<FuelPriceSnapshot> wrapper = new QueryWrapper<>();
-        wrapper.orderByDesc("publish_date").orderByDesc("updated_at").last("LIMIT 1");
+        wrapper.orderByDesc("publish_date").orderByDesc("updated_at").last(LIMIT_ONE_SQL);
         FuelPriceSnapshot snapshot = fuelPriceSnapshotMapper.selectOne(wrapper);
 
         FuelLatestPricesVO result = new FuelLatestPricesVO();

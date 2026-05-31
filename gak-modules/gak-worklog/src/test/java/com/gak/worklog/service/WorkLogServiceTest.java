@@ -92,7 +92,7 @@ class WorkLogServiceTest {
         request.setOffWorkTime(LocalTime.of(20, 30));
         request.setOvertimeHours(decimal("1.0"));
 
-        WorkLogResponse response = workLogService.create(request);
+        WorkLogResponse response = workLogService.create(1L, request);
 
         ArgumentCaptor<WorkLog> captor = ArgumentCaptor.forClass(WorkLog.class);
         verify(workLogMapper).insert(captor.capture());
@@ -104,6 +104,25 @@ class WorkLogServiceTest {
         assertEquals(decimal("2.5"), response.getOvertimeHours());
         assertEquals(LocalTime.of(20, 30), response.getOffWorkTime());
         assertEquals(List.of("NORMAL", "BUSINESS_TRIP"), response.getTypeCodes());
+    }
+
+    @Test
+    void createShouldUseCurrentUserIdInsteadOfRequestUserId() {
+        when(workLogMapper.selectCount(any())).thenReturn(0L);
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1004L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 25));
+        request.setUserId(null);
+
+        workLogService.create(1L, request);
+
+        ArgumentCaptor<WorkLog> captor = ArgumentCaptor.forClass(WorkLog.class);
+        verify(workLogMapper).insert(captor.capture());
+        assertEquals(1L, captor.getValue().getUserId());
     }
 
     @Test
@@ -120,7 +139,7 @@ class WorkLogServiceTest {
         request.setProjectCode("GAK");
         request.setOvertimeHours(decimal("1.5"));
 
-        WorkLogResponse response = workLogService.create(request);
+        WorkLogResponse response = workLogService.create(1L, request);
 
         assertEquals(decimal("1.5"), response.getOvertimeHours());
         assertEquals(null, response.getOffWorkTime());
@@ -140,7 +159,7 @@ class WorkLogServiceTest {
         request.setProjectCode("GAK");
         request.setOvertimeHours(decimal("4.0"));
 
-        WorkLogResponse response = workLogService.create(request);
+        WorkLogResponse response = workLogService.create(1L, request);
 
         assertEquals(decimal("4.0"), response.getOvertimeHours());
         assertEquals(null, response.getOffWorkTime());
@@ -152,9 +171,21 @@ class WorkLogServiceTest {
         request.setLocation("上海办公室");
         request.setProjectCode("UNKNOWN");
 
-        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> workLogService.create(request));
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> workLogService.create(1L, request));
         assertEquals(BAD_REQUEST, exception.getStatusCode());
         assertEquals("projectCode 非法", exception.getReason());
+    }
+
+    @Test
+    void getShouldRejectForeignWorkLog() {
+        WorkLog workLog = buildWorkLog();
+        workLog.setUserId(2L);
+        when(workLogMapper.selectById(2001L)).thenReturn(workLog);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> workLogService.get(1L, 2001L));
+
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatusCode());
     }
 
     @Test

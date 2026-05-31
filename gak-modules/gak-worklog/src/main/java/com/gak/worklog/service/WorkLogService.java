@@ -19,10 +19,10 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -59,15 +59,16 @@ public class WorkLogService {
     /**
      * 新增日志。
      *
+     * @param currentUserId 当前登录用户 ID
      * @param request 新增请求
      * @return 日志详情
      */
     @Transactional
-    public WorkLogResponse create(CreateWorkLogRequest request) {
+    public WorkLogResponse create(Long currentUserId, CreateWorkLogRequest request) {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeOptionalProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
-        validateDuplicateLogDate(request.getUserId(), request.getLogDate(), null);
+        validateDuplicateLogDate(currentUserId, request.getLogDate(), null);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
                 request.getOffWorkTime(),
@@ -76,7 +77,7 @@ public class WorkLogService {
 
         LocalDateTime now = LocalDateTime.now();
         WorkLog workLog = new WorkLog();
-        workLog.setUserId(request.getUserId());
+        workLog.setUserId(currentUserId);
         workLog.setLogDate(request.getLogDate());
         workLog.setLocation(location);
         workLog.setProjectCode(projectCode);
@@ -97,32 +98,34 @@ public class WorkLogService {
     /**
      * 删除日志。
      *
+     * @param currentUserId 当前登录用户 ID
      * @param id 主键 ID
      */
     @Transactional
-    public void delete(Long id) {
-        ensureExists(id);
+    public void delete(Long currentUserId, Long id) {
+        WorkLog current = getOwnedByIdOrThrow(currentUserId, id);
 
         QueryWrapper<WorkLogType> typeWrapper = new QueryWrapper<>();
-        typeWrapper.eq("work_log_id", id);
+        typeWrapper.eq("work_log_id", current.getId());
         workLogTypeMapper.delete(typeWrapper);
-        workLogMapper.deleteById(id);
+        workLogMapper.deleteById(current.getId());
     }
 
     /**
      * 更新日志。
      *
+     * @param currentUserId 当前登录用户 ID
      * @param id 主键 ID
      * @param request 更新请求
      * @return 更新后详情
      */
     @Transactional
-    public WorkLogResponse update(Long id, UpdateWorkLogRequest request) {
-        WorkLog current = getByIdOrThrow(id);
+    public WorkLogResponse update(Long currentUserId, Long id, UpdateWorkLogRequest request) {
+        WorkLog current = getOwnedByIdOrThrow(currentUserId, id);
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeOptionalProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
-        validateDuplicateLogDate(current.getUserId(), request.getLogDate(), id);
+        validateDuplicateLogDate(currentUserId, request.getLogDate(), id);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
                 request.getOffWorkTime(),
@@ -152,26 +155,27 @@ public class WorkLogService {
     /**
      * 查询日志详情。
      *
+     * @param currentUserId 当前登录用户 ID
      * @param id 主键 ID
      * @return 日志详情
      */
-    public WorkLogResponse get(Long id) {
-        WorkLog workLog = getByIdOrThrow(id);
+    public WorkLogResponse get(Long currentUserId, Long id) {
+        WorkLog workLog = getOwnedByIdOrThrow(currentUserId, id);
         return buildResponse(workLog, getTypeCodesByWorkLogId(id));
     }
 
     /**
      * 条件列表查询。
      *
-     * @param userId 用户 ID
+     * @param currentUserId 当前登录用户 ID
      * @param startDate 开始日期
      * @param endDate 结束日期
      * @param typeCode 类型编码（可选）
      * @return 日志列表
      */
-    public List<WorkLogResponse> list(Long userId, LocalDate startDate, LocalDate endDate, String typeCode) {
-        if (userId == null) {
-            throw new ResponseStatusException(BAD_REQUEST, "userId 不能为空");
+    public List<WorkLogResponse> list(Long currentUserId, LocalDate startDate, LocalDate endDate, String typeCode) {
+        if (currentUserId == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "当前用户不能为空");
         }
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new ResponseStatusException(BAD_REQUEST, "startDate 不能大于 endDate");
@@ -179,10 +183,10 @@ public class WorkLogService {
         String normalizedTypeCode = normalizeOptionalTypeCode(typeCode);
 
         QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
-        wrapper.eq("user_id", userId);
+        wrapper.eq("user_id", currentUserId);
         wrapper.ge(startDate != null, "log_date", startDate);
         wrapper.le(endDate != null, "log_date", endDate);
-        wrapper.orderByDesc("log_date").orderByDesc("updated_at");
+        wrapper.orderByDesc("log_date").orderByDesc("updated_at").orderByDesc("id");
         List<WorkLog> workLogs = workLogMapper.selectList(wrapper);
 
         Map<Long, List<String>> typeMap = loadTypeMap(workLogs);
@@ -200,13 +204,13 @@ public class WorkLogService {
     /**
      * 查询当周日志简述（用于主界面，周一为一周第一天）。
      *
-     * @param userId 用户 ID
+     * @param currentUserId 当前登录用户 ID
      * @param refDate 参考日期（取该日期所在周），默认今天
      * @return 当周简述列表
      */
-    public List<WeeklyWorkLogBriefResponse> listWeeklyBrief(Long userId, LocalDate refDate) {
-        if (userId == null) {
-            throw new ResponseStatusException(BAD_REQUEST, "userId 不能为空");
+    public List<WeeklyWorkLogBriefResponse> listWeeklyBrief(Long currentUserId, LocalDate refDate) {
+        if (currentUserId == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "当前用户不能为空");
         }
 
         LocalDate referenceDate = refDate == null ? LocalDate.now() : refDate;
@@ -214,11 +218,12 @@ public class WorkLogService {
         LocalDate weekEnd = weekStart.plusDays(6);
 
         QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
-        wrapper.eq("user_id", userId)
+        wrapper.eq("user_id", currentUserId)
                 .ge("log_date", weekStart)
                 .le("log_date", weekEnd)
                 .orderByAsc("log_date")
-                .orderByDesc("updated_at");
+                .orderByDesc("updated_at")
+                .orderByDesc("id");
 
         List<WorkLog> workLogs = workLogMapper.selectList(wrapper);
         Map<Long, List<String>> typeMap = loadTypeMap(workLogs);
@@ -250,8 +255,12 @@ public class WorkLogService {
         return workLog;
     }
 
-    private void ensureExists(Long id) {
-        getByIdOrThrow(id);
+    private WorkLog getOwnedByIdOrThrow(Long currentUserId, Long id) {
+        WorkLog workLog = getByIdOrThrow(id);
+        if (!Objects.equals(workLog.getUserId(), currentUserId)) {
+            throw new ResponseStatusException(NOT_FOUND, "工作日志不存在");
+        }
+        return workLog;
     }
 
     private List<String> normalizeAndValidateTypeCodes(List<String> typeCodes) {
@@ -307,7 +316,7 @@ public class WorkLogService {
     private List<String> getTypeCodesByWorkLogId(Long workLogId) {
         QueryWrapper<WorkLogType> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("work_log_id", workLogId);
-        queryWrapper.orderByAsc("created_at");
+        queryWrapper.orderByAsc("created_at").orderByAsc("id");
 
         List<WorkLogType> list = workLogTypeMapper.selectList(queryWrapper);
         List<String> result = new ArrayList<>();
@@ -330,9 +339,9 @@ public class WorkLogService {
 
         QueryWrapper<WorkLogType> wrapper = new QueryWrapper<>();
         wrapper.in("work_log_id", logIds);
+        wrapper.orderByAsc("work_log_id").orderByAsc("created_at").orderByAsc("id");
 
         List<WorkLogType> types = workLogTypeMapper.selectList(wrapper);
-        types.sort(Comparator.comparing(WorkLogType::getCreatedAt));
 
         for (WorkLogType type : types) {
             result.computeIfAbsent(type.getWorkLogId(), key -> new ArrayList<>()).add(type.getTypeCode());
