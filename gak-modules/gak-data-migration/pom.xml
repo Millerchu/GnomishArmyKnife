@@ -58,6 +58,26 @@
             <artifactId>gak-wow-character</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-personal-bills</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-health-record</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-knowledge-base</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
+            <artifactId>gak-fuel-stats</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>com.baomidou</groupId>

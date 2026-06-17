@@ -259,6 +259,9 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     person_day NUMERIC(4, 1) NOT NULL,
     overtime_hours NUMERIC(4, 1),
     off_work_time TIME,
+    business_trip_allowance_scene VARCHAR(32),
+    business_trip_allowance_amount NUMERIC(8, 2) NOT NULL DEFAULT 0,
+    business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE,
     remark VARCHAR(500),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
@@ -400,6 +403,11 @@ ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_storage_type VARCHAR(32
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_file_name VARCHAR(255);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS data_source_mode VARCHAR(16) NOT NULL DEFAULT 'DEMO';
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS off_work_time TIME;
+ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_scene VARCHAR(32);
+ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_amount NUMERIC(8, 2) NOT NULL DEFAULT 0;
+ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE gak_work_log SET business_trip_allowance_amount = 0 WHERE business_trip_allowance_amount IS NULL;
+UPDATE gak_work_log SET business_trip_reimbursed = FALSE WHERE business_trip_reimbursed IS NULL;
 ALTER TABLE IF EXISTS gak_system_app ALTER COLUMN route_path DROP NOT NULL;
 ALTER TABLE IF EXISTS gak_app_audit_log ALTER COLUMN app_id DROP NOT NULL;
 UPDATE gak_system_app SET data_source_mode = 'DEMO' WHERE data_source_mode IS NULL;
@@ -870,8 +878,8 @@ SET deleted = TRUE,
 WHERE dictionary_id = 5003
   AND deleted = FALSE
   AND (
-    item_code IN ('develop', 'meeting', 'test')
-    OR item_value IN ('DEVELOP', 'MEETING', 'TEST')
+    item_code IN ('develop', 'meeting', 'test', 'business_trip')
+    OR item_value IN ('DEVELOP', 'MEETING', 'TEST', 'BUSINESS_TRIP')
   );
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
@@ -899,18 +907,29 @@ INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5313, 5003, 'WORK_LOG_TYPE', 'business_trip', '出差', 'BUSINESS_TRIP', 3, 'ENABLED', FALSE, '出差记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+SELECT 5316, 5003, 'WORK_LOG_TYPE', 'city_business_trip', '市内出差', 'CITY_BUSINESS_TRIP', 3, 'ENABLED', FALSE, '市内出差记录，补助 100 元', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
-    WHERE item.dictionary_id = 5003 AND item.item_code = 'business_trip' AND item.deleted = FALSE
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'city_business_trip' AND item.deleted = FALSE
   )
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5314, 5003, 'WORK_LOG_TYPE', 'sick_leave', '病假', 'SICK_LEAVE', 4, 'ENABLED', FALSE, '病假记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+SELECT 5317, 5003, 'WORK_LOG_TYPE', 'out_of_city_business_trip', '市外出差', 'OUT_OF_CITY_BUSINESS_TRIP', 4, 'ENABLED', FALSE, '市外出差记录，按往返/平时计算补助', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'out_of_city_business_trip' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5314, 5003, 'WORK_LOG_TYPE', 'sick_leave', '病假', 'SICK_LEAVE', 5, 'ENABLED', FALSE, '病假记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
@@ -921,7 +940,7 @@ INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5315, 5003, 'WORK_LOG_TYPE', 'other', '其他', 'OTHER', 5, 'ENABLED', FALSE, '其他类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+SELECT 5315, 5003, 'WORK_LOG_TYPE', 'other', '其他', 'OTHER', 6, 'ENABLED', FALSE, '其他类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item

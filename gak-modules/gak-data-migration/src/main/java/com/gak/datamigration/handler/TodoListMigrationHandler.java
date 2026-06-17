@@ -111,12 +111,11 @@ public class TodoListMigrationHandler implements MigrationResourceHandler {
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "ownerUserId");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "ownerUserId");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "ownerUserId");
                 }
                 existing.setOwnerUserId(targetUserId);
                 todoItemMapper.updateById(existing);
                 targetTaskId = existing.getId();
-                deleteSteps(targetTaskId);
             } else {
                 TodoItem insertItem = copyItem(source);
                 insertItem.setOwnerUserId(targetUserId);
@@ -133,15 +132,24 @@ public class TodoListMigrationHandler implements MigrationResourceHandler {
 
             List<TodoItemStep> steps = stepMap.getOrDefault(source.getId(), List.of());
             for (TodoItemStep sourceStep : steps) {
-                TodoItemStep insertStep = copyStep(sourceStep);
-                insertStep.setTaskId(targetTaskId);
-                if (insertStep.getId() != null && todoItemStepMapper.selectById(insertStep.getId()) != null) {
+                TodoItemStep existingStep = findExistingStep(targetTaskId, sourceStep);
+                if (existingStep != null) {
                     if (context.isStrict()) {
-                        throw new BusinessException("DATA_MIGRATION_TODO_STEP_ID_CONFLICT", "待办步骤 ID 冲突: " + insertStep.getId());
+                        throw new BusinessException("DATA_MIGRATION_TODO_STEP_CONFLICT", "待办步骤已存在: " + sourceStep.getTitle());
                     }
-                    insertStep.setId(null);
+                    sourceStep.setTaskId(targetTaskId);
+                    if (context.isOverwrite()) {
+                        DataMigrationBeanMergeSupport.overwriteNewest(sourceStep, existingStep, "id", "taskId");
+                    } else {
+                        DataMigrationBeanMergeSupport.mergeNewestNonNull(sourceStep, existingStep, "id", "taskId");
+                    }
+                    existingStep.setTaskId(targetTaskId);
+                    todoItemStepMapper.updateById(existingStep);
+                } else {
+                    TodoItemStep insertStep = copyStep(sourceStep);
+                    insertStep.setTaskId(targetTaskId);
+                    todoItemStepMapper.insert(insertStep);
                 }
-                todoItemStepMapper.insert(insertStep);
                 importedCount++;
             }
         }
@@ -157,10 +165,16 @@ public class TodoListMigrationHandler implements MigrationResourceHandler {
         return result;
     }
 
-    private void deleteSteps(Long taskId) {
+    private TodoItemStep findExistingStep(Long taskId, TodoItemStep sourceStep) {
+        TodoItemStep byId = sourceStep.getId() == null ? null : todoItemStepMapper.selectById(sourceStep.getId());
+        if (byId != null) {
+            return byId;
+        }
         QueryWrapper<TodoItemStep> wrapper = new QueryWrapper<>();
-        wrapper.eq("task_id", taskId);
-        todoItemStepMapper.delete(wrapper);
+        wrapper.eq("task_id", taskId)
+                .eq("title", sourceStep.getTitle())
+                .eq("sort_no", sourceStep.getSortNo());
+        return todoItemStepMapper.selectOne(wrapper);
     }
 
     private Long resolveUserId(Long sourceUserId, ImportContext context) {

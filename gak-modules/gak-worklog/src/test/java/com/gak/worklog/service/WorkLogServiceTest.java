@@ -166,6 +166,81 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void createShouldCalculateCityBusinessTripAllowance() {
+        when(workLogMapper.selectCount(any())).thenReturn(0L);
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1005L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 30));
+        request.setTypeCodes(List.of("CITY_BUSINESS_TRIP"));
+        request.setBusinessTripReimbursed(true);
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        ArgumentCaptor<WorkLog> captor = ArgumentCaptor.forClass(WorkLog.class);
+        verify(workLogMapper).insert(captor.capture());
+        assertEquals("CITY", captor.getValue().getBusinessTripAllowanceScene());
+        assertEquals(decimal("100.00"), captor.getValue().getBusinessTripAllowanceAmount());
+        assertEquals(Boolean.TRUE, captor.getValue().getBusinessTripReimbursed());
+        assertEquals(decimal("100.00"), response.getBusinessTripAllowanceAmount());
+        assertEquals(Boolean.TRUE, response.getBusinessTripReimbursed());
+    }
+
+    @Test
+    void createShouldCalculateOutOfCityTransitAllowance() {
+        when(workLogMapper.selectCount(any())).thenReturn(0L);
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1006L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 31));
+        request.setTypeCodes(List.of("OUT_OF_CITY_BUSINESS_TRIP"));
+        request.setBusinessTripAllowanceScene("OUT_OF_CITY_TRANSIT");
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        assertEquals("OUT_OF_CITY_TRANSIT", response.getBusinessTripAllowanceScene());
+        assertEquals(decimal("110.00"), response.getBusinessTripAllowanceAmount());
+        assertEquals(Boolean.FALSE, response.getBusinessTripReimbursed());
+    }
+
+    @Test
+    void createShouldClearAllowanceWhenNotBusinessTrip() {
+        when(workLogMapper.selectCount(any())).thenReturn(0L);
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1007L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 1));
+        request.setBusinessTripAllowanceScene("OUT_OF_CITY_TRANSIT");
+        request.setBusinessTripReimbursed(true);
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        assertEquals(null, response.getBusinessTripAllowanceScene());
+        assertEquals(decimal("0.00"), response.getBusinessTripAllowanceAmount());
+        assertEquals(Boolean.FALSE, response.getBusinessTripReimbursed());
+    }
+
+    @Test
+    void createShouldRejectMixedCityAndOutOfCityBusinessTripTypes() {
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 2));
+        request.setTypeCodes(List.of("CITY_BUSINESS_TRIP", "OUT_OF_CITY_BUSINESS_TRIP"));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> workLogService.create(1L, request));
+
+        assertEquals(BAD_REQUEST, exception.getStatusCode());
+        assertEquals("市内出差和市外出差不能同时选择", exception.getReason());
+    }
+
+    @Test
     void createShouldRejectInvalidProjectCode() {
         CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 23));
         request.setLocation("上海办公室");
@@ -198,6 +273,8 @@ class WorkLogServiceTest {
         assertEquals(1, result.size());
         assertEquals("上海办公室", result.get(0).getLocation());
         assertEquals(LocalTime.of(20, 0), result.get(0).getOffWorkTime());
+        assertEquals(decimal("0.00"), result.get(0).getBusinessTripAllowanceAmount());
+        assertEquals(Boolean.FALSE, result.get(0).getBusinessTripReimbursed());
         assertEquals("继续验证", result.get(0).getRemark());
         assertEquals("完成工作日志改版", result.get(0).getBrief());
     }
@@ -224,6 +301,9 @@ class WorkLogServiceTest {
         workLog.setPersonDay(decimal("1.0"));
         workLog.setOvertimeHours(decimal("2.0"));
         workLog.setOffWorkTime(LocalTime.of(20, 0));
+        workLog.setBusinessTripAllowanceScene(null);
+        workLog.setBusinessTripAllowanceAmount(decimal("0.00"));
+        workLog.setBusinessTripReimbursed(false);
         workLog.setRemark("继续验证");
         workLog.setCreatedAt(LocalDateTime.now());
         workLog.setUpdatedAt(LocalDateTime.now());
@@ -244,18 +324,22 @@ class WorkLogServiceTest {
         }
         LinkedHashSet<String> result = new LinkedHashSet<>();
         for (String value : values) {
-            result.add(normalizeSingle(value, List.of("NORMAL", "BUSINESS_TRIP", "LEAVE"), true));
+            result.add(normalizeSingle(value, workLogTypeValues(), true));
         }
         return new ArrayList<>(result);
     }
 
     private String normalizeField(String field, String value, boolean required) {
         return switch (field) {
-            case "typeCodes" -> normalizeSingle(value, List.of("NORMAL", "BUSINESS_TRIP", "LEAVE"), required);
+            case "typeCodes" -> normalizeSingle(value, workLogTypeValues(), required);
             case "projectCode" -> normalizeSingle(value, List.of("GAK", "CLIENT", "OPS"), required);
             case "location" -> normalizeSingle(value, List.of("上海办公室", "深圳办公室", "居家", "客户现场", "出差在途"), required);
             default -> value;
         };
+    }
+
+    private List<String> workLogTypeValues() {
+        return List.of("NORMAL", "BUSINESS_TRIP", "CITY_BUSINESS_TRIP", "OUT_OF_CITY_BUSINESS_TRIP", "LEAVE");
     }
 
     private String normalizeSingle(String value, List<String> options, boolean required) {

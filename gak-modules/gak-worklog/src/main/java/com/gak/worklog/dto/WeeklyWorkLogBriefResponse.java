@@ -21,6 +21,9 @@ public class WeeklyWorkLogBriefResponse {
     private BigDecimal overtimeHours;
     @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime offWorkTime;
+    private String businessTripAllowanceScene;
+    private BigDecimal businessTripAllowanceAmount;
+    private Boolean businessTripReimbursed;
     private String remark;
 
     public Long getId() {
@@ -93,6 +96,30 @@ public class WeeklyWorkLogBriefResponse {
 
     public void setOffWorkTime(LocalTime offWorkTime) {
         this.offWorkTime = offWorkTime;
+    }
+
+    public String getBusinessTripAllowanceScene() {
+        return businessTripAllowanceScene;
+    }
+
+    public void setBusinessTripAllowanceScene(String businessTripAllowanceScene) {
+        this.businessTripAllowanceScene = businessTripAllowanceScene;
+    }
+
+    public BigDecimal getBusinessTripAllowanceAmount() {
+        return businessTripAllowanceAmount;
+    }
+
+    public void setBusinessTripAllowanceAmount(BigDecimal businessTripAllowanceAmount) {
+        this.businessTripAllowanceAmount = businessTripAllowanceAmount;
+    }
+
+    public Boolean getBusinessTripReimbursed() {
+        return businessTripReimbursed;
+    }
+
+    public void setBusinessTripReimbursed(Boolean businessTripReimbursed) {
+        this.businessTripReimbursed = businessTripReimbursed;
     }
 
     public String getRemark() {

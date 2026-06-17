@@ -49,6 +49,11 @@ public class CreateWorkLogRequest {
     @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime offWorkTime;
 
+    @Size(max = 32)
+    private String businessTripAllowanceScene;
+
+    private Boolean businessTripReimbursed;
+
     @Size(max = 500)
     private String remark;
 
@@ -130,6 +135,22 @@ public class CreateWorkLogRequest {
 
     public void setOffWorkTime(LocalTime offWorkTime) {
         this.offWorkTime = offWorkTime;
+    }
+
+    public String getBusinessTripAllowanceScene() {
+        return businessTripAllowanceScene;
+    }
+
+    public void setBusinessTripAllowanceScene(String businessTripAllowanceScene) {
+        this.businessTripAllowanceScene = businessTripAllowanceScene;
+    }
+
+    public Boolean getBusinessTripReimbursed() {
+        return businessTripReimbursed;
+    }
+
+    public void setBusinessTripReimbursed(Boolean businessTripReimbursed) {
+        this.businessTripReimbursed = businessTripReimbursed;
     }
 
     public String getRemark() {

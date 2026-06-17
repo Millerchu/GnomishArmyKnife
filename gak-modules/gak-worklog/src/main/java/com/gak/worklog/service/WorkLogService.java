@@ -40,9 +40,19 @@ public class WorkLogService {
     private static final String TYPE_CODES_FIELD = "typeCodes";
     private static final String PROJECT_CODE_FIELD = "projectCode";
     private static final String LOCATION_FIELD = "location";
+    private static final String TYPE_CODE_CITY_BUSINESS_TRIP = "CITY_BUSINESS_TRIP";
+    private static final String TYPE_CODE_OUT_OF_CITY_BUSINESS_TRIP = "OUT_OF_CITY_BUSINESS_TRIP";
+    private static final String TYPE_CODE_LEGACY_BUSINESS_TRIP = "BUSINESS_TRIP";
+    private static final String ALLOWANCE_SCENE_CITY = "CITY";
+    private static final String ALLOWANCE_SCENE_OUT_OF_CITY_TRANSIT = "OUT_OF_CITY_TRANSIT";
+    private static final String ALLOWANCE_SCENE_OUT_OF_CITY_DAILY = "OUT_OF_CITY_DAILY";
     private static final int BRIEF_MAX_LENGTH = 80;
     private static final LocalTime STANDARD_OFF_WORK_TIME = LocalTime.of(18, 0);
     private static final BigDecimal ZERO_HOURS = BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
+    private static final BigDecimal ZERO_AMOUNT = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    private static final BigDecimal CITY_BUSINESS_TRIP_ALLOWANCE = BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
+    private static final BigDecimal OUT_OF_CITY_TRANSIT_ALLOWANCE = BigDecimal.valueOf(110).setScale(2, RoundingMode.HALF_UP);
+    private static final BigDecimal OUT_OF_CITY_DAILY_ALLOWANCE = BigDecimal.valueOf(160).setScale(2, RoundingMode.HALF_UP);
 
     private final WorkLogMapper workLogMapper;
     private final WorkLogTypeMapper workLogTypeMapper;
@@ -74,6 +84,11 @@ public class WorkLogService {
                 request.getOffWorkTime(),
                 request.getOvertimeHours()
         );
+        BusinessTripAllowance businessTripAllowance = resolveBusinessTripAllowance(
+                typeCodes,
+                request.getBusinessTripAllowanceScene(),
+                request.getBusinessTripReimbursed()
+        );
 
         LocalDateTime now = LocalDateTime.now();
         WorkLog workLog = new WorkLog();
@@ -86,6 +101,9 @@ public class WorkLogService {
         workLog.setPersonDay(request.getPersonDay());
         workLog.setOvertimeHours(overtimeHours);
         workLog.setOffWorkTime(request.getOffWorkTime());
+        workLog.setBusinessTripAllowanceScene(businessTripAllowance.scene());
+        workLog.setBusinessTripAllowanceAmount(businessTripAllowance.amount());
+        workLog.setBusinessTripReimbursed(businessTripAllowance.reimbursed());
         workLog.setRemark(request.getRemark());
         workLog.setCreatedAt(now);
         workLog.setUpdatedAt(now);
@@ -131,6 +149,11 @@ public class WorkLogService {
                 request.getOffWorkTime(),
                 request.getOvertimeHours()
         );
+        BusinessTripAllowance businessTripAllowance = resolveBusinessTripAllowance(
+                typeCodes,
+                request.getBusinessTripAllowanceScene(),
+                request.getBusinessTripReimbursed()
+        );
 
         current.setLogDate(request.getLogDate());
         current.setLocation(location);
@@ -140,6 +163,9 @@ public class WorkLogService {
         current.setPersonDay(request.getPersonDay());
         current.setOvertimeHours(overtimeHours);
         current.setOffWorkTime(request.getOffWorkTime());
+        current.setBusinessTripAllowanceScene(businessTripAllowance.scene());
+        current.setBusinessTripAllowanceAmount(businessTripAllowance.amount());
+        current.setBusinessTripReimbursed(businessTripAllowance.reimbursed());
         current.setRemark(request.getRemark());
         current.setUpdatedAt(LocalDateTime.now());
         workLogMapper.updateById(current);
@@ -240,6 +266,9 @@ public class WorkLogService {
             response.setPersonDay(workLog.getPersonDay());
             response.setOvertimeHours(workLog.getOvertimeHours());
             response.setOffWorkTime(workLog.getOffWorkTime());
+            response.setBusinessTripAllowanceScene(workLog.getBusinessTripAllowanceScene());
+            response.setBusinessTripAllowanceAmount(normalizeAllowanceAmount(workLog.getBusinessTripAllowanceAmount()));
+            response.setBusinessTripReimbursed(Boolean.TRUE.equals(workLog.getBusinessTripReimbursed()));
             response.setRemark(workLog.getRemark());
             result.add(response);
         }
@@ -405,6 +434,47 @@ public class WorkLogService {
         return overtimeHours.setScale(1, RoundingMode.HALF_UP);
     }
 
+    private BusinessTripAllowance resolveBusinessTripAllowance(List<String> typeCodes,
+                                                               String requestedScene,
+                                                               Boolean requestedReimbursed) {
+        boolean cityTrip = typeCodes.contains(TYPE_CODE_CITY_BUSINESS_TRIP);
+        boolean outOfCityTrip = typeCodes.contains(TYPE_CODE_OUT_OF_CITY_BUSINESS_TRIP);
+        boolean legacyTrip = typeCodes.contains(TYPE_CODE_LEGACY_BUSINESS_TRIP);
+
+        if (cityTrip && outOfCityTrip) {
+            throw new ResponseStatusException(BAD_REQUEST, "市内出差和市外出差不能同时选择");
+        }
+        if (cityTrip) {
+            return new BusinessTripAllowance(ALLOWANCE_SCENE_CITY, CITY_BUSINESS_TRIP_ALLOWANCE, Boolean.TRUE.equals(requestedReimbursed));
+        }
+        if (outOfCityTrip || legacyTrip) {
+            String scene = normalizeOutOfCityAllowanceScene(requestedScene);
+            BigDecimal amount = ALLOWANCE_SCENE_OUT_OF_CITY_TRANSIT.equals(scene)
+                    ? OUT_OF_CITY_TRANSIT_ALLOWANCE
+                    : OUT_OF_CITY_DAILY_ALLOWANCE;
+            return new BusinessTripAllowance(scene, amount, Boolean.TRUE.equals(requestedReimbursed));
+        }
+        return new BusinessTripAllowance(null, ZERO_AMOUNT, false);
+    }
+
+    private String normalizeOutOfCityAllowanceScene(String requestedScene) {
+        if (requestedScene == null || requestedScene.isBlank()) {
+            return ALLOWANCE_SCENE_OUT_OF_CITY_DAILY;
+        }
+        String scene = requestedScene.trim();
+        if (ALLOWANCE_SCENE_OUT_OF_CITY_TRANSIT.equals(scene) || ALLOWANCE_SCENE_OUT_OF_CITY_DAILY.equals(scene)) {
+            return scene;
+        }
+        throw new ResponseStatusException(BAD_REQUEST, "市外出差补助场景非法");
+    }
+
+    private BigDecimal normalizeAllowanceAmount(BigDecimal amount) {
+        if (amount == null) {
+            return ZERO_AMOUNT;
+        }
+        return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
     private boolean isWeekend(LocalDate logDate) {
         DayOfWeek dayOfWeek = logDate.getDayOfWeek();
         return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
@@ -423,10 +493,16 @@ public class WorkLogService {
         response.setPersonDay(workLog.getPersonDay());
         response.setOvertimeHours(workLog.getOvertimeHours());
         response.setOffWorkTime(workLog.getOffWorkTime());
+        response.setBusinessTripAllowanceScene(workLog.getBusinessTripAllowanceScene());
+        response.setBusinessTripAllowanceAmount(normalizeAllowanceAmount(workLog.getBusinessTripAllowanceAmount()));
+        response.setBusinessTripReimbursed(Boolean.TRUE.equals(workLog.getBusinessTripReimbursed()));
         response.setRemark(workLog.getRemark());
         response.setCreatedAt(workLog.getCreatedAt());
         response.setUpdatedAt(workLog.getUpdatedAt());
         return response;
+    }
+
+    private record BusinessTripAllowance(String scene, BigDecimal amount, Boolean reimbursed) {
     }
 
     private String extractBrief(String workItem) {

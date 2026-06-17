@@ -95,7 +95,7 @@ public class PasswordMemoMigrationHandler implements MigrationResourceHandler {
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "ownerUserId");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "ownerUserId");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "ownerUserId");
                 }
                 existing.setOwnerUserId(targetUserId);
                 passwordMemoMapper.updateById(existing);

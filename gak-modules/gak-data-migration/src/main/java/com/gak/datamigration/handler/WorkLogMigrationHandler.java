@@ -111,12 +111,11 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "userId");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "userId");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "userId");
                 }
                 existing.setUserId(targetUserId);
                 workLogMapper.updateById(existing);
                 targetLogId = existing.getId();
-                deleteTypes(targetLogId);
             } else {
                 WorkLog insertLog = copyLog(source);
                 insertLog.setUserId(targetUserId);
@@ -133,15 +132,20 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
 
             List<WorkLogType> types = typeMap.getOrDefault(source.getId(), List.of());
             for (WorkLogType type : types) {
-                WorkLogType insertType = copyType(type);
-                insertType.setWorkLogId(targetLogId);
-                if (insertType.getId() != null && workLogTypeMapper.selectById(insertType.getId()) != null) {
+                WorkLogType existingType = findExistingType(targetLogId, type);
+                if (existingType != null) {
                     if (context.isStrict()) {
-                        throw new BusinessException("DATA_MIGRATION_WORK_LOG_TYPE_ID_CONFLICT", "工作日志类型 ID 冲突: " + insertType.getId());
+                        throw new BusinessException("DATA_MIGRATION_WORK_LOG_TYPE_CONFLICT", "工作日志类型已存在: " + type.getTypeCode());
                     }
-                    insertType.setId(null);
+                    type.setWorkLogId(targetLogId);
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(type, existingType, "id", "workLogId");
+                    existingType.setWorkLogId(targetLogId);
+                    workLogTypeMapper.updateById(existingType);
+                } else {
+                    WorkLogType insertType = copyType(type);
+                    insertType.setWorkLogId(targetLogId);
+                    workLogTypeMapper.insert(insertType);
                 }
-                workLogTypeMapper.insert(insertType);
                 importedCount++;
             }
         }
@@ -157,16 +161,20 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
         return result;
     }
 
-    private void deleteTypes(Long workLogId) {
-        QueryWrapper<WorkLogType> wrapper = new QueryWrapper<>();
-        wrapper.eq("work_log_id", workLogId);
-        workLogTypeMapper.delete(wrapper);
-    }
-
     private WorkLog findByUserAndDate(Long userId, java.time.LocalDate logDate) {
         QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId).eq("log_date", logDate);
         return workLogMapper.selectOne(wrapper);
+    }
+
+    private WorkLogType findExistingType(Long workLogId, WorkLogType sourceType) {
+        WorkLogType byId = sourceType.getId() == null ? null : workLogTypeMapper.selectById(sourceType.getId());
+        if (byId != null) {
+            return byId;
+        }
+        QueryWrapper<WorkLogType> wrapper = new QueryWrapper<>();
+        wrapper.eq("work_log_id", workLogId).eq("type_code", sourceType.getTypeCode());
+        return workLogTypeMapper.selectOne(wrapper);
     }
 
     private Long resolveUserId(Long sourceUserId, ImportContext context) {

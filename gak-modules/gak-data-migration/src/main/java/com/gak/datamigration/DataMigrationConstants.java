@@ -30,6 +30,16 @@ public final class DataMigrationConstants {
     public static final String SYSTEM_RESOURCE_APPS = "SYSTEM_APPS";
     public static final String SYSTEM_RESOURCE_PERMISSIONS = "SYSTEM_PERMISSIONS";
     public static final String SYSTEM_RESOURCE_DICTIONARIES = "SYSTEM_DICTIONARIES";
+    public static final String SYSTEM_RESOURCE_AUDIT_LOGS = "SYSTEM_AUDIT_LOGS";
+
+    public static final String APP_WORK_LOG = "APP_WORK_LOG";
+    public static final String APP_PASSWORD_MEMO = "APP_PASSWORD_MEMO";
+    public static final String APP_TODO_LIST = "APP_TODO_LIST";
+    public static final String APP_FUEL_STATS = "APP_FUEL_STATS";
+    public static final String APP_WOW_CHARACTER = "APP_WOW_CHARACTER";
+    public static final String APP_PERSONAL_BILLS = "APP_PERSONAL_BILLS";
+    public static final String APP_KNOWLEDGE_BASE = "APP_KNOWLEDGE_BASE";
+    public static final String APP_HEALTH_RECORD = "APP_HEALTH_RECORD";
 
     public static final String FILE_STORAGE_LOCAL = "LOCAL";
     public static final String PACKAGE_VERSION = "1.0.0";

@@ -106,7 +106,7 @@ public class SystemPermissionsMigrationHandler implements MigrationResourceHandl
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id");
                 }
                 permissionMapper.updateById(existing);
                 importedCount++;

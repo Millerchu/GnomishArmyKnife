@@ -104,7 +104,7 @@ public class SystemDictionariesMigrationHandler implements MigrationResourceHand
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "dictCode");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "dictCode");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "dictCode");
                 }
                 existing.setDictCode(source.getDictCode());
                 dictionaryMapper.updateById(existing);
@@ -146,7 +146,7 @@ public class SystemDictionariesMigrationHandler implements MigrationResourceHand
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "dictCode", "itemCode");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "dictCode", "itemCode");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "dictCode", "itemCode");
                 }
                 existing.setDictCode(source.getDictCode());
                 existing.setItemCode(source.getItemCode());
@@ -187,7 +187,7 @@ public class SystemDictionariesMigrationHandler implements MigrationResourceHand
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "appCode", "moduleCode", "bizFieldCode");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "appCode", "moduleCode", "bizFieldCode");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "appCode", "moduleCode", "bizFieldCode");
                 }
                 existing.setDictionaryId(targetDictionaryId);
                 usageMapper.updateById(existing);

@@ -15,3 +15,4 @@
 # Docker/NAS local deployment data
 /deploy/nas/data/
 /deploy/nas/dist/
+/data/db-migrations/

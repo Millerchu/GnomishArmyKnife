@@ -4,12 +4,21 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.datamigration.DataMigrationConstants;
 import com.gak.datamigration.service.DataMigrationArchiveService;
 import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
+import com.gak.datamigration.service.DataMigrationQuerySupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.domain.WowCharacter;
+import com.gak.wowcharacter.domain.WowCharacterKeybinding;
+import com.gak.wowcharacter.domain.WowCharacterMythicRun;
+import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
+import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
+import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
+import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -20,23 +29,30 @@ import org.springframework.util.StringUtils;
 @Service
 public class WowCharacterMigrationHandler implements MigrationResourceHandler {
 
-    private static final String APP_CODE = "APP_WOW_CHARACTER";
-
     private final WowCharacterMapper wowCharacterMapper;
+    private final WowCharacterMythicRunMapper mythicRunMapper;
+    private final WowCharacterWeeklyVaultMapper weeklyVaultMapper;
+    private final WowCharacterKeybindingMapper keybindingMapper;
     private final UserMapper userMapper;
     private final DataMigrationArchiveService archiveService;
 
     public WowCharacterMigrationHandler(WowCharacterMapper wowCharacterMapper,
+                                        WowCharacterMythicRunMapper mythicRunMapper,
+                                        WowCharacterWeeklyVaultMapper weeklyVaultMapper,
+                                        WowCharacterKeybindingMapper keybindingMapper,
                                         UserMapper userMapper,
                                         DataMigrationArchiveService archiveService) {
         this.wowCharacterMapper = wowCharacterMapper;
+        this.mythicRunMapper = mythicRunMapper;
+        this.weeklyVaultMapper = weeklyVaultMapper;
+        this.keybindingMapper = keybindingMapper;
         this.userMapper = userMapper;
         this.archiveService = archiveService;
     }
 
     @Override
     public String resourceCode() {
-        return APP_CODE;
+        return DataMigrationConstants.APP_WOW_CHARACTER;
     }
 
     @Override
@@ -56,7 +72,7 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
 
     @Override
     public String entryPath() {
-        return "business/" + APP_CODE + "/data.json";
+        return "business/" + resourceCode() + "/data.json";
     }
 
     @Override
@@ -69,15 +85,31 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
         QueryWrapper<WowCharacter> wrapper = new QueryWrapper<>();
         wrapper.orderByAsc("owner_user_id").orderByAsc("character_name").orderByAsc("id");
         List<WowCharacter> characters = wowCharacterMapper.selectList(wrapper);
-        return new MigrationResourceExportData(resourceCode(), entryPath(), new Payload(characters), characters.size(), 0L, List.of());
+
+        QueryWrapper<WowCharacterMythicRun> runWrapper = new QueryWrapper<>();
+        runWrapper.orderByAsc("character_id").orderByAsc("dungeon_name").orderByAsc("id");
+        List<WowCharacterMythicRun> mythicRuns = mythicRunMapper.selectList(runWrapper);
+
+        QueryWrapper<WowCharacterWeeklyVault> vaultWrapper = new QueryWrapper<>();
+        vaultWrapper.orderByAsc("character_id").orderByAsc("week_start_date").orderByAsc("id");
+        List<WowCharacterWeeklyVault> weeklyVaults = weeklyVaultMapper.selectList(vaultWrapper);
+
+        QueryWrapper<WowCharacterKeybinding> keybindingWrapper = new QueryWrapper<>();
+        keybindingWrapper.orderByAsc("character_id").orderByAsc("spec_name").orderByAsc("id");
+        List<WowCharacterKeybinding> keybindings = keybindingMapper.selectList(keybindingWrapper);
+
+        long recordCount = (long) characters.size() + mythicRuns.size() + weeklyVaults.size() + keybindings.size();
+        return new MigrationResourceExportData(resourceCode(), entryPath(),
+                new Payload(characters, mythicRuns, weeklyVaults, keybindings), recordCount, 0L, List.of());
     }
 
     @Override
     @Transactional
     public MigrationResourceImportResult importData(ImportContext context) throws Exception {
         Payload payload = archiveService.readJson(context.packageRoot(), entryPath(), Payload.class);
+        Map<Long, Long> characterIdMappings = new LinkedHashMap<>();
         long importedCount = 0L;
-        for (WowCharacter source : payload.getCharacters()) {
+        for (WowCharacter source : DataMigrationQuerySupport.emptyIfNull(payload.getCharacters())) {
             if (source == null || !StringUtils.hasText(source.getCharacterName()) || !StringUtils.hasText(source.getRealmName())) {
                 continue;
             }
@@ -93,12 +125,13 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
                 }
                 source.setOwnerUserId(targetUserId);
                 if (context.isOverwrite()) {
-                    DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "ownerUserId");
+                    DataMigrationBeanMergeSupport.overwriteNewest(source, existing, "id", "ownerUserId");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "ownerUserId");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "ownerUserId");
                 }
                 existing.setOwnerUserId(targetUserId);
                 wowCharacterMapper.updateById(existing);
+                characterIdMappings.put(source.getId(), existing.getId());
                 importedCount++;
                 continue;
             }
@@ -111,9 +144,111 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
                 insertCharacter.setId(null);
             }
             wowCharacterMapper.insert(insertCharacter);
+            characterIdMappings.put(source.getId(), insertCharacter.getId());
             importedCount++;
         }
+        importedCount += importMythicRuns(context, DataMigrationQuerySupport.emptyIfNull(payload.getMythicRuns()), characterIdMappings);
+        importedCount += importWeeklyVaults(context, DataMigrationQuerySupport.emptyIfNull(payload.getWeeklyVaults()), characterIdMappings);
+        importedCount += importKeybindings(context, DataMigrationQuerySupport.emptyIfNull(payload.getKeybindings()), characterIdMappings);
         return MigrationResourceImportResult.success(importedCount, 0L, "WOW 角色导入完成");
+    }
+
+    private long importMythicRuns(ImportContext context,
+                                  List<WowCharacterMythicRun> mythicRuns,
+                                  Map<Long, Long> characterIdMappings) {
+        long importedCount = 0L;
+        for (WowCharacterMythicRun source : mythicRuns) {
+            Long targetCharacterId = characterIdMappings.get(source.getCharacterId());
+            if (targetCharacterId == null) {
+                continue;
+            }
+            Long targetUserId = resolveUserId(source.getOwnerUserId(), context);
+            WowCharacterMythicRun existing = findExistingRun(targetCharacterId, source.getDungeonName());
+            source.setCharacterId(targetCharacterId);
+            source.setOwnerUserId(targetUserId);
+            if (existing != null) {
+                mergeExisting(context, source, existing, "DATA_MIGRATION_WOW_RUN_CONFLICT");
+                existing.setCharacterId(targetCharacterId);
+                existing.setOwnerUserId(targetUserId);
+                mythicRunMapper.updateById(existing);
+            } else {
+                WowCharacterMythicRun insertRun = copyMythicRun(source);
+                insertRun.setCharacterId(targetCharacterId);
+                insertRun.setOwnerUserId(targetUserId);
+                mythicRunMapper.insert(insertRun);
+            }
+            importedCount++;
+        }
+        return importedCount;
+    }
+
+    private long importWeeklyVaults(ImportContext context,
+                                    List<WowCharacterWeeklyVault> weeklyVaults,
+                                    Map<Long, Long> characterIdMappings) {
+        long importedCount = 0L;
+        for (WowCharacterWeeklyVault source : weeklyVaults) {
+            Long targetCharacterId = characterIdMappings.get(source.getCharacterId());
+            if (targetCharacterId == null) {
+                continue;
+            }
+            Long targetUserId = resolveUserId(source.getOwnerUserId(), context);
+            WowCharacterWeeklyVault existing = findExistingVault(targetCharacterId, source.getWeekStartDate());
+            source.setCharacterId(targetCharacterId);
+            source.setOwnerUserId(targetUserId);
+            if (existing != null) {
+                mergeExisting(context, source, existing, "DATA_MIGRATION_WOW_VAULT_CONFLICT");
+                existing.setCharacterId(targetCharacterId);
+                existing.setOwnerUserId(targetUserId);
+                weeklyVaultMapper.updateById(existing);
+            } else {
+                WowCharacterWeeklyVault insertVault = copyWeeklyVault(source);
+                insertVault.setCharacterId(targetCharacterId);
+                insertVault.setOwnerUserId(targetUserId);
+                weeklyVaultMapper.insert(insertVault);
+            }
+            importedCount++;
+        }
+        return importedCount;
+    }
+
+    private long importKeybindings(ImportContext context,
+                                   List<WowCharacterKeybinding> keybindings,
+                                   Map<Long, Long> characterIdMappings) {
+        long importedCount = 0L;
+        for (WowCharacterKeybinding source : keybindings) {
+            Long targetCharacterId = characterIdMappings.get(source.getCharacterId());
+            if (targetCharacterId == null) {
+                continue;
+            }
+            Long targetUserId = resolveUserId(source.getOwnerUserId(), context);
+            WowCharacterKeybinding existing = findExistingKeybinding(targetCharacterId, source.getSpecName());
+            source.setCharacterId(targetCharacterId);
+            source.setOwnerUserId(targetUserId);
+            if (existing != null) {
+                mergeExisting(context, source, existing, "DATA_MIGRATION_WOW_KEYBINDING_CONFLICT");
+                existing.setCharacterId(targetCharacterId);
+                existing.setOwnerUserId(targetUserId);
+                keybindingMapper.updateById(existing);
+            } else {
+                WowCharacterKeybinding insertKeybinding = copyKeybinding(source);
+                insertKeybinding.setCharacterId(targetCharacterId);
+                insertKeybinding.setOwnerUserId(targetUserId);
+                keybindingMapper.insert(insertKeybinding);
+            }
+            importedCount++;
+        }
+        return importedCount;
+    }
+
+    private void mergeExisting(ImportContext context, Object source, Object existing, String conflictCode) {
+        if (context.isStrict()) {
+            throw new BusinessException(conflictCode, "WOW 角色明细已存在");
+        }
+        if (context.isOverwrite()) {
+            DataMigrationBeanMergeSupport.overwriteNewest(source, existing, "id", "characterId", "ownerUserId");
+        } else {
+            DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "characterId", "ownerUserId");
+        }
     }
 
     private Long resolveUserId(Long sourceUserId, ImportContext context) {
@@ -131,10 +266,46 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
         return wowCharacterMapper.selectOne(wrapper);
     }
 
+    private WowCharacterMythicRun findExistingRun(Long characterId, String dungeonName) {
+        QueryWrapper<WowCharacterMythicRun> wrapper = new QueryWrapper<>();
+        wrapper.eq("character_id", characterId).eq("dungeon_name", dungeonName);
+        return mythicRunMapper.selectOne(wrapper);
+    }
+
+    private WowCharacterWeeklyVault findExistingVault(Long characterId, java.time.LocalDate weekStartDate) {
+        QueryWrapper<WowCharacterWeeklyVault> wrapper = new QueryWrapper<>();
+        wrapper.eq("character_id", characterId).eq("week_start_date", weekStartDate);
+        return weeklyVaultMapper.selectOne(wrapper);
+    }
+
+    private WowCharacterKeybinding findExistingKeybinding(Long characterId, String specName) {
+        QueryWrapper<WowCharacterKeybinding> wrapper = new QueryWrapper<>();
+        wrapper.eq("character_id", characterId).eq("spec_name", specName);
+        return keybindingMapper.selectOne(wrapper);
+    }
+
     private WowCharacter copyCharacter(WowCharacter source) {
         WowCharacter character = new WowCharacter();
         DataMigrationBeanMergeSupport.overwrite(source, character);
         return character;
+    }
+
+    private WowCharacterMythicRun copyMythicRun(WowCharacterMythicRun source) {
+        WowCharacterMythicRun run = new WowCharacterMythicRun();
+        DataMigrationBeanMergeSupport.overwrite(source, run);
+        return run;
+    }
+
+    private WowCharacterWeeklyVault copyWeeklyVault(WowCharacterWeeklyVault source) {
+        WowCharacterWeeklyVault vault = new WowCharacterWeeklyVault();
+        DataMigrationBeanMergeSupport.overwrite(source, vault);
+        return vault;
+    }
+
+    private WowCharacterKeybinding copyKeybinding(WowCharacterKeybinding source) {
+        WowCharacterKeybinding keybinding = new WowCharacterKeybinding();
+        DataMigrationBeanMergeSupport.overwrite(source, keybinding);
+        return keybinding;
     }
 
     /**
@@ -143,12 +314,21 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
     public static class Payload {
 
         private List<WowCharacter> characters;
+        private List<WowCharacterMythicRun> mythicRuns;
+        private List<WowCharacterWeeklyVault> weeklyVaults;
+        private List<WowCharacterKeybinding> keybindings;
 
         public Payload() {
         }
 
-        public Payload(List<WowCharacter> characters) {
+        public Payload(List<WowCharacter> characters,
+                       List<WowCharacterMythicRun> mythicRuns,
+                       List<WowCharacterWeeklyVault> weeklyVaults,
+                       List<WowCharacterKeybinding> keybindings) {
             this.characters = characters;
+            this.mythicRuns = mythicRuns;
+            this.weeklyVaults = weeklyVaults;
+            this.keybindings = keybindings;
         }
 
         public List<WowCharacter> getCharacters() {
@@ -157,6 +337,30 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
 
         public void setCharacters(List<WowCharacter> characters) {
             this.characters = characters;
+        }
+
+        public List<WowCharacterMythicRun> getMythicRuns() {
+            return mythicRuns;
+        }
+
+        public void setMythicRuns(List<WowCharacterMythicRun> mythicRuns) {
+            this.mythicRuns = mythicRuns;
+        }
+
+        public List<WowCharacterWeeklyVault> getWeeklyVaults() {
+            return weeklyVaults;
+        }
+
+        public void setWeeklyVaults(List<WowCharacterWeeklyVault> weeklyVaults) {
+            this.weeklyVaults = weeklyVaults;
+        }
+
+        public List<WowCharacterKeybinding> getKeybindings() {
+            return keybindings;
+        }
+
+        public void setKeybindings(List<WowCharacterKeybinding> keybindings) {
+            this.keybindings = keybindings;
         }
     }
 }

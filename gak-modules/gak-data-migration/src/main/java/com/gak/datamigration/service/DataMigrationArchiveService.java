@@ -13,7 +13,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -79,7 +81,8 @@ public class DataMigrationArchiveService {
                     request.recordCount(),
                     request.attachmentCount(),
                     checksum,
-                    COMPATIBLE_VERSION
+                    COMPATIBLE_VERSION,
+                    resolveResourceVersions(exports)
             );
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(root.resolve(MANIFEST_FILE_NAME).toFile(), manifest);
             Path zipFile = storageService.createTempFile(request.packageName() + "-", ".zip");
@@ -130,6 +133,15 @@ public class DataMigrationArchiveService {
         if (!StringUtils.hasText(manifest.packageName()) || !StringUtils.hasText(manifest.createdBy())) {
             throw new BusinessException("DATA_MIGRATION_MANIFEST_INVALID", "迁移包 manifest 不合法");
         }
+    }
+
+    private Map<String, String> resolveResourceVersions(
+            List<com.gak.datamigration.handler.MigrationResourceHandler.MigrationResourceExportData> exports) {
+        Map<String, String> versions = new LinkedHashMap<>();
+        for (com.gak.datamigration.handler.MigrationResourceHandler.MigrationResourceExportData export : exports) {
+            versions.put(export.resourceCode(), PACKAGE_VERSION);
+        }
+        return versions;
     }
 
     private Path findManifestPath(Path workspace) throws IOException {
@@ -271,6 +283,7 @@ public class DataMigrationArchiveService {
                                            long recordCount,
                                            long attachmentCount,
                                            String checksum,
-                                           String compatibleVersion) {
+                                           String compatibleVersion,
+                                           Map<String, String> resourceVersions) {
     }
 }

@@ -622,6 +622,7 @@ public class DataMigrationService {
             case DataMigrationConstants.SYSTEM_RESOURCE_APPS -> "应用管理维护的应用元数据、路由、图标和上下线配置。";
             case DataMigrationConstants.SYSTEM_RESOURCE_PERMISSIONS -> "用户与应用之间的授权关系和授予信息。";
             case DataMigrationConstants.SYSTEM_RESOURCE_DICTIONARIES -> "数据字典主表、字典项和业务字段绑定配置。";
+            case DataMigrationConstants.SYSTEM_RESOURCE_AUDIT_LOGS -> "权限与应用管理审计日志，用于跨环境保留关键操作记录。";
             default -> "系统资源数据。";
         };
     }

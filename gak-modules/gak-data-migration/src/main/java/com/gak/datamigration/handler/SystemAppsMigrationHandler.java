@@ -118,7 +118,7 @@ public class SystemAppsMigrationHandler implements MigrationResourceHandler {
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existing, "id", "appCode");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existing, "id", "appCode");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "appCode");
                 }
                 existing.setAppCode(source.getAppCode());
                 systemAppMapper.updateById(existing);

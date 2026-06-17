@@ -81,7 +81,7 @@ public class SystemUsersMigrationHandler implements MigrationResourceHandler {
                 if (context.isOverwrite()) {
                     DataMigrationBeanMergeSupport.overwrite(source, existingByUsername, "id");
                 } else {
-                    DataMigrationBeanMergeSupport.mergeNonNull(source, existingByUsername, "id");
+                    DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existingByUsername, "id");
                 }
                 userMapper.updateById(existingByUsername);
                 context.mapUserId(source.getId(), existingByUsername.getId());
