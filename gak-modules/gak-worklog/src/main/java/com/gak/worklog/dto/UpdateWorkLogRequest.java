@@ -2,8 +2,11 @@ package com.gak.worklog.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -24,6 +27,7 @@ public class UpdateWorkLogRequest {
     @Size(max = 64)
     private String location;
 
+    @NotBlank
     @Size(max = 128)
     private String projectCode;
 
@@ -36,6 +40,8 @@ public class UpdateWorkLogRequest {
 
     @NotNull
     @DecimalMin(value = "0.0")
+    @DecimalMax(value = "1.0")
+    @Digits(integer = 1, fraction = 1)
     private BigDecimal personDay;
 
     @DecimalMin(value = "0.0")

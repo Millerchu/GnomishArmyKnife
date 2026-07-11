@@ -3,6 +3,7 @@ package com.gak.worklog.service;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.worklog.dto.CreateWorkLogRequest;
+import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.entity.WorkLog;
@@ -78,7 +79,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldComputeWorkdayOvertimeFromOffWorkTimeAndNormalizeDictionaryFields() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1001L);
@@ -108,7 +108,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldUseCurrentUserIdInsteadOfRequestUserId() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1004L);
@@ -127,7 +126,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldFallbackToLegacyWorkdayOvertimeWhenOffWorkTimeMissing() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1002L);
@@ -147,7 +145,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldUseManualWeekendOvertime() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1003L);
@@ -167,7 +164,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldCalculateCityBusinessTripAllowance() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1005L);
@@ -191,7 +187,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldCalculateOutOfCityTransitAllowance() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1006L);
@@ -211,7 +206,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldClearAllowanceWhenNotBusinessTrip() {
-        when(workLogMapper.selectCount(any())).thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1007L);
@@ -252,6 +246,93 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void createShouldAllowAnotherProjectWhenDailyPersonDayDoesNotExceedOne() {
+        when(workLogMapper.countByUserDateAndProject(1L, LocalDate.of(2026, 4, 3), "CLIENT", null))
+                .thenReturn(0L);
+        when(workLogMapper.sumPersonDayByUserAndDate(1L, LocalDate.of(2026, 4, 3), null))
+                .thenReturn(decimal("0.4"));
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1010L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 3));
+        request.setProjectCode("CLIENT");
+        request.setPersonDay(decimal("0.6"));
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        assertEquals("CLIENT", response.getProjectCode());
+        assertEquals(decimal("0.6"), response.getPersonDay());
+        verify(workLogMapper).lockUserWorkLogs(1L);
+    }
+
+    @Test
+    void createShouldRejectDuplicateProjectOnSameDate() {
+        LocalDate logDate = LocalDate.of(2026, 4, 4);
+        when(workLogMapper.countByUserDateAndProject(1L, logDate, "GAK", null)).thenReturn(1L);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> workLogService.create(1L, buildBaseRequest(logDate))
+        );
+
+        assertEquals(BAD_REQUEST, exception.getStatusCode());
+        assertEquals("该用户在当前日期和项目下已存在工作日志", exception.getReason());
+    }
+
+    @Test
+    void createShouldRejectWhenDailyPersonDayExceedsOne() {
+        LocalDate logDate = LocalDate.of(2026, 4, 5);
+        when(workLogMapper.countByUserDateAndProject(1L, logDate, "GAK", null)).thenReturn(0L);
+        when(workLogMapper.sumPersonDayByUserAndDate(1L, logDate, null)).thenReturn(decimal("0.6"));
+        CreateWorkLogRequest request = buildBaseRequest(logDate);
+        request.setPersonDay(decimal("0.5"));
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> workLogService.create(1L, request)
+        );
+
+        assertEquals(BAD_REQUEST, exception.getStatusCode());
+        assertEquals("2026-04-05 当天总人天不能超过 1，当前剩余 0.4 人天", exception.getReason());
+    }
+
+    @Test
+    void updateShouldExcludeCurrentLogFromDailyPersonDayTotal() {
+        LocalDate logDate = LocalDate.of(2026, 3, 23);
+        when(workLogMapper.selectById(2001L)).thenReturn(buildWorkLog());
+        when(workLogMapper.countByUserDateAndProject(1L, logDate, "GAK", 2001L)).thenReturn(0L);
+        when(workLogMapper.sumPersonDayByUserAndDate(1L, logDate, 2001L)).thenReturn(decimal("0.4"));
+        UpdateWorkLogRequest request = buildUpdateRequest(logDate);
+        request.setPersonDay(decimal("0.6"));
+
+        WorkLogResponse response = workLogService.update(1L, 2001L, request);
+
+        assertEquals(decimal("0.6"), response.getPersonDay());
+        verify(workLogMapper).lockUserWorkLogs(1L);
+    }
+
+    @Test
+    void createShouldAcceptOvertimeAsIndependentType() {
+        when(workLogMapper.countByUserDateAndProject(1L, LocalDate.of(2026, 4, 6), "GAK", null))
+                .thenReturn(0L);
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1011L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 6));
+        request.setTypeCodes(List.of("OVERTIME"));
+        request.setPersonDay(decimal("0.0"));
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        assertEquals(List.of("OVERTIME"), response.getTypeCodes());
+    }
+
+    @Test
     void getShouldRejectForeignWorkLog() {
         WorkLog workLog = buildWorkLog();
         workLog.setUserId(2L);
@@ -284,9 +365,23 @@ class WorkLogServiceTest {
         request.setUserId(1L);
         request.setLogDate(logDate);
         request.setTypeCodes(List.of("NORMAL"));
+        request.setLocation("上海办公室");
+        request.setProjectCode("GAK");
         request.setWorkItem("完成工作日志改版");
         request.setPersonDay(decimal("1.0"));
         request.setRemark("继续验证");
+        return request;
+    }
+
+    private UpdateWorkLogRequest buildUpdateRequest(LocalDate logDate) {
+        UpdateWorkLogRequest request = new UpdateWorkLogRequest();
+        request.setLogDate(logDate);
+        request.setTypeCodes(List.of("NORMAL"));
+        request.setLocation("上海办公室");
+        request.setProjectCode("GAK");
+        request.setWorkItem("更新工作日志");
+        request.setPersonDay(decimal("1.0"));
+        request.setOffWorkTime(LocalTime.of(18, 0));
         return request;
     }
 
@@ -339,7 +434,7 @@ class WorkLogServiceTest {
     }
 
     private List<String> workLogTypeValues() {
-        return List.of("NORMAL", "BUSINESS_TRIP", "CITY_BUSINESS_TRIP", "OUT_OF_CITY_BUSINESS_TRIP", "LEAVE");
+        return List.of("NORMAL", "OVERTIME", "BUSINESS_TRIP", "CITY_BUSINESS_TRIP", "OUT_OF_CITY_BUSINESS_TRIP", "LEAVE");
     }
 
     private String normalizeSingle(String value, List<String> options, boolean required) {

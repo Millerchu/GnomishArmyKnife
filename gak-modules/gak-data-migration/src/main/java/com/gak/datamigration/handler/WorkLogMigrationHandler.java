@@ -100,12 +100,14 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
             if (targetUserId == null) {
                 throw new BusinessException("DATA_MIGRATION_WORK_LOG_USER_MISSING", "工作日志依赖的用户不存在: " + source.getUserId());
             }
-            WorkLog existing = findByUserAndDate(targetUserId, source.getLogDate());
+            WorkLog existing = findByUserDateAndProject(targetUserId, source.getLogDate(), source.getProjectCode());
             Long targetLogId;
             if (existing != null) {
                 if (context.isStrict()) {
                     throw new BusinessException("DATA_MIGRATION_WORK_LOG_CONFLICT",
-                            "工作日志已存在: userId=" + targetUserId + ", date=" + source.getLogDate());
+                            "工作日志已存在: userId=" + targetUserId
+                                    + ", date=" + source.getLogDate()
+                                    + ", project=" + source.getProjectCode());
                 }
                 source.setUserId(targetUserId);
                 if (context.isOverwrite()) {
@@ -161,9 +163,14 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
         return result;
     }
 
-    private WorkLog findByUserAndDate(Long userId, java.time.LocalDate logDate) {
+    private WorkLog findByUserDateAndProject(Long userId,
+                                             java.time.LocalDate logDate,
+                                             String projectCode) {
         QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
-        wrapper.eq("user_id", userId).eq("log_date", logDate);
+        wrapper.eq("user_id", userId)
+                .eq("log_date", logDate)
+                .eq(projectCode != null, "project_code", projectCode)
+                .isNull(projectCode == null, "project_code");
         return workLogMapper.selectOne(wrapper);
     }
 

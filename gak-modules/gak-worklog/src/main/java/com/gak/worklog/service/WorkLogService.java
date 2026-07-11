@@ -47,6 +47,7 @@ public class WorkLogService {
     private static final String ALLOWANCE_SCENE_OUT_OF_CITY_TRANSIT = "OUT_OF_CITY_TRANSIT";
     private static final String ALLOWANCE_SCENE_OUT_OF_CITY_DAILY = "OUT_OF_CITY_DAILY";
     private static final int BRIEF_MAX_LENGTH = 80;
+    private static final BigDecimal MAX_DAILY_PERSON_DAY = BigDecimal.ONE.setScale(1, RoundingMode.HALF_UP);
     private static final LocalTime STANDARD_OFF_WORK_TIME = LocalTime.of(18, 0);
     private static final BigDecimal ZERO_HOURS = BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
     private static final BigDecimal ZERO_AMOUNT = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -76,9 +77,11 @@ public class WorkLogService {
     @Transactional
     public WorkLogResponse create(Long currentUserId, CreateWorkLogRequest request) {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
-        String projectCode = normalizeOptionalProjectCode(request.getProjectCode());
+        String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
-        validateDuplicateLogDate(currentUserId, request.getLogDate(), null);
+        workLogMapper.lockUserWorkLogs(currentUserId);
+        validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, null);
+        validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), null);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
                 request.getOffWorkTime(),
@@ -141,9 +144,11 @@ public class WorkLogService {
     public WorkLogResponse update(Long currentUserId, Long id, UpdateWorkLogRequest request) {
         WorkLog current = getOwnedByIdOrThrow(currentUserId, id);
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
-        String projectCode = normalizeOptionalProjectCode(request.getProjectCode());
+        String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
-        validateDuplicateLogDate(currentUserId, request.getLogDate(), id);
+        workLogMapper.lockUserWorkLogs(currentUserId);
+        validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, id);
+        validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), id);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
                 request.getOffWorkTime(),
@@ -310,8 +315,18 @@ public class WorkLogService {
         }
     }
 
-    private String normalizeOptionalProjectCode(String projectCode) {
-        return normalizeOptionalUsageValue(PROJECT_CODE_FIELD, projectCode, "projectCode 非法");
+    private String normalizeRequiredProjectCode(String projectCode) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(
+                    APP_CODE,
+                    MODULE_CODE,
+                    PROJECT_CODE_FIELD,
+                    projectCode,
+                    true
+            );
+        } catch (BusinessException exception) {
+            throw new ResponseStatusException(BAD_REQUEST, "projectCode 非法");
+        }
     }
 
     private String normalizeOptionalLocation(String location) {
@@ -328,17 +343,30 @@ public class WorkLogService {
         }
     }
 
-    private void validateDuplicateLogDate(Long userId, LocalDate logDate, Long ignoreLogId) {
-        QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
-        wrapper.eq("user_id", userId).eq("log_date", logDate);
-
-        if (ignoreLogId != null) {
-            wrapper.ne("id", ignoreLogId);
-        }
-
-        Long count = workLogMapper.selectCount(wrapper);
+    private void validateDuplicateProject(Long userId,
+                                          LocalDate logDate,
+                                          String projectCode,
+                                          Long ignoreLogId) {
+        Long count = workLogMapper.countByUserDateAndProject(userId, logDate, projectCode, ignoreLogId);
         if (count != null && count > 0L) {
-            throw new ResponseStatusException(BAD_REQUEST, "该用户在当前日期已存在工作日志");
+            throw new ResponseStatusException(BAD_REQUEST, "该用户在当前日期和项目下已存在工作日志");
+        }
+    }
+
+    private void validateDailyPersonDay(Long userId,
+                                        LocalDate logDate,
+                                        BigDecimal requestedPersonDay,
+                                        Long ignoreLogId) {
+        BigDecimal existingPersonDay = workLogMapper.sumPersonDayByUserAndDate(userId, logDate, ignoreLogId);
+        BigDecimal normalizedExisting = existingPersonDay == null ? BigDecimal.ZERO : existingPersonDay;
+        BigDecimal normalizedRequested = requestedPersonDay == null ? BigDecimal.ZERO : requestedPersonDay;
+        BigDecimal remainingPersonDay = MAX_DAILY_PERSON_DAY.subtract(normalizedExisting).max(BigDecimal.ZERO);
+        if (normalizedExisting.add(normalizedRequested).compareTo(MAX_DAILY_PERSON_DAY) > 0) {
+            String remainingText = remainingPersonDay.stripTrailingZeros().toPlainString();
+            throw new ResponseStatusException(
+                    BAD_REQUEST,
+                    logDate + " 当天总人天不能超过 1，当前剩余 " + remainingText + " 人天"
+            );
         }
     }
 

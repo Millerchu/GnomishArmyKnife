@@ -264,8 +264,7 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE,
     remark VARCHAR(500),
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL,
-    CONSTRAINT uk_work_log_user_date UNIQUE (user_id, log_date)
+    updated_at TIMESTAMP NOT NULL
     );
 
 CREATE TABLE IF NOT EXISTS gak_work_log_type (
@@ -408,6 +407,10 @@ ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_amount
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE;
 UPDATE gak_work_log SET business_trip_allowance_amount = 0 WHERE business_trip_allowance_amount IS NULL;
 UPDATE gak_work_log SET business_trip_reimbursed = FALSE WHERE business_trip_reimbursed IS NULL;
+ALTER TABLE gak_work_log DROP CONSTRAINT IF EXISTS uk_work_log_user_date;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_work_log_user_date_project
+    ON gak_work_log (user_id, log_date, project_code)
+    WHERE project_code IS NOT NULL;
 ALTER TABLE IF EXISTS gak_system_app ALTER COLUMN route_path DROP NOT NULL;
 ALTER TABLE IF EXISTS gak_app_audit_log ALTER COLUMN app_id DROP NOT NULL;
 UPDATE gak_system_app SET data_source_mode = 'DEMO' WHERE data_source_mode IS NULL;
@@ -896,6 +899,17 @@ INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
+SELECT 5318, 5003, 'WORK_LOG_TYPE', 'overtime', '加班', 'OVERTIME', 2, 'ENABLED', FALSE, '加班工作记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5003 AND item.item_code = 'overtime' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
 SELECT 5312, 5003, 'WORK_LOG_TYPE', 'leave', '请假', 'LEAVE', 2, 'ENABLED', FALSE, '请假记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
@@ -947,6 +961,21 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FA
     WHERE item.dictionary_id = 5003 AND item.item_code = 'other' AND item.deleted = FALSE
   )
 ON CONFLICT (id) DO NOTHING;
+UPDATE gak_data_dictionary_item
+SET sort_no = CASE item_value
+        WHEN 'NORMAL' THEN 1
+        WHEN 'OVERTIME' THEN 2
+        WHEN 'LEAVE' THEN 3
+        WHEN 'CITY_BUSINESS_TRIP' THEN 4
+        WHEN 'OUT_OF_CITY_BUSINESS_TRIP' THEN 5
+        WHEN 'SICK_LEAVE' THEN 6
+        WHEN 'OTHER' THEN 7
+        ELSE sort_no
+    END,
+    updated_at = CURRENT_TIMESTAMP
+WHERE dictionary_id = 5003
+  AND deleted = FALSE
+  AND item_value IN ('NORMAL', 'OVERTIME', 'LEAVE', 'CITY_BUSINESS_TRIP', 'OUT_OF_CITY_BUSINESS_TRIP', 'SICK_LEAVE', 'OTHER');
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1360,7 +1389,7 @@ INSERT INTO gak_data_dictionary_usage (
 )
 SELECT
     7001006, 'WORK_LOG_PROJECT', dictionary.id, 'APP_WORK_LOG', '工作日志', 'WORK_LOG', '工作日志',
-    'projectCode', '所属项目', 'FORM_FIELD', 'ITEM_VALUE', FALSE, FALSE,
+    'projectCode', '所属项目', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
     'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM gak_data_dictionary dictionary
 WHERE dictionary.dict_code = 'WORK_LOG_PROJECT'
@@ -1371,6 +1400,12 @@ WHERE dictionary.dict_code = 'WORK_LOG_PROJECT'
       AND usage.module_code = 'WORK_LOG'
       AND usage.biz_field_code = 'projectCode'
   );
+UPDATE gak_data_dictionary_usage
+SET required_flag = TRUE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE app_code = 'APP_WORK_LOG'
+  AND module_code = 'WORK_LOG'
+  AND biz_field_code = 'projectCode';
 
 INSERT INTO gak_data_dictionary_usage (
     id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
