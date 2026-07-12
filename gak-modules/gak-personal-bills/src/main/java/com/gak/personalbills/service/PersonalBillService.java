@@ -15,6 +15,8 @@ import com.gak.personalbills.mapper.PersonalBillMapper;
 import com.gak.personalbills.mapper.PersonalBudgetMapper;
 import com.gak.personalbills.vo.AnnualBudgetVO;
 import com.gak.personalbills.vo.PersonalBillCategoryDistributionVO;
+import com.gak.personalbills.vo.PersonalBillDailyTrendVO;
+import com.gak.personalbills.vo.PersonalBillMonthComparisonVO;
 import com.gak.personalbills.vo.PersonalBillSummaryVO;
 import com.gak.personalbills.vo.PersonalBillVO;
 import com.gak.personalbills.vo.PersonalBudgetProgressVO;
@@ -153,6 +155,10 @@ public class PersonalBillService {
         List<PersonalBill> yearBills = allBills.stream()
                 .filter(item -> item.getBillDate().getYear() == targetYear)
                 .toList();
+        LocalDate previousMonthStart = targetMonth.minusMonths(1).atDay(1);
+        List<PersonalBill> previousMonthBills = allBills.stream()
+                .filter(item -> !item.getBillDate().isBefore(previousMonthStart) && item.getBillDate().isBefore(monthStart))
+                .toList();
 
         BigDecimal currentMonthExpense = sumAmount(filterBillsByType(monthBills, "EXPENSE"));
         BigDecimal currentMonthIncome = sumAmount(filterBillsByType(monthBills, "INCOME"));
@@ -176,7 +182,61 @@ public class PersonalBillService {
         summary.setCategoryDistribution(buildCategoryDistribution(monthBills));
         summary.setRecentBills(allBills.stream().limit(RECENT_BILL_LIMIT).map(this::toBillVO).toList());
         summary.setBudgetProgressList(budgetProgressList);
+        summary.setMonthComparison(buildMonthComparison(
+                currentMonthExpense,
+                currentMonthIncome,
+                previousMonthBills
+        ));
+        summary.setDailyTrend(buildDailyTrend(targetMonth, monthBills));
         return summary;
+    }
+
+    private PersonalBillMonthComparisonVO buildMonthComparison(BigDecimal currentExpense,
+                                                                BigDecimal currentIncome,
+                                                                List<PersonalBill> previousMonthBills) {
+        BigDecimal previousExpense = sumAmount(filterBillsByType(previousMonthBills, "EXPENSE"));
+        BigDecimal previousIncome = sumAmount(filterBillsByType(previousMonthBills, "INCOME"));
+        BigDecimal currentBalance = currentIncome.subtract(currentExpense).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal previousBalance = previousIncome.subtract(previousExpense).setScale(2, RoundingMode.HALF_UP);
+
+        PersonalBillMonthComparisonVO comparison = new PersonalBillMonthComparisonVO();
+        comparison.setPreviousMonthExpense(previousExpense);
+        comparison.setPreviousMonthIncome(previousIncome);
+        comparison.setPreviousMonthBalance(previousBalance);
+        comparison.setExpenseDifference(currentExpense.subtract(previousExpense).setScale(2, RoundingMode.HALF_UP));
+        comparison.setIncomeDifference(currentIncome.subtract(previousIncome).setScale(2, RoundingMode.HALF_UP));
+        comparison.setBalanceDifference(currentBalance.subtract(previousBalance).setScale(2, RoundingMode.HALF_UP));
+        comparison.setExpenseChangeRate(calculateSignedChangeRate(currentExpense, previousExpense));
+        comparison.setIncomeChangeRate(calculateSignedChangeRate(currentIncome, previousIncome));
+        comparison.setBalanceChangeRate(calculateSignedChangeRate(currentBalance, previousBalance));
+        return comparison;
+    }
+
+    /**
+     * 上月为零时没有可解释的环比基数，因此返回零而不是制造无穷大。
+     */
+    private BigDecimal calculateSignedChangeRate(BigDecimal current, BigDecimal previous) {
+        if (previous.compareTo(BigDecimal.ZERO) == 0) {
+            return ZERO_RATIO;
+        }
+        return current.subtract(previous)
+                .divide(previous.abs(), 4, RoundingMode.HALF_UP);
+    }
+
+    private List<PersonalBillDailyTrendVO> buildDailyTrend(YearMonth targetMonth, List<PersonalBill> monthBills) {
+        Map<LocalDate, List<PersonalBill>> billsByDate = monthBills.stream()
+                .collect(java.util.stream.Collectors.groupingBy(PersonalBill::getBillDate));
+        List<PersonalBillDailyTrendVO> result = new ArrayList<>();
+        for (int day = 1; day <= targetMonth.lengthOfMonth(); day++) {
+            LocalDate date = targetMonth.atDay(day);
+            List<PersonalBill> dailyBills = billsByDate.getOrDefault(date, List.of());
+            PersonalBillDailyTrendVO trend = new PersonalBillDailyTrendVO();
+            trend.setDate(date);
+            trend.setExpense(sumAmount(filterBillsByType(dailyBills, "EXPENSE")));
+            trend.setIncome(sumAmount(filterBillsByType(dailyBills, "INCOME")));
+            result.add(trend);
+        }
+        return result;
     }
 
     /**

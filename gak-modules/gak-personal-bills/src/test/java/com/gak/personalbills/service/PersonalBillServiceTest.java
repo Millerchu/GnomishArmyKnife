@@ -129,7 +129,9 @@ class PersonalBillServiceTest {
         when(personalBillMapper.selectList(any())).thenReturn(List.of(
                 buildBill(1001L, "EXPENSE", "餐饮", new BigDecimal("88.00"), LocalDate.of(2026, 5, 10)),
                 buildBill(1002L, "EXPENSE", "交通", new BigDecimal("36.00"), LocalDate.of(2026, 5, 8)),
-                buildBill(1003L, "INCOME", "工资", new BigDecimal("18000.00"), LocalDate.of(2026, 5, 5))
+                buildBill(1003L, "INCOME", "工资", new BigDecimal("18000.00"), LocalDate.of(2026, 5, 5)),
+                buildBill(1004L, "EXPENSE", "餐饮", new BigDecimal("100.00"), LocalDate.of(2026, 4, 30)),
+                buildBill(1005L, "INCOME", "工资", new BigDecimal("17000.00"), LocalDate.of(2026, 4, 1))
         ));
         when(personalBudgetMapper.selectList(any())).thenReturn(List.of(
                 buildBudget(2001L, 2026, "餐饮", new BigDecimal("15000.00"), new BigDecimal("0.80")),
@@ -146,6 +148,32 @@ class PersonalBillServiceTest {
         assertEquals(new BigDecimal("18000.00"), result.getCurrentMonthIncome());
         assertEquals(2, result.getBudgetProgressList().size());
         assertEquals("餐饮", result.getCategoryDistribution().get(0).getCategoryName());
+        assertEquals(new BigDecimal("100.00"), result.getMonthComparison().getPreviousMonthExpense());
+        assertEquals(new BigDecimal("24.00"), result.getMonthComparison().getExpenseDifference());
+        assertEquals(new BigDecimal("0.2400"), result.getMonthComparison().getExpenseChangeRate());
+        assertEquals(31, result.getDailyTrend().size());
+        assertEquals(new BigDecimal("0.00"), result.getDailyTrend().get(0).getExpense());
+        assertEquals(new BigDecimal("18000.00"), result.getDailyTrend().get(4).getIncome());
+        assertEquals(new BigDecimal("88.00"), result.getDailyTrend().get(9).getExpense());
+    }
+
+    @Test
+    void summaryShouldUseZeroRateWhenPreviousMonthHasNoComparableBase() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(personalBillMapper.selectList(any())).thenReturn(List.of(
+                buildBill(1001L, "EXPENSE", "餐饮", new BigDecimal("10.10"), LocalDate.of(2026, 2, 1))
+        ));
+        when(personalBudgetMapper.selectList(any())).thenReturn(List.of());
+
+        PersonalBillSummaryQueryRequest request = new PersonalBillSummaryQueryRequest();
+        request.setMonth("2026-02");
+        request.setYear(2026);
+
+        PersonalBillSummaryVO result = personalBillService.getSummary(1L, request);
+
+        assertEquals(new BigDecimal("0.0000"), result.getMonthComparison().getExpenseChangeRate());
+        assertEquals(new BigDecimal("10.10"), result.getMonthComparison().getExpenseDifference());
+        assertEquals(28, result.getDailyTrend().size());
     }
 
     @Test

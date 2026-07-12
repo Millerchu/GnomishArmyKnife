@@ -20,6 +20,8 @@ public class PersonalBillSummaryVO {
     private List<PersonalBillCategoryDistributionVO> categoryDistribution = new ArrayList<>();
     private List<PersonalBillVO> recentBills = new ArrayList<>();
     private List<PersonalBudgetProgressVO> budgetProgressList = new ArrayList<>();
+    private PersonalBillMonthComparisonVO monthComparison;
+    private List<PersonalBillDailyTrendVO> dailyTrend = new ArrayList<>();
 
     public BigDecimal getCurrentMonthExpense() {
         return currentMonthExpense;
@@ -107,5 +109,21 @@ public class PersonalBillSummaryVO {
 
     public void setBudgetProgressList(List<PersonalBudgetProgressVO> budgetProgressList) {
         this.budgetProgressList = budgetProgressList;
+    }
+
+    public PersonalBillMonthComparisonVO getMonthComparison() {
+        return monthComparison;
+    }
+
+    public void setMonthComparison(PersonalBillMonthComparisonVO monthComparison) {
+        this.monthComparison = monthComparison;
+    }
+
+    public List<PersonalBillDailyTrendVO> getDailyTrend() {
+        return dailyTrend;
+    }
+
+    public void setDailyTrend(List<PersonalBillDailyTrendVO> dailyTrend) {
+        this.dailyTrend = dailyTrend;
     }
 }
