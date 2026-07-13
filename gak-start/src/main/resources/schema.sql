@@ -264,7 +264,8 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE,
     remark VARCHAR(500),
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT uk_work_log_user_date UNIQUE (user_id, log_date)
     );
 
 CREATE TABLE IF NOT EXISTS gak_work_log_type (
@@ -1359,6 +1360,47 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5010 AND item.item_code = 'cash' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001001, 'USER_ROLE_TYPE', dictionary.id, 'APP_USER_MANAGEMENT', 'User Management', 'SYSTEM_USER', 'System User',
+    'roleCode', 'Role Code', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'USER_ROLE_TYPE'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_USER_MANAGEMENT'
+      AND usage.module_code = 'SYSTEM_USER'
+      AND usage.biz_field_code = 'roleCode'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001002, 'USER_STATUS', dictionary.id, 'APP_USER_MANAGEMENT', 'User Management', 'SYSTEM_USER', 'System User',
+    'status', 'User Status', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'USER_STATUS'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_USER_MANAGEMENT'
+      AND usage.module_code = 'SYSTEM_USER'
+      AND usage.biz_field_code = 'status'
   )
 ON CONFLICT (id) DO NOTHING;
 
