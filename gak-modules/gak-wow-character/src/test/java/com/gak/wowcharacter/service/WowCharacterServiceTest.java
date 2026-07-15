@@ -127,8 +127,8 @@ class WowCharacterServiceTest {
         request.setMythicDungeonName("通天峰");
         request.setWeeklyVaults(List.of(buildWeeklyVault(LocalDate.of(2026, 5, 11), 4, 8, 4)));
         request.setKeybindings(List.of(
-                buildKeybinding("holy_priest", "YmluZGluZ3MtaG9seQ=="),
-                buildKeybinding("discipline", "")
+                buildKeybinding("团本治疗", "YmluZGluZ3MtaG9seQ=="),
+                buildKeybinding("大秘境治疗", "")
         ));
 
         WowCharacterListVO result = wowCharacterService.create(1L, request);
@@ -161,7 +161,7 @@ class WowCharacterServiceTest {
 
         ArgumentCaptor<WowCharacterKeybinding> keybindingCaptor = ArgumentCaptor.forClass(WowCharacterKeybinding.class);
         verify(wowCharacterKeybindingMapper, org.mockito.Mockito.times(2)).insert(keybindingCaptor.capture());
-        assertEquals("holy_priest", keybindingCaptor.getAllValues().get(0).getSpecName());
+        assertEquals("团本治疗", keybindingCaptor.getAllValues().get(0).getBindingName());
         assertEquals("YmluZGluZ3MtaG9seQ==", keybindingCaptor.getAllValues().get(0).getBindingContent());
     }
 
@@ -176,6 +176,20 @@ class WowCharacterServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
         assertEquals("WOW_MYTHIC_DUNGEON_DUPLICATE", exception.getCode());
+    }
+
+    @Test
+    void createShouldRejectDuplicateKeybindingNameIgnoringCase() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        SaveWowCharacterRequest request = buildSaveRequest();
+        request.setKeybindings(List.of(
+                buildKeybinding("Raid", "first"),
+                buildKeybinding("raid", "second")
+        ));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
+
+        assertEquals("WOW_KEYBINDING_NAME_DUPLICATE", exception.getCode());
     }
 
     @Test
@@ -258,9 +272,9 @@ class WowCharacterServiceTest {
         return request;
     }
 
-    private SaveWowCharacterKeybindingRequest buildKeybinding(String specName, String bindingContent) {
+    private SaveWowCharacterKeybindingRequest buildKeybinding(String bindingName, String bindingContent) {
         SaveWowCharacterKeybindingRequest request = new SaveWowCharacterKeybindingRequest();
-        request.setSpecName(specName);
+        request.setBindingName(bindingName);
         request.setBindingContent(bindingContent);
         return request;
     }

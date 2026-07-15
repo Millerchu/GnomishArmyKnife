@@ -107,11 +107,19 @@ CREATE TABLE IF NOT EXISTS gak_wow_character_keybinding (
     id BIGINT PRIMARY KEY,
     character_id BIGINT NOT NULL,
     owner_user_id BIGINT NOT NULL,
-    spec_name VARCHAR(24) NOT NULL,
+    spec_name VARCHAR(24),
+    binding_name VARCHAR(64),
     binding_content TEXT,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
+
+ALTER TABLE gak_wow_character_keybinding ADD COLUMN IF NOT EXISTS binding_name VARCHAR(64);
+ALTER TABLE gak_wow_character_keybinding ALTER COLUMN spec_name DROP NOT NULL;
+UPDATE gak_wow_character_keybinding
+SET binding_name = spec_name
+WHERE binding_name IS NULL OR BTRIM(binding_name) = '';
+ALTER TABLE gak_wow_character_keybinding ALTER COLUMN binding_name SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS gak_personal_bill (
     id BIGINT PRIMARY KEY,
@@ -425,8 +433,10 @@ CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_owner_character ON gak_wow_charact
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
 CREATE INDEX IF NOT EXISTS idx_wow_weekly_vault_owner_character_week ON gak_wow_character_weekly_vault (owner_user_id, character_id, week_start_date DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_weekly_vault_character_week ON gak_wow_character_weekly_vault (character_id, week_start_date);
-CREATE INDEX IF NOT EXISTS idx_wow_keybinding_owner_character ON gak_wow_character_keybinding (owner_user_id, character_id, spec_name);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_keybinding_character_spec ON gak_wow_character_keybinding (character_id, spec_name);
+DROP INDEX IF EXISTS idx_wow_keybinding_owner_character;
+DROP INDEX IF EXISTS uk_wow_keybinding_character_spec;
+CREATE INDEX IF NOT EXISTS idx_wow_keybinding_owner_character ON gak_wow_character_keybinding (owner_user_id, character_id, binding_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_keybinding_character_name ON gak_wow_character_keybinding (character_id, LOWER(binding_name));
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (owner_user_id, bill_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);

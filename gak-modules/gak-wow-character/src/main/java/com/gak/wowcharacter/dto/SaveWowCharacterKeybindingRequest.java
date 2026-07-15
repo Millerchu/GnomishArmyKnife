@@ -4,22 +4,22 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * WoW 角色单专精键位保存请求。
+ * WoW 角色单套键位方案保存请求。
  */
 public class SaveWowCharacterKeybindingRequest {
 
-    @NotBlank(message = "specName 不能为空")
-    @Size(max = 24, message = "specName 长度不能超过 24")
-    private String specName;
+    @NotBlank(message = "bindingName 不能为空")
+    @Size(max = 64, message = "bindingName 长度不能超过 64")
+    private String bindingName;
 
     private String bindingContent;
 
-    public String getSpecName() {
-        return specName;
+    public String getBindingName() {
+        return bindingName;
     }
 
-    public void setSpecName(String specName) {
-        this.specName = specName;
+    public void setBindingName(String bindingName) {
+        this.bindingName = bindingName;
     }
 
     public String getBindingContent() {

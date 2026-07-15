@@ -307,7 +307,7 @@ public class WowCharacterService {
         List<NormalizedMythicRun> mythicRuns = normalizeMythicRuns(request);
         BigDecimal mythicScore = calculateMythicScore(mythicRuns);
         List<NormalizedWeeklyVault> weeklyVaults = normalizeWeeklyVaults(request.getWeeklyVaults());
-        List<NormalizedKeybinding> keybindings = normalizeKeybindings(classOption.classCode(), request.getKeybindings());
+        List<NormalizedKeybinding> keybindings = normalizeKeybindings(request.getKeybindings());
 
         return new NormalizedCharacter(
                 trimRequired(request.getCharacterName(), "characterName 不能为空"),
@@ -357,22 +357,19 @@ public class WowCharacterService {
         return result;
     }
 
-    private List<NormalizedKeybinding> normalizeKeybindings(String classCode,
-                                                            List<SaveWowCharacterKeybindingRequest> requestList) {
+    private List<NormalizedKeybinding> normalizeKeybindings(List<SaveWowCharacterKeybindingRequest> requestList) {
         if (requestList == null || requestList.isEmpty()) {
             return Collections.emptyList();
         }
         Map<String, NormalizedKeybinding> result = new LinkedHashMap<>();
         for (SaveWowCharacterKeybindingRequest item : requestList) {
-            SpecOption specOption = normalizeOptionalSpecName(classCode, item.getSpecName());
-            if (specOption == null) {
-                throw new BusinessException("WOW_KEYBINDING_SPEC_REQUIRED", "keybindings.specName 不能为空");
+            String bindingName = trimRequired(item.getBindingName(), "keybindings.bindingName 不能为空");
+            String normalizedKey = bindingName.toLowerCase(Locale.ROOT);
+            if (result.containsKey(normalizedKey)) {
+                throw new BusinessException("WOW_KEYBINDING_NAME_DUPLICATE", "keybindings 存在重复方案名称");
             }
-            if (result.containsKey(specOption.code())) {
-                throw new BusinessException("WOW_KEYBINDING_SPEC_DUPLICATE", "keybindings 存在重复专精");
-            }
-            result.put(specOption.code(), new NormalizedKeybinding(
-                    specOption.code(),
+            result.put(normalizedKey, new NormalizedKeybinding(
+                    bindingName,
                     trimToNull(item.getBindingContent())
             ));
         }
@@ -517,7 +514,7 @@ public class WowCharacterService {
             WowCharacterKeybinding keybinding = new WowCharacterKeybinding();
             keybinding.setCharacterId(characterId);
             keybinding.setOwnerUserId(currentUserId);
-            keybinding.setSpecName(item.specName());
+            keybinding.setBindingName(item.bindingName());
             keybinding.setBindingContent(item.bindingContent());
             keybinding.setCreatedAt(now);
             keybinding.setUpdatedAt(now);
@@ -582,7 +579,7 @@ public class WowCharacterService {
             return Collections.emptyMap();
         }
         QueryWrapper<WowCharacterKeybinding> wrapper = new QueryWrapper<>();
-        wrapper.in("character_id", characterIds).orderByAsc("character_id").orderByAsc("spec_name").orderByAsc("id");
+        wrapper.in("character_id", characterIds).orderByAsc("character_id").orderByAsc("binding_name").orderByAsc("id");
         Map<Long, List<WowCharacterKeybinding>> result = new HashMap<>();
         for (WowCharacterKeybinding item : wowCharacterKeybindingMapper.selectList(wrapper)) {
             result.computeIfAbsent(item.getCharacterId(), key -> new ArrayList<>()).add(item);
@@ -765,7 +762,7 @@ public class WowCharacterService {
         vo.setUpdatedAt(record.getUpdatedAt());
         vo.setMythicRuns(mythicRunVOs);
         vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
-        vo.setKeybindings(buildKeybindingVOs(record.getClassName(), keybindings));
+        vo.setKeybindings(buildKeybindingVOs(keybindings));
         return vo;
     }
 
@@ -797,7 +794,7 @@ public class WowCharacterService {
         vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
         vo.setMythicRuns(mythicRunVOs);
         vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
-        vo.setKeybindings(buildKeybindingVOs(record.getClassName(), keybindings));
+        vo.setKeybindings(buildKeybindingVOs(keybindings));
         return vo;
     }
 
@@ -825,28 +822,15 @@ public class WowCharacterService {
         return result;
     }
 
-    private List<WowCharacterKeybindingVO> buildKeybindingVOs(String className, List<WowCharacterKeybinding> keybindings) {
-        ClassOption classOption = findClassOption(className);
-        if (classOption == null) {
+    private List<WowCharacterKeybindingVO> buildKeybindingVOs(List<WowCharacterKeybinding> keybindings) {
+        if (keybindings == null || keybindings.isEmpty()) {
             return Collections.emptyList();
         }
-        Map<String, WowCharacterKeybinding> keybindingMap = new HashMap<>();
-        if (keybindings != null) {
-            for (WowCharacterKeybinding item : keybindings) {
-                keybindingMap.put(item.getSpecName(), item);
-            }
-        }
-
         List<WowCharacterKeybindingVO> result = new ArrayList<>();
-        for (SpecOption option : listSpecOptions()) {
-            if (!classOption.classCode().equals(option.classCode())) {
-                continue;
-            }
-            WowCharacterKeybinding keybinding = keybindingMap.get(option.code());
-            String bindingContent = keybinding == null ? null : trimToNull(keybinding.getBindingContent());
+        for (WowCharacterKeybinding keybinding : keybindings) {
+            String bindingContent = trimToNull(keybinding.getBindingContent());
             WowCharacterKeybindingVO vo = new WowCharacterKeybindingVO();
-            vo.setSpecName(option.code());
-            vo.setSpecNameLabel(option.label());
+            vo.setBindingName(keybinding.getBindingName());
             vo.setBindingContent(bindingContent);
             vo.setHasKeybinding(bindingContent != null);
             result.add(vo);
@@ -1262,7 +1246,7 @@ public class WowCharacterService {
     }
 
     private record NormalizedKeybinding(
-            String specName,
+            String bindingName,
             String bindingContent
     ) {
     }
