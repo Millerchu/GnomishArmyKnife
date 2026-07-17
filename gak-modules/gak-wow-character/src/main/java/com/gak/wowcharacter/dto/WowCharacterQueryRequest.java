@@ -1,6 +1,7 @@
 package com.gak.wowcharacter.dto;
 
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -22,6 +23,12 @@ public class WowCharacterQueryRequest {
 
     @Size(max = 24, message = "className 长度不能超过 24")
     private String className;
+
+    @Size(max = 32, message = "sortField 长度不能超过 32")
+    private String sortField;
+
+    @Pattern(regexp = "(?i)ASC|DESC", message = "sortDirection 只支持 ASC 或 DESC")
+    private String sortDirection;
 
     public Long getPageNo() {
         return pageNo;
@@ -61,5 +68,21 @@ public class WowCharacterQueryRequest {
 
     public void setClassName(String className) {
         this.className = className;
+    }
+
+    public String getSortField() {
+        return sortField;
+    }
+
+    public void setSortField(String sortField) {
+        this.sortField = sortField;
+    }
+
+    public String getSortDirection() {
+        return sortDirection;
+    }
+
+    public void setSortDirection(String sortDirection) {
+        this.sortDirection = sortDirection;
     }
 }

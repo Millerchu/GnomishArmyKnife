@@ -217,6 +217,39 @@ class WowCharacterServiceTest {
     }
 
     @Test
+    void pageShouldApplyRequestedSortDirectionBeforePaging() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(
+                buildCharacter(1L, "A", "法师", "ALLIANCE", "熊猫酒仙", "650.50", "2600.00", false),
+                buildCharacter(2L, "C", "牧师", "HORDE", "凤凰之神", "645.22", "3000.00", false),
+                buildCharacter(3L, "B", "战士", "ALLIANCE", "白银之手", "640.00", "2800.00", false)
+        ));
+
+        WowCharacterQueryRequest request = new WowCharacterQueryRequest();
+        request.setPageNo(1L);
+        request.setPageSize(2L);
+        request.setSortField("characterName");
+        request.setSortDirection("DESC");
+
+        PagedResult<WowCharacterListVO> result = wowCharacterService.page(1L, request);
+
+        assertEquals(3, result.total());
+        assertEquals(List.of("C", "B"), result.list().stream().map(WowCharacterListVO::getCharacterName).toList());
+    }
+
+    @Test
+    void pageShouldRejectUnsupportedSortField() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of());
+        WowCharacterQueryRequest request = new WowCharacterQueryRequest();
+        request.setSortField("updatedAt desc");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.page(1L, request));
+
+        assertEquals("WOW_SORT_FIELD_INVALID", exception.getCode());
+    }
+
+    @Test
     void overviewShouldReturnFourFeaturedCharacters() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         when(wowCharacterMapper.selectList(any())).thenReturn(List.of(

@@ -73,6 +73,8 @@ public class WowCharacterService {
     private static final String MYTHIC_DUNGEON_FIELD = "mythicDungeonName";
     private static final String PROFESSION_DICT_CODE = "WOW_PRIMARY_PROFESSION";
     private static final String DEFAULT_FACTION = "ALLIANCE";
+    private static final String SORT_DIRECTION_ASC = "ASC";
+    private static final String SORT_DIRECTION_DESC = "DESC";
     private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final int FEATURED_CHARACTER_LIMIT = 4;
     private static final int[] RAID_VAULT_THRESHOLDS = {2, 4, 6};
@@ -120,7 +122,7 @@ public class WowCharacterService {
     public PagedResult<WowCharacterListVO> page(Long currentUserId, WowCharacterQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
         List<WowCharacter> records = filterCharacters(currentUserId, request.getKeyword(), request.getFaction(), request.getClassName());
-        records.sort(DEFAULT_ORDER);
+        records.sort(resolveCharacterOrder(request.getSortField(), request.getSortDirection()));
 
         long total = records.size();
         long fromIndex = Math.max((request.getPageNo() - 1) * request.getPageSize(), 0L);
@@ -145,6 +147,40 @@ public class WowCharacterService {
             ));
         }
         return new PagedResult<>(list, total);
+    }
+
+    /**
+     * 列表排序字段由服务端显式映射，避免客户端字段直接进入数据库排序表达式。
+     */
+    private Comparator<WowCharacter> resolveCharacterOrder(String sortField, String sortDirection) {
+        String normalizedField = trimToNull(sortField);
+        if (normalizedField == null) {
+            return DEFAULT_ORDER;
+        }
+
+        Comparator<WowCharacter> comparator = switch (normalizedField) {
+            case "faction" -> Comparator.comparing(item -> normalizeSortText(item.getFaction()));
+            case "characterName" -> Comparator.comparing(item -> normalizeSortText(item.getCharacterName()));
+            case "specName" -> Comparator.comparing(item -> normalizeSortText(item.getSpecName()));
+            case "level" -> Comparator.comparingInt(item -> safeInteger(item.getLevel()));
+            case "realmName" -> Comparator.comparing(item -> normalizeSortText(item.getRealmName()));
+            case "itemLevel" -> Comparator.comparing(item -> scaleStatic(item.getItemLevel()));
+            case "currentKey" -> Comparator
+                    .comparingInt((WowCharacter item) -> safeInteger(item.getMythicBestLevel()))
+                    .thenComparing(item -> normalizeSortText(item.getMythicDungeonName()));
+            case "mythicScore" -> Comparator.comparing(item -> scaleStatic(item.getMythicScore()));
+            default -> throw new BusinessException("WOW_SORT_FIELD_INVALID", "不支持的角色排序字段：" + normalizedField);
+        };
+
+        String normalizedDirection = StringUtils.hasText(sortDirection)
+                ? sortDirection.trim().toUpperCase(Locale.ROOT)
+                : SORT_DIRECTION_DESC;
+        if (SORT_DIRECTION_DESC.equals(normalizedDirection)) {
+            comparator = comparator.reversed();
+        } else if (!SORT_DIRECTION_ASC.equals(normalizedDirection)) {
+            throw new BusinessException("WOW_SORT_DIRECTION_INVALID", "角色排序方向只支持 ASC 或 DESC");
+        }
+        return comparator.thenComparing(DEFAULT_ORDER);
     }
 
     @Transactional
@@ -1196,6 +1232,14 @@ public class WowCharacterService {
 
     private String normalizeFactionCode(String faction) {
         return faction == null ? DEFAULT_FACTION : faction.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeSortText(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static int safeInteger(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private static int compareDecimalDesc(BigDecimal left, BigDecimal right) {
