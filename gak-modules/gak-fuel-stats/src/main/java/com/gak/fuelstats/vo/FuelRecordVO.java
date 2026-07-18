@@ -1,8 +1,10 @@
 package com.gak.fuelstats.vo;
 
+import com.gak.attachment.vo.AttachmentVO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 加油记录视图对象。
@@ -26,6 +28,7 @@ public class FuelRecordVO {
     private BigDecimal fuelConsumption;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private List<AttachmentVO> attachments;
 
     public Long getId() {
         return id;
@@ -162,4 +165,8 @@ public class FuelRecordVO {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+    public List<AttachmentVO> getAttachments() { return attachments; }
+
+    public void setAttachments(List<AttachmentVO> attachments) { this.attachments = attachments; }
 }

@@ -5,6 +5,10 @@ import com.gak.datamigration.DataMigrationConstants;
 import com.gak.datamigration.service.DataMigrationArchiveService;
 import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
 import com.gak.datamigration.service.DataMigrationQuerySupport;
+import com.gak.datamigration.service.AttachmentMigrationSupport;
+import com.gak.datamigration.service.AttachmentMigrationSupport.ExportBundle;
+import com.gak.datamigration.service.AttachmentMigrationSupport.TransferItem;
+import com.gak.attachment.constant.AttachmentConstants;
 import com.gak.framework.exception.BusinessException;
 import com.gak.healthrecord.domain.HealthRecord;
 import com.gak.healthrecord.domain.HealthReport;
@@ -43,12 +47,14 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
     private final DataMigrationArchiveService archiveService;
     private final Path localStorageDir;
     private final String publicUrlPrefix;
+    private final AttachmentMigrationSupport attachmentMigrationSupport;
 
     public HealthRecordMigrationHandler(HealthRecordMapper healthRecordMapper,
                                         HealthVisitMapper healthVisitMapper,
                                         HealthReportMapper healthReportMapper,
                                         UserMapper userMapper,
                                         DataMigrationArchiveService archiveService,
+                                        AttachmentMigrationSupport attachmentMigrationSupport,
                                         @Value("${gak.health.file.local-dir:./data/health-records}") String localDir,
                                         @Value("${gak.health.file.public-url-prefix:/api/health-records/report-files/}") String publicUrlPrefix) {
         this.healthRecordMapper = healthRecordMapper;
@@ -56,6 +62,7 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         this.healthReportMapper = healthReportMapper;
         this.userMapper = userMapper;
         this.archiveService = archiveService;
+        this.attachmentMigrationSupport = attachmentMigrationSupport;
         this.localStorageDir = Paths.get(localDir == null ? "./data/health-records" : localDir).toAbsolutePath().normalize();
         this.publicUrlPrefix = publicUrlPrefix != null && publicUrlPrefix.endsWith("/") ? publicUrlPrefix : publicUrlPrefix + "/";
     }
@@ -104,11 +111,19 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         reportWrapper.orderByAsc("owner_user_id").orderByAsc("exam_date").orderByAsc("id");
         List<HealthReport> reports = healthReportMapper.selectList(reportWrapper);
 
-        List<MigrationAttachment> attachments = context.includeAttachments()
-                ? collectAttachments(visits, reports)
-                : List.of();
+        ExportBundle visitBundle = context.includeAttachments()
+                ? attachmentMigrationSupport.collect(AttachmentConstants.BUSINESS_HEALTH_VISIT,
+                visits.stream().map(HealthVisit::getId).toList(), "attachments/health-visits")
+                : new ExportBundle(List.of(), List.of());
+        ExportBundle reportBundle = context.includeAttachments()
+                ? attachmentMigrationSupport.collect(AttachmentConstants.BUSINESS_HEALTH_REPORT,
+                reports.stream().map(HealthReport::getId).toList(), "attachments/health-reports")
+                : new ExportBundle(List.of(), List.of());
+        List<MigrationAttachment> attachments = new ArrayList<>(visitBundle.files());
+        attachments.addAll(reportBundle.files());
         long recordCount = (long) records.size() + visits.size() + reports.size();
-        return new MigrationResourceExportData(resourceCode(), entryPath(), new Payload(records, visits, reports),
+        return new MigrationResourceExportData(resourceCode(), entryPath(),
+                new Payload(records, visits, reports, visitBundle.items(), reportBundle.items()),
                 recordCount, attachments.size(), attachments);
     }
 
@@ -117,13 +132,29 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
     public MigrationResourceImportResult importData(ImportContext context) throws Exception {
         Payload payload = archiveService.readJson(context.packageRoot(), entryPath(), Payload.class);
         Map<Long, Long> visitIdMappings = new LinkedHashMap<>();
+        Map<Long, Long> reportIdMappings = new LinkedHashMap<>();
         long importedCount = importRecords(context, DataMigrationQuerySupport.emptyIfNull(payload.getRecords()));
         importedCount += importVisits(context, DataMigrationQuerySupport.emptyIfNull(payload.getVisits()), visitIdMappings);
-        importedCount += importReports(context, DataMigrationQuerySupport.emptyIfNull(payload.getReports()), visitIdMappings);
-        long attachmentCount = context.includeAttachments()
-                ? restoreAttachments(context, DataMigrationQuerySupport.emptyIfNull(payload.getVisits()),
-                DataMigrationQuerySupport.emptyIfNull(payload.getReports()))
-                : 0L;
+        importedCount += importReports(context, DataMigrationQuerySupport.emptyIfNull(payload.getReports()),
+                visitIdMappings, reportIdMappings);
+        long attachmentCount = attachmentMigrationSupport.restore(context,
+                AttachmentConstants.BUSINESS_HEALTH_VISIT,
+                DataMigrationQuerySupport.emptyIfNull(payload.getVisitAttachments()), visitIdMappings,
+                targetId -> {
+                    HealthVisit visit = healthVisitMapper.selectById(targetId);
+                    return visit == null ? null : visit.getOwnerUserId();
+                }, 10);
+        attachmentCount += attachmentMigrationSupport.restore(context,
+                AttachmentConstants.BUSINESS_HEALTH_REPORT,
+                DataMigrationQuerySupport.emptyIfNull(payload.getReportAttachments()), reportIdMappings,
+                targetId -> {
+                    HealthReport report = healthReportMapper.selectById(targetId);
+                    return report == null ? null : report.getOwnerUserId();
+                }, 10);
+        if (context.includeAttachments() && payload.getVisitAttachments() == null && payload.getReportAttachments() == null) {
+            attachmentCount += restoreAttachments(context, DataMigrationQuerySupport.emptyIfNull(payload.getVisits()),
+                    DataMigrationQuerySupport.emptyIfNull(payload.getReports()));
+        }
         return MigrationResourceImportResult.success(importedCount, attachmentCount, "健康记录导入完成");
     }
 
@@ -200,12 +231,16 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         return importedCount;
     }
 
-    private long importReports(ImportContext context, List<HealthReport> reports, Map<Long, Long> visitIdMappings) {
+    private long importReports(ImportContext context,
+                               List<HealthReport> reports,
+                               Map<Long, Long> visitIdMappings,
+                               Map<Long, Long> reportIdMappings) {
         long importedCount = 0L;
         for (HealthReport source : reports) {
             if (source == null) {
                 continue;
             }
+            Long sourceReportId = source.getId();
             Long targetUserId = resolveUserId(source.getOwnerUserId(), context, "健康报告");
             Long targetVisitId = source.getVisitId() == null ? null : visitIdMappings.getOrDefault(source.getVisitId(), source.getVisitId());
             HealthReport existing = findExistingReport(source, targetUserId, targetVisitId);
@@ -217,12 +252,14 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
                 existing.setOwnerUserId(targetUserId);
                 existing.setVisitId(targetVisitId);
                 healthReportMapper.updateById(existing);
+                reportIdMappings.put(sourceReportId, existing.getId());
             } else {
                 HealthReport insertReport = new HealthReport();
                 DataMigrationBeanMergeSupport.overwrite(source, insertReport);
                 insertReport.setOwnerUserId(targetUserId);
                 insertReport.setVisitId(targetVisitId);
                 healthReportMapper.insert(insertReport);
+                reportIdMappings.put(sourceReportId, insertReport.getId());
             }
             importedCount++;
         }
@@ -352,14 +389,22 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         private List<HealthRecord> records;
         private List<HealthVisit> visits;
         private List<HealthReport> reports;
+        private List<TransferItem> visitAttachments;
+        private List<TransferItem> reportAttachments;
 
         public Payload() {
         }
 
-        public Payload(List<HealthRecord> records, List<HealthVisit> visits, List<HealthReport> reports) {
+        public Payload(List<HealthRecord> records,
+                       List<HealthVisit> visits,
+                       List<HealthReport> reports,
+                       List<TransferItem> visitAttachments,
+                       List<TransferItem> reportAttachments) {
             this.records = records;
             this.visits = visits;
             this.reports = reports;
+            this.visitAttachments = visitAttachments;
+            this.reportAttachments = reportAttachments;
         }
 
         public List<HealthRecord> getRecords() {
@@ -385,5 +430,10 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         public void setReports(List<HealthReport> reports) {
             this.reports = reports;
         }
+
+        public List<TransferItem> getVisitAttachments() { return visitAttachments; }
+        public void setVisitAttachments(List<TransferItem> visitAttachments) { this.visitAttachments = visitAttachments; }
+        public List<TransferItem> getReportAttachments() { return reportAttachments; }
+        public void setReportAttachments(List<TransferItem> reportAttachments) { this.reportAttachments = reportAttachments; }
     }
 }

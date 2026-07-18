@@ -5,12 +5,18 @@ import com.gak.datamigration.DataMigrationConstants;
 import com.gak.datamigration.service.DataMigrationArchiveService;
 import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
 import com.gak.datamigration.service.DataMigrationQuerySupport;
+import com.gak.datamigration.service.AttachmentMigrationSupport;
+import com.gak.datamigration.service.AttachmentMigrationSupport.ExportBundle;
+import com.gak.datamigration.service.AttachmentMigrationSupport.TransferItem;
+import com.gak.attachment.constant.AttachmentConstants;
 import com.gak.framework.exception.BusinessException;
 import com.gak.knowledgebase.domain.KnowledgeEntry;
 import com.gak.knowledgebase.mapper.KnowledgeEntryMapper;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,13 +29,16 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
     private final KnowledgeEntryMapper knowledgeEntryMapper;
     private final UserMapper userMapper;
     private final DataMigrationArchiveService archiveService;
+    private final AttachmentMigrationSupport attachmentMigrationSupport;
 
     public KnowledgeBaseMigrationHandler(KnowledgeEntryMapper knowledgeEntryMapper,
                                          UserMapper userMapper,
-                                         DataMigrationArchiveService archiveService) {
+                                         DataMigrationArchiveService archiveService,
+                                         AttachmentMigrationSupport attachmentMigrationSupport) {
         this.knowledgeEntryMapper = knowledgeEntryMapper;
         this.userMapper = userMapper;
         this.archiveService = archiveService;
+        this.attachmentMigrationSupport = attachmentMigrationSupport;
     }
 
     @Override
@@ -49,7 +58,7 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
 
     @Override
     public boolean attachmentSupported() {
-        return false;
+        return true;
     }
 
     @Override
@@ -67,7 +76,12 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
         QueryWrapper<KnowledgeEntry> wrapper = new QueryWrapper<>();
         wrapper.orderByAsc("owner_user_id").orderByAsc("updated_at").orderByAsc("id");
         List<KnowledgeEntry> entries = knowledgeEntryMapper.selectList(wrapper);
-        return new MigrationResourceExportData(resourceCode(), entryPath(), new Payload(entries), entries.size(), 0L, List.of());
+        ExportBundle bundle = context.includeAttachments()
+                ? attachmentMigrationSupport.collect(AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY,
+                entries.stream().map(KnowledgeEntry::getId).toList(), "attachments/knowledge-base")
+                : new ExportBundle(List.of(), List.of());
+        return new MigrationResourceExportData(resourceCode(), entryPath(), new Payload(entries, bundle.items()),
+                entries.size(), bundle.files().size(), bundle.files());
     }
 
     @Override
@@ -75,10 +89,12 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
     public MigrationResourceImportResult importData(ImportContext context) throws Exception {
         Payload payload = archiveService.readJson(context.packageRoot(), entryPath(), Payload.class);
         long importedCount = 0L;
+        Map<Long, Long> entryIdMappings = new LinkedHashMap<>();
         for (KnowledgeEntry source : DataMigrationQuerySupport.emptyIfNull(payload.getEntries())) {
             if (source == null) {
                 continue;
             }
+            Long sourceEntryId = source.getId();
             Long targetUserId = resolveUserId(source.getOwnerUserId(), context);
             KnowledgeEntry existing = findExisting(source, targetUserId);
             source.setOwnerUserId(targetUserId);
@@ -94,14 +110,23 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
                 }
                 existing.setOwnerUserId(targetUserId);
                 knowledgeEntryMapper.updateById(existing);
+                entryIdMappings.put(sourceEntryId, existing.getId());
             } else {
                 KnowledgeEntry insertEntry = copyEntry(source);
                 insertEntry.setOwnerUserId(targetUserId);
                 knowledgeEntryMapper.insert(insertEntry);
+                entryIdMappings.put(sourceEntryId, insertEntry.getId());
             }
             importedCount++;
         }
-        return MigrationResourceImportResult.success(importedCount, 0L, "经验库导入完成");
+        long attachmentCount = attachmentMigrationSupport.restore(context,
+                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY,
+                DataMigrationQuerySupport.emptyIfNull(payload.getAttachments()), entryIdMappings,
+                targetId -> {
+                    KnowledgeEntry entry = knowledgeEntryMapper.selectById(targetId);
+                    return entry == null ? null : entry.getOwnerUserId();
+                }, 9);
+        return MigrationResourceImportResult.success(importedCount, attachmentCount, "经验库导入完成");
     }
 
     private KnowledgeEntry findExisting(KnowledgeEntry source, Long targetUserId) {
@@ -145,12 +170,14 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
     public static class Payload {
 
         private List<KnowledgeEntry> entries;
+        private List<TransferItem> attachments;
 
         public Payload() {
         }
 
-        public Payload(List<KnowledgeEntry> entries) {
+        public Payload(List<KnowledgeEntry> entries, List<TransferItem> attachments) {
             this.entries = entries;
+            this.attachments = attachments;
         }
 
         public List<KnowledgeEntry> getEntries() {
@@ -160,5 +187,9 @@ public class KnowledgeBaseMigrationHandler implements MigrationResourceHandler {
         public void setEntries(List<KnowledgeEntry> entries) {
             this.entries = entries;
         }
+
+        public List<TransferItem> getAttachments() { return attachments; }
+
+        public void setAttachments(List<TransferItem> attachments) { this.attachments = attachments; }
     }
 }

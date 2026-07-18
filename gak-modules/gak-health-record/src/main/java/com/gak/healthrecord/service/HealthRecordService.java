@@ -1,6 +1,8 @@
 package com.gak.healthrecord.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.healthrecord.domain.HealthRecord;
@@ -76,6 +78,7 @@ public class HealthRecordService {
     private final HealthVisitMapper healthVisitMapper;
     private final HealthReportMapper healthReportMapper;
     private final UserMapper userMapper;
+    private final AttachmentService attachmentService;
     private final Path localStorageDir;
     private final String publicUrlPrefix;
 
@@ -83,12 +86,14 @@ public class HealthRecordService {
                                HealthVisitMapper healthVisitMapper,
                                HealthReportMapper healthReportMapper,
                                UserMapper userMapper,
+                               AttachmentService attachmentService,
                                @Value("${gak.health.file.local-dir:./data/health-records}") String localDir,
                                @Value("${gak.health.file.public-url-prefix:/api/health-records/report-files/}") String publicUrlPrefix) {
         this.healthRecordMapper = healthRecordMapper;
         this.healthVisitMapper = healthVisitMapper;
         this.healthReportMapper = healthReportMapper;
         this.userMapper = userMapper;
+        this.attachmentService = attachmentService;
         this.localStorageDir = Paths.get(localDir).toAbsolutePath().normalize();
         this.publicUrlPrefix = publicUrlPrefix.endsWith("/") ? publicUrlPrefix : publicUrlPrefix + "/";
     }
@@ -190,6 +195,9 @@ public class HealthRecordService {
         report.setCreatedAt(now);
         report.setUpdatedAt(now);
         healthReportMapper.insert(report);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_HEALTH_REPORT, report.getId(), AttachmentConstants.USAGE_ATTACHMENT,
+                request.getAttachmentIds(), 10);
         return toReportVO(report);
     }
 
@@ -200,6 +208,9 @@ public class HealthRecordService {
         applyReportRequest(currentUserId, current, request);
         current.setUpdatedAt(LocalDateTime.now());
         healthReportMapper.updateById(current);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_HEALTH_REPORT, current.getId(), AttachmentConstants.USAGE_ATTACHMENT,
+                request.getAttachmentIds(), 10);
         return toReportVO(current);
     }
 
@@ -207,6 +218,7 @@ public class HealthRecordService {
     public void deleteReport(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         HealthReport current = getOwnedReportOrThrow(currentUserId, id);
+        attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_HEALTH_REPORT, current.getId());
         healthReportMapper.deleteById(current.getId());
     }
 
@@ -228,6 +240,9 @@ public class HealthRecordService {
         visit.setCreatedAt(now);
         visit.setUpdatedAt(now);
         healthVisitMapper.insert(visit);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_HEALTH_VISIT, visit.getId(), AttachmentConstants.USAGE_ATTACHMENT,
+                request.getAttachmentIds(), 10);
         return toVisitVO(visit, countReportsByVisit(currentUserId));
     }
 
@@ -238,6 +253,9 @@ public class HealthRecordService {
         applyVisitRequest(current, request);
         current.setUpdatedAt(LocalDateTime.now());
         healthVisitMapper.updateById(current);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_HEALTH_VISIT, current.getId(), AttachmentConstants.USAGE_ATTACHMENT,
+                request.getAttachmentIds(), 10);
         return toVisitVO(current, countReportsByVisit(currentUserId));
     }
 
@@ -245,6 +263,7 @@ public class HealthRecordService {
     public void deleteVisit(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         HealthVisit current = getOwnedVisitOrThrow(currentUserId, id);
+        attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_HEALTH_VISIT, current.getId());
         healthVisitMapper.deleteById(current.getId());
     }
 
@@ -466,6 +485,8 @@ public class HealthRecordService {
         vo.setReportCount(reportCountMap.getOrDefault(visit.getId(), 0));
         vo.setCreatedAt(visit.getCreatedAt());
         vo.setUpdatedAt(visit.getUpdatedAt());
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_HEALTH_VISIT, visit.getId(), AttachmentConstants.USAGE_ATTACHMENT));
         return vo;
     }
 
@@ -482,6 +503,8 @@ public class HealthRecordService {
         vo.setReportUrl(report.getReportUrl());
         vo.setCreatedAt(report.getCreatedAt());
         vo.setUpdatedAt(report.getUpdatedAt());
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_HEALTH_REPORT, report.getId(), AttachmentConstants.USAGE_ATTACHMENT));
         return vo;
     }
 

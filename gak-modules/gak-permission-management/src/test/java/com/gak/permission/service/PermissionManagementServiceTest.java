@@ -1,5 +1,6 @@
 package com.gak.permission.service;
 
+import com.gak.attachment.service.AttachmentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
@@ -65,11 +66,15 @@ class PermissionManagementServiceTest {
     @Mock
     private DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
+    @Mock
+    private AttachmentService attachmentService;
+
     @InjectMocks
     private PermissionManagementService permissionManagementService;
 
     @BeforeEach
     void setUp() {
+        lenient().when(attachmentService.listBusinessAttachments(any(), any(), any())).thenReturn(List.of());
         lenient().when(dataDictionaryUsageSupport.normalizeValueByUsage(
                 eq("APP_APP_MANAGEMENT"),
                 eq("SYSTEM_APP"),

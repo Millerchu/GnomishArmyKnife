@@ -34,6 +34,9 @@ public class SaveKnowledgeEntryRequest {
     @Size(max = 2000, message = "content 长度不能超过 2000")
     private String content;
 
+    @Size(max = 9, message = "经验图片不能超过 9 张")
+    private List<Long> attachmentIds;
+
     public String getTitle() {
         return title;
     }
@@ -89,4 +92,8 @@ public class SaveKnowledgeEntryRequest {
     public void setContent(String content) {
         this.content = content;
     }
+
+    public List<Long> getAttachmentIds() { return attachmentIds; }
+
+    public void setAttachmentIds(List<Long> attachmentIds) { this.attachmentIds = attachmentIds; }
 }

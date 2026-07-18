@@ -180,6 +180,30 @@ CREATE TABLE IF NOT EXISTS gak_health_record (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_attachment (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    business_type VARCHAR(40),
+    business_id BIGINT,
+    usage_type VARCHAR(20) NOT NULL,
+    original_file_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(128) NOT NULL,
+    file_extension VARCHAR(20) NOT NULL,
+    file_size BIGINT NOT NULL,
+    sha256 VARCHAR(64) NOT NULL,
+    storage_provider VARCHAR(32) NOT NULL,
+    object_key VARCHAR(512) NOT NULL,
+    thumbnail_key VARCHAR(512),
+    status VARCHAR(20) NOT NULL,
+    sort_no INTEGER NOT NULL DEFAULT 0,
+    created_by BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    bound_at TIMESTAMP,
+    deleted_at TIMESTAMP,
+    purged_at TIMESTAMP,
+    legacy_source_key VARCHAR(255)
+);
+
 CREATE TABLE IF NOT EXISTS gak_health_visit (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -456,6 +480,15 @@ CREATE INDEX IF NOT EXISTS idx_health_record_owner_measure_date ON gak_health_re
 CREATE INDEX IF NOT EXISTS idx_health_visit_owner_visit_date ON gak_health_visit (owner_user_id, visit_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_health_report_owner_exam_date ON gak_health_report (owner_user_id, exam_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_health_report_owner_visit_id ON gak_health_report (owner_user_id, visit_id, exam_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_attachment_object_key ON gak_attachment (object_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_attachment_legacy_source ON gak_attachment (legacy_source_key)
+    WHERE legacy_source_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachment_business_active
+    ON gak_attachment (business_type, business_id, usage_type, status, sort_no, id);
+CREATE INDEX IF NOT EXISTS idx_attachment_owner_status_created
+    ON gak_attachment (owner_user_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_attachment_cleanup_deleted
+    ON gak_attachment (status, deleted_at) WHERE status = 'DELETED';
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_updated_at ON gak_knowledge_entry (owner_user_id, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_category ON gak_knowledge_entry (owner_user_id, category_name, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_status_updated_at ON gak_knowledge_entry (status, updated_at DESC, id DESC);

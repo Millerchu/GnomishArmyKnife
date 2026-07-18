@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 新增/修改加油记录请求。
@@ -56,6 +57,9 @@ public class SaveFuelRecordRequest {
 
     @Size(max = 500, message = "note 长度不能超过 500")
     private String note;
+
+    @Size(max = 3, message = "加油凭证图片不能超过 3 张")
+    private List<Long> attachmentIds;
 
     public String getVehicleName() {
         return vehicleName;
@@ -144,4 +148,8 @@ public class SaveFuelRecordRequest {
     public void setNote(String note) {
         this.note = note;
     }
+
+    public List<Long> getAttachmentIds() { return attachmentIds; }
+
+    public void setAttachmentIds(List<Long> attachmentIds) { this.attachmentIds = attachmentIds; }
 }

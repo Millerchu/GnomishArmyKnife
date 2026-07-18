@@ -14,9 +14,9 @@ class DataMigrationResourceCoverageTest {
     @Test
     void missingBusinessApplicationsShouldHaveMigrationHandlers() {
         assertEquals(DataMigrationConstants.APP_PERSONAL_BILLS, new PersonalBillsMigrationHandler(null, null, null, null).resourceCode());
-        assertEquals(DataMigrationConstants.APP_HEALTH_RECORD, new HealthRecordMigrationHandler(null, null, null, null, null, null, null).resourceCode());
-        assertEquals(DataMigrationConstants.APP_KNOWLEDGE_BASE, new KnowledgeBaseMigrationHandler(null, null, null).resourceCode());
-        assertEquals(DataMigrationConstants.APP_FUEL_STATS, new FuelStatsMigrationHandler(null, null, null, null).resourceCode());
+        assertEquals(DataMigrationConstants.APP_HEALTH_RECORD, new HealthRecordMigrationHandler(null, null, null, null, null, null, null, null).resourceCode());
+        assertEquals(DataMigrationConstants.APP_KNOWLEDGE_BASE, new KnowledgeBaseMigrationHandler(null, null, null, null).resourceCode());
+        assertEquals(DataMigrationConstants.APP_FUEL_STATS, new FuelStatsMigrationHandler(null, null, null, null, null).resourceCode());
     }
 
     @Test

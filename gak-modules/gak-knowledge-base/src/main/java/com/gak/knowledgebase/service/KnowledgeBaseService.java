@@ -1,6 +1,8 @@
 package com.gak.knowledgebase.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.response.PagedResult;
 import com.gak.knowledgebase.domain.KnowledgeEntry;
 import com.gak.knowledgebase.dto.KnowledgeEntryQueryRequest;
@@ -39,10 +41,14 @@ public class KnowledgeBaseService {
 
     private final KnowledgeEntryMapper knowledgeEntryMapper;
     private final UserMapper userMapper;
+    private final AttachmentService attachmentService;
 
-    public KnowledgeBaseService(KnowledgeEntryMapper knowledgeEntryMapper, UserMapper userMapper) {
+    public KnowledgeBaseService(KnowledgeEntryMapper knowledgeEntryMapper,
+                                UserMapper userMapper,
+                                AttachmentService attachmentService) {
         this.knowledgeEntryMapper = knowledgeEntryMapper;
         this.userMapper = userMapper;
+        this.attachmentService = attachmentService;
     }
 
     /**
@@ -86,6 +92,9 @@ public class KnowledgeBaseService {
         entry.setUpdatedAt(now);
         initializeCreateStatus(entry, currentUser);
         knowledgeEntryMapper.insert(entry);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY, entry.getId(), AttachmentConstants.USAGE_IMAGE,
+                request.getAttachmentIds(), 9);
         return toVO(entry);
     }
 
@@ -100,6 +109,9 @@ public class KnowledgeBaseService {
         resetReviewStateWhenNeeded(current, currentUser);
         current.setUpdatedAt(LocalDateTime.now());
         knowledgeEntryMapper.updateById(current);
+        attachmentService.syncBusinessAttachments(current.getOwnerUserId(),
+                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY, current.getId(), AttachmentConstants.USAGE_IMAGE,
+                request.getAttachmentIds(), 9);
         return toVO(current);
     }
 
@@ -110,6 +122,7 @@ public class KnowledgeBaseService {
     public void delete(Long currentUserId, Long id) {
         User currentUser = requireCurrentUser(currentUserId);
         KnowledgeEntry current = getDeletableEntryOrThrow(currentUser, id);
+        attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY, current.getId());
         knowledgeEntryMapper.deleteById(current.getId());
     }
 
@@ -151,7 +164,7 @@ public class KnowledgeBaseService {
      * 匿名访问的公共经验推荐。
      */
     public List<KnowledgeEntryVO> publicHighlights(KnowledgeHighlightQueryRequest request) {
-        return buildHighlights(request);
+        return buildHighlights(request).stream().map(this::withoutAttachments).toList();
     }
 
     private List<KnowledgeEntryVO> buildHighlights(KnowledgeHighlightQueryRequest request) {
@@ -294,7 +307,14 @@ public class KnowledgeBaseService {
         vo.setReviewRemark(entry.getReviewRemark());
         vo.setCreatedAt(entry.getCreatedAt());
         vo.setUpdatedAt(entry.getUpdatedAt());
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY, entry.getId(), AttachmentConstants.USAGE_IMAGE));
         return vo;
+    }
+
+    private KnowledgeEntryVO withoutAttachments(KnowledgeEntryVO source) {
+        source.setAttachments(List.of());
+        return source;
     }
 
     private List<String> normalizeTags(List<String> tags) {

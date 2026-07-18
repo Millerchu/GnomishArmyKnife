@@ -56,6 +56,8 @@ public class SaveSystemAppRequest {
     @Size(max = 255, message = "iconFileName 长度不能超过 255")
     private String iconFileName;
 
+    private Long iconAttachmentId;
+
     private Boolean enabled;
 
     private Integer sortNo;
@@ -177,6 +179,10 @@ public class SaveSystemAppRequest {
     public void setIconFileName(String iconFileName) {
         this.iconFileName = iconFileName;
     }
+
+    public Long getIconAttachmentId() { return iconAttachmentId; }
+
+    public void setIconAttachmentId(Long iconAttachmentId) { this.iconAttachmentId = iconAttachmentId; }
 
     public Boolean getEnabled() {
         return enabled;

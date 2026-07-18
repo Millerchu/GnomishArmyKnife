@@ -1,7 +1,9 @@
 package com.gak.healthrecord.vo;
 
+import com.gak.attachment.vo.AttachmentVO;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 健康报告视图。
@@ -19,6 +21,7 @@ public class HealthReportVO {
     private String reportUrl;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private List<AttachmentVO> attachments;
 
     public Long getId() {
         return id;
@@ -107,4 +110,8 @@ public class HealthReportVO {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+    public List<AttachmentVO> getAttachments() { return attachments; }
+
+    public void setAttachments(List<AttachmentVO> attachments) { this.attachments = attachments; }
 }

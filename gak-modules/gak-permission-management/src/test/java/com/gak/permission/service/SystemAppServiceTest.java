@@ -2,6 +2,7 @@ package com.gak.permission.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.permission.domain.AppAuditLog;
@@ -62,11 +63,15 @@ class SystemAppServiceTest {
     @Mock
     private DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
+    @Mock
+    private AttachmentService attachmentService;
+
     @InjectMocks
     private SystemAppService systemAppService;
 
     @BeforeEach
     void setUp() {
+        lenient().when(attachmentService.listBusinessAttachments(anyString(), any(), anyString())).thenReturn(List.of());
         lenient().when(dataDictionaryUsageSupport.normalizeValueByUsage(
                 eq("APP_APP_MANAGEMENT"),
                 eq("SYSTEM_APP"),

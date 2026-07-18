@@ -1,6 +1,9 @@
 package com.gak.permission.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentService;
+import com.gak.attachment.vo.AttachmentVO;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
@@ -66,19 +69,22 @@ public class SystemAppService {
     private final AppAuditLogMapper appAuditLogMapper;
     private final ObjectMapper objectMapper;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
+    private final AttachmentService attachmentService;
 
     public SystemAppService(UserMapper userMapper,
                             SystemAppMapper systemAppMapper,
                             UserAppPermissionMapper userAppPermissionMapper,
                             AppAuditLogMapper appAuditLogMapper,
                             ObjectMapper objectMapper,
-                            DataDictionaryUsageSupport dataDictionaryUsageSupport) {
+                            DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                            AttachmentService attachmentService) {
         this.userMapper = userMapper;
         this.systemAppMapper = systemAppMapper;
         this.userAppPermissionMapper = userAppPermissionMapper;
         this.appAuditLogMapper = appAuditLogMapper;
         this.objectMapper = objectMapper;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
+        this.attachmentService = attachmentService;
     }
 
     public PagedResult<AppCatalogVO> page(Long currentUserId, SystemAppQueryRequest request) {
@@ -138,6 +144,7 @@ public class SystemAppService {
         app.setCreatedAt(now);
         app.setUpdatedAt(now);
         systemAppMapper.insert(app);
+        syncIconAttachment(currentUserId, app.getId(), normalized.iconAttachmentId());
 
         AppCatalogVO result = toAppCatalogVO(app, 0);
         saveAuditLog(currentUserId, app.getId(), AppAuditActionType.CREATE_APP, null, result, ip, userAgent);
@@ -159,6 +166,7 @@ public class SystemAppService {
         applyNormalized(current, normalized);
         current.setUpdatedAt(LocalDateTime.now());
         systemAppMapper.updateById(current);
+        syncIconAttachment(currentUserId, current.getId(), normalized.iconAttachmentId());
 
         AppCatalogVO after = toAppCatalogVO(current, before.getGrantCount() != null ? before.getGrantCount() : 0);
         saveAuditLog(currentUserId, current.getId(), AppAuditActionType.UPDATE_APP, before, after, ip, userAgent);
@@ -261,6 +269,8 @@ public class SystemAppService {
         vo.setDescription(app.getDescription());
         vo.setRemark(app.getRemark());
         vo.setGrantCount(grantCount);
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_SYSTEM_APP, app.getId(), AttachmentConstants.USAGE_ICON));
         return vo;
     }
 
@@ -295,9 +305,12 @@ public class SystemAppService {
         String iconType = normalizeIconType(request.getIconType());
         String iconPreset = normalizeIconPreset(request.getIconPreset());
         String iconText = trimToNull(request.getIconText());
-        String iconUrl = trimToNull(request.getIconUrl());
-        String iconStorageType = normalizeOptionalIconStorageType(request.getIconStorageType());
-        String iconFileName = trimToNull(request.getIconFileName());
+        Long iconAttachmentId = request.getIconAttachmentId();
+        String iconUrl = iconAttachmentId == null ? trimToNull(request.getIconUrl())
+                : "/api/attachments/" + iconAttachmentId + "/content";
+        String iconStorageType = iconAttachmentId == null ? normalizeOptionalIconStorageType(request.getIconStorageType())
+                : AppIconStorageType.FILE_SERVER.name();
+        String iconFileName = iconAttachmentId == null ? trimToNull(request.getIconFileName()) : iconAttachmentId.toString();
         validateIconPayload(iconType, iconPreset, iconText, iconUrl, iconStorageType, iconFileName);
 
         return new NormalizedSystemApp(
@@ -314,6 +327,7 @@ public class SystemAppService {
                 iconUrl,
                 iconStorageType,
                 iconFileName,
+                iconAttachmentId,
                 request.getEnabled() != null ? request.getEnabled() : true,
                 request.getSortNo() != null ? request.getSortNo() : 0,
                 trimToNull(request.getDescription()),
@@ -331,6 +345,12 @@ public class SystemAppService {
         if (count != null && count > 0L) {
             throw new BusinessException("APP_CODE_EXISTS", "appCode 已存在");
         }
+    }
+
+    private void syncIconAttachment(Long currentUserId, Long appId, Long attachmentId) {
+        List<Long> attachmentIds = attachmentId == null ? List.of() : List.of(attachmentId);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_SYSTEM_APP, appId, AttachmentConstants.USAGE_ICON, attachmentIds, 1);
     }
 
     private void ensureAppCodeImmutable(SystemApp current, String appCode) {
@@ -566,6 +586,7 @@ public class SystemAppService {
                                        String iconUrl,
                                        String iconStorageType,
                                        String iconFileName,
+                                       Long iconAttachmentId,
                                        boolean enabled,
                                        int sortNo,
                                        String description,
