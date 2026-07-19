@@ -2,6 +2,7 @@ package com.gak.passwordmemo.vo;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 密码备忘录详情。
@@ -16,6 +17,7 @@ public class PasswordMemoDetailVO {
     private String registeredEmail;
     private String remark;
     private String maskedPassword;
+    private List<PasswordMemoHistoryVO> passwordHistory;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAt;
@@ -85,6 +87,14 @@ public class PasswordMemoDetailVO {
 
     public void setMaskedPassword(String maskedPassword) {
         this.maskedPassword = maskedPassword;
+    }
+
+    public List<PasswordMemoHistoryVO> getPasswordHistory() {
+        return passwordHistory;
+    }
+
+    public void setPasswordHistory(List<PasswordMemoHistoryVO> passwordHistory) {
+        this.passwordHistory = passwordHistory;
     }
 
     public LocalDateTime getCreatedAt() {

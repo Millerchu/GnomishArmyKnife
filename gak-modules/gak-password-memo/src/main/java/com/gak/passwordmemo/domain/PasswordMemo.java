@@ -19,6 +19,7 @@ public class PasswordMemo {
     private String username;
     private String passwordCiphertext;
     private String passwordNonce;
+    private LocalDateTime passwordStartedAt;
     private String registeredPhone;
     private String registeredEmail;
     private String remark;
@@ -79,6 +80,14 @@ public class PasswordMemo {
 
     public void setPasswordNonce(String passwordNonce) {
         this.passwordNonce = passwordNonce;
+    }
+
+    public LocalDateTime getPasswordStartedAt() {
+        return passwordStartedAt;
+    }
+
+    public void setPasswordStartedAt(LocalDateTime passwordStartedAt) {
+        this.passwordStartedAt = passwordStartedAt;
     }
 
     public String getRegisteredPhone() {

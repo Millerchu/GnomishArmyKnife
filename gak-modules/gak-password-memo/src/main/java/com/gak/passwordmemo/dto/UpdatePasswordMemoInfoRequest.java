@@ -7,9 +7,9 @@ import jakarta.validation.constraints.Size;
 import org.springframework.util.StringUtils;
 
 /**
- * 新增密码备忘录请求。
+ * 编辑密码备忘录基础信息请求，不允许携带密码。
  */
-public class SavePasswordMemoRequest {
+public class UpdatePasswordMemoInfoRequest {
 
     @NotBlank(message = "siteName 不能为空")
     @Size(max = 64, message = "siteName 长度不能超过 64")
@@ -21,10 +21,6 @@ public class SavePasswordMemoRequest {
 
     @Size(max = 100, message = "username 长度不能超过 100")
     private String username;
-
-    @NotBlank(message = "password 不能为空")
-    @Size(max = 128, message = "password 长度不能超过 128")
-    private String password;
 
     @Size(max = 20, message = "registeredPhone 长度不能超过 20")
     private String registeredPhone;
@@ -65,14 +61,6 @@ public class SavePasswordMemoRequest {
 
     public void setUsername(String username) {
         this.username = username;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
     }
 
     public String getRegisteredPhone() {

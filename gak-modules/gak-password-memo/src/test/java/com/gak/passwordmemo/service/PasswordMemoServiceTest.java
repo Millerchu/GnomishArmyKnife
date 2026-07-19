@@ -2,9 +2,12 @@ package com.gak.passwordmemo.service;
 
 import com.gak.framework.exception.BusinessException;
 import com.gak.passwordmemo.domain.PasswordMemo;
+import com.gak.passwordmemo.domain.PasswordMemoHistory;
 import com.gak.passwordmemo.dto.SavePasswordMemoRequest;
+import com.gak.passwordmemo.dto.UpdateMemoPasswordRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
 import com.gak.passwordmemo.mapper.PasswordMemoMapper;
+import com.gak.passwordmemo.mapper.PasswordMemoHistoryMapper;
 import com.gak.passwordmemo.vo.PasswordMemoDetailVO;
 import com.gak.passwordmemo.vo.VerifyAccessResponse;
 import com.gak.user.domain.user.User;
@@ -29,6 +32,9 @@ class PasswordMemoServiceTest {
 
     @Mock
     private PasswordMemoMapper passwordMemoMapper;
+
+    @Mock
+    private PasswordMemoHistoryMapper passwordMemoHistoryMapper;
 
     @Mock
     private PasswordMemoCryptoService passwordMemoCryptoService;
@@ -117,5 +123,35 @@ class PasswordMemoServiceTest {
                 () -> passwordMemoService.verifyAccess(1L, 12L, request, "127.0.0.1")
         );
         assertEquals("LOGIN_PASSWORD_INVALID", exception.getCode());
+    }
+
+    @Test
+    void updatePasswordShouldArchiveCurrentPasswordBeforeReplacingIt() {
+        User user = new User();
+        user.setId(1L);
+        when(userMapper.selectById(1L)).thenReturn(user);
+
+        PasswordMemo memo = new PasswordMemo();
+        memo.setId(12L);
+        memo.setOwnerUserId(1L);
+        memo.setPasswordCiphertext("old-ciphertext");
+        memo.setPasswordNonce("old-nonce");
+        memo.setPasswordStartedAt(java.time.LocalDateTime.of(2026, 1, 1, 8, 0));
+        when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
+        when(passwordMemoCryptoService.decrypt("old-ciphertext", "old-nonce")).thenReturn("old-password");
+        when(passwordMemoCryptoService.encrypt("new-password"))
+                .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("new-ciphertext", "new-nonce"));
+
+        UpdateMemoPasswordRequest request = new UpdateMemoPasswordRequest();
+        request.setNewPassword("new-password");
+        passwordMemoService.updatePassword(1L, 12L, request);
+
+        ArgumentCaptor<PasswordMemoHistory> historyCaptor = ArgumentCaptor.forClass(PasswordMemoHistory.class);
+        verify(passwordMemoHistoryMapper).insert(historyCaptor.capture());
+        PasswordMemoHistory history = historyCaptor.getValue();
+        assertEquals("old-ciphertext", history.getPasswordCiphertext());
+        assertEquals(memo.getPasswordStartedAt(), history.getUsageEndedAt());
+        assertEquals("new-ciphertext", memo.getPasswordCiphertext());
+        verify(passwordMemoMapper).updateById(memo);
     }
 }

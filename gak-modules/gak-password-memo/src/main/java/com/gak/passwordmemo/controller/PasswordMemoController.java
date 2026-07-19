@@ -4,6 +4,8 @@ import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.passwordmemo.dto.PasswordMemoQueryRequest;
 import com.gak.passwordmemo.dto.SavePasswordMemoRequest;
+import com.gak.passwordmemo.dto.UpdateMemoPasswordRequest;
+import com.gak.passwordmemo.dto.UpdatePasswordMemoInfoRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
 import com.gak.passwordmemo.service.PasswordMemoService;
 import com.gak.passwordmemo.vo.PasswordMemoDetailVO;
@@ -52,10 +54,18 @@ public class PasswordMemoController {
 
     @PutMapping("/{id}")
     public ApiResponse<PasswordMemoDetailVO> update(@PathVariable Long id,
-                                                    @Valid @RequestBody SavePasswordMemoRequest request,
+                                                    @Valid @RequestBody UpdatePasswordMemoInfoRequest request,
                                                     HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(passwordMemoService.update(currentUserId, id, request));
+    }
+
+    @PutMapping("/{id}/password")
+    public ApiResponse<PasswordMemoDetailVO> updatePassword(@PathVariable Long id,
+                                                            @Valid @RequestBody UpdateMemoPasswordRequest request,
+                                                            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(passwordMemoService.updatePassword(currentUserId, id, request));
     }
 
     @DeleteMapping("/{id}")

@@ -4,12 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.passwordmemo.domain.PasswordMemo;
+import com.gak.passwordmemo.domain.PasswordMemoHistory;
 import com.gak.passwordmemo.dto.PasswordMemoQueryRequest;
 import com.gak.passwordmemo.dto.SavePasswordMemoRequest;
+import com.gak.passwordmemo.dto.UpdateMemoPasswordRequest;
+import com.gak.passwordmemo.dto.UpdatePasswordMemoInfoRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
+import com.gak.passwordmemo.mapper.PasswordMemoHistoryMapper;
 import com.gak.passwordmemo.mapper.PasswordMemoMapper;
 import com.gak.passwordmemo.service.PasswordMemoCryptoService.EncryptedPayload;
 import com.gak.passwordmemo.vo.PasswordMemoDetailVO;
+import com.gak.passwordmemo.vo.PasswordMemoHistoryVO;
 import com.gak.passwordmemo.vo.PasswordMemoListItemVO;
 import com.gak.passwordmemo.vo.VerifyAccessResponse;
 import com.gak.user.domain.user.User;
@@ -37,15 +42,18 @@ public class PasswordMemoService {
     private static final String MASKED_PASSWORD = "********";
 
     private final PasswordMemoMapper passwordMemoMapper;
+    private final PasswordMemoHistoryMapper passwordMemoHistoryMapper;
     private final PasswordMemoCryptoService passwordMemoCryptoService;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
 
     public PasswordMemoService(PasswordMemoMapper passwordMemoMapper,
+                               PasswordMemoHistoryMapper passwordMemoHistoryMapper,
                                PasswordMemoCryptoService passwordMemoCryptoService,
                                UserMapper userMapper,
                                PasswordEncoder passwordEncoder) {
         this.passwordMemoMapper = passwordMemoMapper;
+        this.passwordMemoHistoryMapper = passwordMemoHistoryMapper;
         this.passwordMemoCryptoService = passwordMemoCryptoService;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
@@ -99,6 +107,7 @@ public class PasswordMemoService {
         passwordMemo.setUsername(trimToNull(request.getUsername()));
         passwordMemo.setPasswordCiphertext(encryptedPayload.ciphertext());
         passwordMemo.setPasswordNonce(encryptedPayload.nonce());
+        passwordMemo.setPasswordStartedAt(now);
         passwordMemo.setRegisteredPhone(trimToNull(request.getRegisteredPhone()));
         passwordMemo.setRegisteredEmail(trimToNull(request.getRegisteredEmail()));
         passwordMemo.setRemark(trimToNull(request.getRemark()));
@@ -109,17 +118,14 @@ public class PasswordMemoService {
     }
 
     @Transactional
-    public PasswordMemoDetailVO update(Long currentUserId, Long id, SavePasswordMemoRequest request) {
+    public PasswordMemoDetailVO update(Long currentUserId, Long id, UpdatePasswordMemoInfoRequest request) {
         ensureCurrentUserExists(currentUserId);
 
         PasswordMemo current = getOwnedMemoOrThrow(currentUserId, id);
-        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword().trim());
 
         current.setSiteName(request.getSiteName().trim());
         current.setSiteUrl(request.getSiteUrl().trim());
         current.setUsername(trimToNull(request.getUsername()));
-        current.setPasswordCiphertext(encryptedPayload.ciphertext());
-        current.setPasswordNonce(encryptedPayload.nonce());
         current.setRegisteredPhone(trimToNull(request.getRegisteredPhone()));
         current.setRegisteredEmail(trimToNull(request.getRegisteredEmail()));
         current.setRemark(trimToNull(request.getRemark()));
@@ -128,10 +134,38 @@ public class PasswordMemoService {
         return toDetail(current);
     }
 
+    /**
+     * 归档当前密码并启用新密码，两个写操作必须处于同一事务。
+     */
+    @Transactional
+    public PasswordMemoDetailVO updatePassword(Long currentUserId, Long id, UpdateMemoPasswordRequest request) {
+        ensureCurrentUserExists(currentUserId);
+        PasswordMemo current = getOwnedMemoOrThrow(currentUserId, id);
+        String newPassword = request.getNewPassword().trim();
+        String currentPassword = passwordMemoCryptoService.decrypt(
+                current.getPasswordCiphertext(), current.getPasswordNonce());
+        if (currentPassword.equals(newPassword)) {
+            throw new BusinessException("PASSWORD_MEMO_PASSWORD_UNCHANGED", "新密码不能与当前密码相同");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        archiveCurrentPassword(currentUserId, current, now);
+        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(newPassword);
+        current.setPasswordCiphertext(encryptedPayload.ciphertext());
+        current.setPasswordNonce(encryptedPayload.nonce());
+        current.setPasswordStartedAt(now);
+        current.setUpdatedAt(now);
+        passwordMemoMapper.updateById(current);
+        return toDetail(current);
+    }
+
     @Transactional
     public void delete(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         PasswordMemo current = getOwnedMemoOrThrow(currentUserId, id);
+        QueryWrapper<PasswordMemoHistory> historyWrapper = new QueryWrapper<>();
+        historyWrapper.eq("memo_id", current.getId()).eq("owner_user_id", currentUserId);
+        passwordMemoHistoryMapper.delete(historyWrapper);
         passwordMemoMapper.deleteById(current.getId());
     }
 
@@ -148,7 +182,7 @@ public class PasswordMemoService {
         }
         String password = passwordMemoCryptoService.decrypt(memo.getPasswordCiphertext(), memo.getPasswordNonce());
         log.info("password memo revealed, userId={}, memoId={}, ip={}", currentUserId, id, ipAddress);
-        return new VerifyAccessResponse(password);
+        return new VerifyAccessResponse(password, maskFirstCharacter(password), listPasswordHistory(memo, true));
     }
 
     private User ensureCurrentUserExists(Long currentUserId) {
@@ -191,9 +225,72 @@ public class PasswordMemoService {
         vo.setRegisteredEmail(memo.getRegisteredEmail());
         vo.setRemark(memo.getRemark());
         vo.setMaskedPassword(MASKED_PASSWORD);
+        vo.setPasswordHistory(listPasswordHistory(memo, false));
         vo.setCreatedAt(memo.getCreatedAt());
         vo.setUpdatedAt(memo.getUpdatedAt());
         return vo;
+    }
+
+    /**
+     * 历史密码默认保持全掩码，避免未完成二次校验时泄露密码特征。
+     */
+    private List<PasswordMemoHistoryVO> listPasswordHistory(PasswordMemo memo, boolean showFirstCharacter) {
+        if (memo.getId() == null) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<PasswordMemoHistory> wrapper = new QueryWrapper<>();
+        wrapper.eq("memo_id", memo.getId())
+                .eq("owner_user_id", memo.getOwnerUserId())
+                .orderByDesc("usage_started_at")
+                .orderByDesc("id");
+        List<PasswordMemoHistoryVO> historyItems = new ArrayList<>();
+        List<PasswordMemoHistory> histories = passwordMemoHistoryMapper.selectList(wrapper);
+        if (histories == null) {
+            return historyItems;
+        }
+        for (PasswordMemoHistory history : histories) {
+            PasswordMemoHistoryVO historyVO = new PasswordMemoHistoryVO();
+            historyVO.setId(history.getId());
+            if (showFirstCharacter) {
+                historyVO.setMaskedPassword(maskHistoryFirstCharacter(history));
+            } else {
+                historyVO.setMaskedPassword(MASKED_PASSWORD);
+            }
+            historyVO.setUsageStartedAt(history.getUsageStartedAt());
+            historyVO.setUsageEndedAt(history.getUsageEndedAt());
+            historyItems.add(historyVO);
+        }
+        return historyItems;
+    }
+
+    private String maskHistoryFirstCharacter(PasswordMemoHistory history) {
+        try {
+            String historyPassword = passwordMemoCryptoService.decrypt(
+                    history.getPasswordCiphertext(), history.getPasswordNonce());
+            return maskFirstCharacter(historyPassword);
+        } catch (RuntimeException exception) {
+            log.warn("failed to mask password memo history, historyId={}", history.getId(), exception);
+            return MASKED_PASSWORD;
+        }
+    }
+
+    private void archiveCurrentPassword(Long currentUserId, PasswordMemo memo, LocalDateTime endedAt) {
+        PasswordMemoHistory history = new PasswordMemoHistory();
+        history.setMemoId(memo.getId());
+        history.setOwnerUserId(currentUserId);
+        history.setPasswordCiphertext(memo.getPasswordCiphertext());
+        history.setPasswordNonce(memo.getPasswordNonce());
+        history.setUsageStartedAt(memo.getPasswordStartedAt() == null ? memo.getCreatedAt() : memo.getPasswordStartedAt());
+        history.setUsageEndedAt(endedAt);
+        history.setCreatedAt(endedAt);
+        passwordMemoHistoryMapper.insert(history);
+    }
+
+    private String maskFirstCharacter(String password) {
+        if (!StringUtils.hasText(password)) {
+            return MASKED_PASSWORD;
+        }
+        return password.substring(0, 1) + "*".repeat(Math.max(password.length() - 1, 1));
     }
 
     private String trimToNull(String value) {
