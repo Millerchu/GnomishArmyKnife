@@ -37,11 +37,27 @@ CREATE TABLE IF NOT EXISTS gak_password_memo (
     username VARCHAR(100),
     password_ciphertext TEXT NOT NULL,
     password_nonce VARCHAR(64) NOT NULL,
+    password_started_at TIMESTAMP NOT NULL,
     registered_phone VARCHAR(20),
     registered_email VARCHAR(100),
     remark VARCHAR(255),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
+);
+
+ALTER TABLE gak_password_memo ADD COLUMN IF NOT EXISTS password_started_at TIMESTAMP;
+UPDATE gak_password_memo SET password_started_at = created_at WHERE password_started_at IS NULL;
+ALTER TABLE gak_password_memo ALTER COLUMN password_started_at SET NOT NULL;
+
+CREATE TABLE IF NOT EXISTS gak_password_memo_history (
+    id BIGINT PRIMARY KEY,
+    memo_id BIGINT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    password_ciphertext TEXT NOT NULL,
+    password_nonce VARCHAR(64) NOT NULL,
+    usage_started_at TIMESTAMP NOT NULL,
+    usage_ended_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS gak_wow_character (
@@ -419,6 +435,10 @@ UPDATE gak_system_app SET data_source_mode = 'DEMO' WHERE data_source_mode IS NU
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_password_memo_history_memo_started
+    ON gak_password_memo_history (memo_id, usage_started_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_password_memo_history_owner
+    ON gak_password_memo_history (owner_user_id, memo_id);
 CREATE INDEX IF NOT EXISTS idx_wow_character_owner_sort ON gak_wow_character (owner_user_id, item_level DESC, mythic_score DESC);
 CREATE INDEX IF NOT EXISTS idx_wow_character_owner_featured ON gak_wow_character (owner_user_id, is_featured, item_level DESC, mythic_score DESC);
 CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
