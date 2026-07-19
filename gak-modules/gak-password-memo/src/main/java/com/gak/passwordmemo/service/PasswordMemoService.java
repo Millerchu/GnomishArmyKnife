@@ -5,9 +5,11 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.passwordmemo.domain.PasswordMemo;
 import com.gak.passwordmemo.domain.PasswordMemoHistory;
+import com.gak.passwordmemo.dto.CreatePasswordHistoryRequest;
 import com.gak.passwordmemo.dto.PasswordMemoQueryRequest;
 import com.gak.passwordmemo.dto.SavePasswordMemoRequest;
 import com.gak.passwordmemo.dto.UpdateMemoPasswordRequest;
+import com.gak.passwordmemo.dto.UpdatePasswordHistoryRequest;
 import com.gak.passwordmemo.dto.UpdatePasswordMemoInfoRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
 import com.gak.passwordmemo.mapper.PasswordMemoHistoryMapper;
@@ -159,6 +161,62 @@ public class PasswordMemoService {
         return toDetail(current);
     }
 
+    /**
+     * 手工补录历史密码，不影响当前正在使用的密码。
+     */
+    @Transactional
+    public PasswordMemoDetailVO createPasswordHistory(Long currentUserId,
+                                                      Long memoId,
+                                                      CreatePasswordHistoryRequest request) {
+        ensureCurrentUserExists(currentUserId);
+        PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, memoId);
+        validateUsagePeriod(request.getUsageStartedAt(), request.getUsageEndedAt());
+        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword().trim());
+
+        PasswordMemoHistory history = new PasswordMemoHistory();
+        history.setMemoId(memoId);
+        history.setOwnerUserId(currentUserId);
+        history.setPasswordCiphertext(encryptedPayload.ciphertext());
+        history.setPasswordNonce(encryptedPayload.nonce());
+        history.setUsageStartedAt(request.getUsageStartedAt());
+        history.setUsageEndedAt(request.getUsageEndedAt());
+        history.setCreatedAt(LocalDateTime.now());
+        passwordMemoHistoryMapper.insert(history);
+        return toDetail(memo);
+    }
+
+    /**
+     * 编辑历史记录时，空密码表示只调整使用周期。
+     */
+    @Transactional
+    public PasswordMemoDetailVO updatePasswordHistory(Long currentUserId,
+                                                      Long memoId,
+                                                      Long historyId,
+                                                      UpdatePasswordHistoryRequest request) {
+        ensureCurrentUserExists(currentUserId);
+        PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, memoId);
+        PasswordMemoHistory history = getOwnedHistoryOrThrow(currentUserId, memoId, historyId);
+        validateUsagePeriod(request.getUsageStartedAt(), request.getUsageEndedAt());
+        if (StringUtils.hasText(request.getPassword())) {
+            EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword().trim());
+            history.setPasswordCiphertext(encryptedPayload.ciphertext());
+            history.setPasswordNonce(encryptedPayload.nonce());
+        }
+        history.setUsageStartedAt(request.getUsageStartedAt());
+        history.setUsageEndedAt(request.getUsageEndedAt());
+        passwordMemoHistoryMapper.updateById(history);
+        return toDetail(memo);
+    }
+
+    @Transactional
+    public PasswordMemoDetailVO deletePasswordHistory(Long currentUserId, Long memoId, Long historyId) {
+        ensureCurrentUserExists(currentUserId);
+        PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, memoId);
+        PasswordMemoHistory history = getOwnedHistoryOrThrow(currentUserId, memoId, historyId);
+        passwordMemoHistoryMapper.deleteById(history.getId());
+        return toDetail(memo);
+    }
+
     @Transactional
     public void delete(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
@@ -201,6 +259,18 @@ public class PasswordMemoService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "密码备忘录不存在");
         }
         return memo;
+    }
+
+    private PasswordMemoHistory getOwnedHistoryOrThrow(Long currentUserId, Long memoId, Long historyId) {
+        QueryWrapper<PasswordMemoHistory> wrapper = new QueryWrapper<>();
+        wrapper.eq("id", historyId)
+                .eq("memo_id", memoId)
+                .eq("owner_user_id", currentUserId);
+        PasswordMemoHistory history = passwordMemoHistoryMapper.selectOne(wrapper);
+        if (history == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "历史密码记录不存在");
+        }
+        return history;
     }
 
     private PasswordMemoListItemVO toListItem(PasswordMemo memo) {
@@ -291,6 +361,12 @@ public class PasswordMemoService {
             return MASKED_PASSWORD;
         }
         return password.substring(0, 1) + "*".repeat(Math.max(password.length() - 1, 1));
+    }
+
+    private void validateUsagePeriod(LocalDateTime usageStartedAt, LocalDateTime usageEndedAt) {
+        if (!usageStartedAt.isBefore(usageEndedAt)) {
+            throw new BusinessException("PASSWORD_HISTORY_PERIOD_INVALID", "使用结束时间必须晚于起始时间");
+        }
     }
 
     private String trimToNull(String value) {

@@ -3,8 +3,10 @@ package com.gak.passwordmemo.controller;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.passwordmemo.dto.PasswordMemoQueryRequest;
+import com.gak.passwordmemo.dto.CreatePasswordHistoryRequest;
 import com.gak.passwordmemo.dto.SavePasswordMemoRequest;
 import com.gak.passwordmemo.dto.UpdateMemoPasswordRequest;
+import com.gak.passwordmemo.dto.UpdatePasswordHistoryRequest;
 import com.gak.passwordmemo.dto.UpdatePasswordMemoInfoRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
 import com.gak.passwordmemo.service.PasswordMemoService;
@@ -66,6 +68,34 @@ public class PasswordMemoController {
                                                             HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(passwordMemoService.updatePassword(currentUserId, id, request));
+    }
+
+    @PostMapping("/{id}/password-history")
+    public ApiResponse<PasswordMemoDetailVO> createPasswordHistory(
+            @PathVariable Long id,
+            @Valid @RequestBody CreatePasswordHistoryRequest request,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(passwordMemoService.createPasswordHistory(currentUserId, id, request));
+    }
+
+    @PutMapping("/{id}/password-history/{historyId}")
+    public ApiResponse<PasswordMemoDetailVO> updatePasswordHistory(
+            @PathVariable Long id,
+            @PathVariable Long historyId,
+            @Valid @RequestBody UpdatePasswordHistoryRequest request,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(passwordMemoService.updatePasswordHistory(currentUserId, id, historyId, request));
+    }
+
+    @DeleteMapping("/{id}/password-history/{historyId}")
+    public ApiResponse<PasswordMemoDetailVO> deletePasswordHistory(
+            @PathVariable Long id,
+            @PathVariable Long historyId,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(passwordMemoService.deletePasswordHistory(currentUserId, id, historyId));
     }
 
     @DeleteMapping("/{id}")

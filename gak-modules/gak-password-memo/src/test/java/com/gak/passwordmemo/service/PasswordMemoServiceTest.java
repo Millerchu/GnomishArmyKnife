@@ -3,6 +3,7 @@ package com.gak.passwordmemo.service;
 import com.gak.framework.exception.BusinessException;
 import com.gak.passwordmemo.domain.PasswordMemo;
 import com.gak.passwordmemo.domain.PasswordMemoHistory;
+import com.gak.passwordmemo.dto.CreatePasswordHistoryRequest;
 import com.gak.passwordmemo.dto.SavePasswordMemoRequest;
 import com.gak.passwordmemo.dto.UpdateMemoPasswordRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
@@ -19,6 +20,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -153,5 +156,33 @@ class PasswordMemoServiceTest {
         assertEquals(memo.getPasswordStartedAt(), history.getUsageEndedAt());
         assertEquals("new-ciphertext", memo.getPasswordCiphertext());
         verify(passwordMemoMapper).updateById(memo);
+    }
+
+    @Test
+    void createPasswordHistoryShouldEncryptPasswordAndKeepCurrentPasswordUntouched() {
+        User user = new User();
+        user.setId(1L);
+        when(userMapper.selectById(1L)).thenReturn(user);
+
+        PasswordMemo memo = new PasswordMemo();
+        memo.setId(12L);
+        memo.setOwnerUserId(1L);
+        memo.setPasswordCiphertext("current-ciphertext");
+        when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
+        when(passwordMemoCryptoService.encrypt("old-password"))
+                .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("history-ciphertext", "history-nonce"));
+
+        CreatePasswordHistoryRequest request = new CreatePasswordHistoryRequest();
+        request.setPassword("old-password");
+        request.setUsageStartedAt(LocalDateTime.of(2025, 1, 1, 8, 0));
+        request.setUsageEndedAt(LocalDateTime.of(2025, 6, 1, 8, 0));
+        passwordMemoService.createPasswordHistory(1L, 12L, request);
+
+        ArgumentCaptor<PasswordMemoHistory> historyCaptor = ArgumentCaptor.forClass(PasswordMemoHistory.class);
+        verify(passwordMemoHistoryMapper).insert(historyCaptor.capture());
+        PasswordMemoHistory history = historyCaptor.getValue();
+        assertEquals("history-ciphertext", history.getPasswordCiphertext());
+        assertEquals(request.getUsageStartedAt(), history.getUsageStartedAt());
+        assertEquals("current-ciphertext", memo.getPasswordCiphertext());
     }
 }
