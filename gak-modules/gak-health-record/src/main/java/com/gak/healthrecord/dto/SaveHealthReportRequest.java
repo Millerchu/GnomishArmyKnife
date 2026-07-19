@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 保存健康报告请求。
@@ -34,6 +35,8 @@ public class SaveHealthReportRequest {
 
     @Size(max = 255, message = "reportUrl 长度不能超过 255")
     private String reportUrl;
+
+    private List<Long> attachmentIds;
 
     @AssertTrue(message = "reportFileName 和 reportUrl 必须同时为空或同时有值")
     public boolean isFilePairValid() {
@@ -105,4 +108,8 @@ public class SaveHealthReportRequest {
     public void setReportUrl(String reportUrl) {
         this.reportUrl = reportUrl;
     }
+
+    public List<Long> getAttachmentIds() { return attachmentIds; }
+
+    public void setAttachmentIds(List<Long> attachmentIds) { this.attachmentIds = attachmentIds; }
 }

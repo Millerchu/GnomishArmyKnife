@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.List;
 import org.springframework.util.StringUtils;
 
 /**
@@ -48,6 +49,8 @@ public class SaveHealthVisitRequest {
 
     @Size(max = 255, message = "note 长度不能超过 255")
     private String note;
+
+    private List<Long> attachmentIds;
 
     @AssertTrue(message = "主诉、诊断、处置方案、医生建议至少填写一项")
     public boolean isVisitContentValid() {
@@ -159,4 +162,8 @@ public class SaveHealthVisitRequest {
     public void setNote(String note) {
         this.note = note;
     }
+
+    public List<Long> getAttachmentIds() { return attachmentIds; }
+
+    public void setAttachmentIds(List<Long> attachmentIds) { this.attachmentIds = attachmentIds; }
 }

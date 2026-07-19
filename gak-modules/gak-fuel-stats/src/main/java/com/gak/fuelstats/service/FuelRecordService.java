@@ -1,6 +1,8 @@
 package com.gak.fuelstats.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.response.PagedResult;
 import com.gak.fuelstats.domain.FuelPriceSnapshot;
 import com.gak.fuelstats.domain.FuelRecord;
@@ -63,13 +65,16 @@ public class FuelRecordService {
     private final FuelRecordMapper fuelRecordMapper;
     private final FuelPriceSnapshotMapper fuelPriceSnapshotMapper;
     private final UserMapper userMapper;
+    private final AttachmentService attachmentService;
 
     public FuelRecordService(FuelRecordMapper fuelRecordMapper,
                              FuelPriceSnapshotMapper fuelPriceSnapshotMapper,
-                             UserMapper userMapper) {
+                             UserMapper userMapper,
+                             AttachmentService attachmentService) {
         this.fuelRecordMapper = fuelRecordMapper;
         this.fuelPriceSnapshotMapper = fuelPriceSnapshotMapper;
         this.userMapper = userMapper;
+        this.attachmentService = attachmentService;
     }
 
     /**
@@ -104,6 +109,9 @@ public class FuelRecordService {
         record.setCreatedAt(now);
         record.setUpdatedAt(now);
         fuelRecordMapper.insert(record);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_FUEL_RECORD, record.getId(), AttachmentConstants.USAGE_IMAGE,
+                request.getAttachmentIds(), 3);
         return findRecordVOById(currentUserId, record.getId());
     }
 
@@ -119,6 +127,9 @@ public class FuelRecordService {
         applyNormalized(current, normalized);
         current.setUpdatedAt(LocalDateTime.now());
         fuelRecordMapper.updateById(current);
+        attachmentService.syncBusinessAttachments(currentUserId,
+                AttachmentConstants.BUSINESS_FUEL_RECORD, current.getId(), AttachmentConstants.USAGE_IMAGE,
+                request.getAttachmentIds(), 3);
         return findRecordVOById(currentUserId, id);
     }
 
@@ -129,6 +140,7 @@ public class FuelRecordService {
     public void delete(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         FuelRecord current = getOwnedRecordOrThrow(currentUserId, id);
+        attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_FUEL_RECORD, current.getId());
         fuelRecordMapper.deleteById(current.getId());
     }
 
@@ -284,6 +296,8 @@ public class FuelRecordService {
         vo.setFuelConsumption(fuelConsumption == null ? null : fuelConsumption.setScale(2, RoundingMode.HALF_UP));
         vo.setCreatedAt(item.getCreatedAt());
         vo.setUpdatedAt(item.getUpdatedAt());
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_FUEL_RECORD, item.getId(), AttachmentConstants.USAGE_IMAGE));
         return vo;
     }
 

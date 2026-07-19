@@ -1,5 +1,6 @@
 package com.gak.knowledgebase.vo;
 
+import com.gak.attachment.vo.AttachmentVO;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -23,6 +24,7 @@ public class KnowledgeEntryVO {
     private String reviewRemark;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private List<AttachmentVO> attachments;
 
     public Long getId() {
         return id;
@@ -143,4 +145,8 @@ public class KnowledgeEntryVO {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+    public List<AttachmentVO> getAttachments() { return attachments; }
+
+    public void setAttachments(List<AttachmentVO> attachments) { this.attachments = attachments; }
 }

@@ -1,5 +1,8 @@
 package com.gak.permission.vo;
 
+import com.gak.attachment.vo.AttachmentVO;
+import java.util.List;
+
 /**
  * 应用目录视图。
  */
@@ -27,6 +30,7 @@ public class AppCatalogVO {
     private String description;
     private String remark;
     private Integer grantCount;
+    private List<AttachmentVO> attachments;
 
     public Long getId() {
         return id;
@@ -203,4 +207,8 @@ public class AppCatalogVO {
     public void setGrantCount(Integer grantCount) {
         this.grantCount = grantCount;
     }
+
+    public List<AttachmentVO> getAttachments() { return attachments; }
+
+    public void setAttachments(List<AttachmentVO> attachments) { this.attachments = attachments; }
 }

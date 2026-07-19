@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.gak.healthrecord.domain.HealthRecord;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.healthrecord.domain.HealthReport;
 import com.gak.healthrecord.domain.HealthVisit;
 import com.gak.healthrecord.dto.HealthTrendQueryRequest;
@@ -45,6 +46,9 @@ class HealthRecordServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private AttachmentService attachmentService;
+
     private HealthRecordService healthRecordService;
 
     @BeforeEach
@@ -54,6 +58,7 @@ class HealthRecordServiceTest {
                 healthVisitMapper,
                 healthReportMapper,
                 userMapper,
+                attachmentService,
                 "./target/health-records-test",
                 "/api/health-records/report-files/"
         );

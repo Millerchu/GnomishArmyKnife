@@ -7,6 +7,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.response.PagedResult;
 import com.gak.knowledgebase.domain.KnowledgeEntry;
 import com.gak.knowledgebase.dto.KnowledgeEntryQueryRequest;
@@ -40,6 +41,9 @@ class KnowledgeBaseServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private AttachmentService attachmentService;
+
     @InjectMocks
     private KnowledgeBaseService knowledgeBaseService;
 
@@ -47,6 +51,7 @@ class KnowledgeBaseServiceTest {
     void setUp() {
         lenient().when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "USER"));
         lenient().when(userMapper.selectById(9L)).thenReturn(buildUser(9L, "ADMIN"));
+        lenient().when(attachmentService.listBusinessAttachments(any(), any(), any())).thenReturn(List.of());
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.gak.permission.service;
 
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,19 +80,22 @@ public class PermissionManagementService {
     private final PermissionAuditLogMapper permissionAuditLogMapper;
     private final ObjectMapper objectMapper;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
+    private final AttachmentService attachmentService;
 
     public PermissionManagementService(UserMapper userMapper,
                                        SystemAppMapper systemAppMapper,
                                        UserAppPermissionMapper userAppPermissionMapper,
                                        PermissionAuditLogMapper permissionAuditLogMapper,
                                        ObjectMapper objectMapper,
-                                       DataDictionaryUsageSupport dataDictionaryUsageSupport) {
+                                       DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                                       AttachmentService attachmentService) {
         this.userMapper = userMapper;
         this.systemAppMapper = systemAppMapper;
         this.userAppPermissionMapper = userAppPermissionMapper;
         this.permissionAuditLogMapper = permissionAuditLogMapper;
         this.objectMapper = objectMapper;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
+        this.attachmentService = attachmentService;
     }
 
     public PagedResult<PermissionUserListItemVO> pageUsers(Long currentUserId, PermissionUserQueryRequest request) {
@@ -373,6 +378,8 @@ public class PermissionManagementService {
         vo.setIconUrl(app.getIconUrl());
         vo.setIconStorageType(app.getIconStorageType());
         vo.setIconFileName(app.getIconFileName());
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_SYSTEM_APP, app.getId(), AttachmentConstants.USAGE_ICON));
         vo.setDescription(app.getDescription());
         vo.setRemark(app.getRemark());
         return vo;

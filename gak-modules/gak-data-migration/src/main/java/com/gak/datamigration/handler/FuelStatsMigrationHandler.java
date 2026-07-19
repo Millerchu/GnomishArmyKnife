@@ -5,6 +5,10 @@ import com.gak.datamigration.DataMigrationConstants;
 import com.gak.datamigration.service.DataMigrationArchiveService;
 import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
 import com.gak.datamigration.service.DataMigrationQuerySupport;
+import com.gak.datamigration.service.AttachmentMigrationSupport;
+import com.gak.datamigration.service.AttachmentMigrationSupport.ExportBundle;
+import com.gak.datamigration.service.AttachmentMigrationSupport.TransferItem;
+import com.gak.attachment.constant.AttachmentConstants;
 import com.gak.framework.exception.BusinessException;
 import com.gak.fuelstats.domain.FuelPriceSnapshot;
 import com.gak.fuelstats.domain.FuelRecord;
@@ -13,6 +17,8 @@ import com.gak.fuelstats.mapper.FuelRecordMapper;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,15 +32,18 @@ public class FuelStatsMigrationHandler implements MigrationResourceHandler {
     private final FuelPriceSnapshotMapper fuelPriceSnapshotMapper;
     private final UserMapper userMapper;
     private final DataMigrationArchiveService archiveService;
+    private final AttachmentMigrationSupport attachmentMigrationSupport;
 
     public FuelStatsMigrationHandler(FuelRecordMapper fuelRecordMapper,
                                      FuelPriceSnapshotMapper fuelPriceSnapshotMapper,
                                      UserMapper userMapper,
-                                     DataMigrationArchiveService archiveService) {
+                                     DataMigrationArchiveService archiveService,
+                                     AttachmentMigrationSupport attachmentMigrationSupport) {
         this.fuelRecordMapper = fuelRecordMapper;
         this.fuelPriceSnapshotMapper = fuelPriceSnapshotMapper;
         this.userMapper = userMapper;
         this.archiveService = archiveService;
+        this.attachmentMigrationSupport = attachmentMigrationSupport;
     }
 
     @Override
@@ -54,7 +63,7 @@ public class FuelStatsMigrationHandler implements MigrationResourceHandler {
 
     @Override
     public boolean attachmentSupported() {
-        return false;
+        return true;
     }
 
     @Override
@@ -78,24 +87,38 @@ public class FuelStatsMigrationHandler implements MigrationResourceHandler {
         List<FuelPriceSnapshot> snapshots = fuelPriceSnapshotMapper.selectList(snapshotWrapper);
 
         long recordCount = (long) records.size() + snapshots.size();
-        return new MigrationResourceExportData(resourceCode(), entryPath(), new Payload(records, snapshots), recordCount, 0L, List.of());
+        ExportBundle bundle = context.includeAttachments()
+                ? attachmentMigrationSupport.collect(AttachmentConstants.BUSINESS_FUEL_RECORD,
+                records.stream().map(FuelRecord::getId).toList(), "attachments/fuel-records")
+                : new ExportBundle(List.of(), List.of());
+        return new MigrationResourceExportData(resourceCode(), entryPath(),
+                new Payload(records, snapshots, bundle.items()), recordCount, bundle.files().size(), bundle.files());
     }
 
     @Override
     @Transactional
     public MigrationResourceImportResult importData(ImportContext context) throws Exception {
         Payload payload = archiveService.readJson(context.packageRoot(), entryPath(), Payload.class);
-        long importedCount = importRecords(context, DataMigrationQuerySupport.emptyIfNull(payload.getRecords()));
+        Map<Long, Long> recordIdMappings = new LinkedHashMap<>();
+        long importedCount = importRecords(context, DataMigrationQuerySupport.emptyIfNull(payload.getRecords()), recordIdMappings);
         importedCount += importSnapshots(context, DataMigrationQuerySupport.emptyIfNull(payload.getSnapshots()));
-        return MigrationResourceImportResult.success(importedCount, 0L, "油耗统计导入完成");
+        long attachmentCount = attachmentMigrationSupport.restore(context,
+                AttachmentConstants.BUSINESS_FUEL_RECORD,
+                DataMigrationQuerySupport.emptyIfNull(payload.getAttachments()), recordIdMappings,
+                targetId -> {
+                    FuelRecord record = fuelRecordMapper.selectById(targetId);
+                    return record == null ? null : record.getOwnerUserId();
+                }, 3);
+        return MigrationResourceImportResult.success(importedCount, attachmentCount, "油耗统计导入完成");
     }
 
-    private long importRecords(ImportContext context, List<FuelRecord> records) {
+    private long importRecords(ImportContext context, List<FuelRecord> records, Map<Long, Long> recordIdMappings) {
         long importedCount = 0L;
         for (FuelRecord source : records) {
             if (source == null) {
                 continue;
             }
+            Long sourceRecordId = source.getId();
             Long targetUserId = resolveUserId(source.getOwnerUserId(), context);
             FuelRecord existing = findExistingRecord(source, targetUserId);
             source.setOwnerUserId(targetUserId);
@@ -110,10 +133,12 @@ public class FuelStatsMigrationHandler implements MigrationResourceHandler {
                 }
                 existing.setOwnerUserId(targetUserId);
                 fuelRecordMapper.updateById(existing);
+                recordIdMappings.put(sourceRecordId, existing.getId());
             } else {
                 FuelRecord insertRecord = copyRecord(source);
                 insertRecord.setOwnerUserId(targetUserId);
                 fuelRecordMapper.insert(insertRecord);
+                recordIdMappings.put(sourceRecordId, insertRecord.getId());
             }
             importedCount++;
         }
@@ -200,13 +225,15 @@ public class FuelStatsMigrationHandler implements MigrationResourceHandler {
 
         private List<FuelRecord> records;
         private List<FuelPriceSnapshot> snapshots;
+        private List<TransferItem> attachments;
 
         public Payload() {
         }
 
-        public Payload(List<FuelRecord> records, List<FuelPriceSnapshot> snapshots) {
+        public Payload(List<FuelRecord> records, List<FuelPriceSnapshot> snapshots, List<TransferItem> attachments) {
             this.records = records;
             this.snapshots = snapshots;
+            this.attachments = attachments;
         }
 
         public List<FuelRecord> getRecords() {
@@ -224,5 +251,9 @@ public class FuelStatsMigrationHandler implements MigrationResourceHandler {
         public void setSnapshots(List<FuelPriceSnapshot> snapshots) {
             this.snapshots = snapshots;
         }
+
+        public List<TransferItem> getAttachments() { return attachments; }
+
+        public void setAttachments(List<TransferItem> attachments) { this.attachments = attachments; }
     }
 }
