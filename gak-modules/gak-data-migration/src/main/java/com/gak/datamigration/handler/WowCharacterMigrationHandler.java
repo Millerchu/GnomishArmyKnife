@@ -95,7 +95,7 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
         List<WowCharacterWeeklyVault> weeklyVaults = weeklyVaultMapper.selectList(vaultWrapper);
 
         QueryWrapper<WowCharacterKeybinding> keybindingWrapper = new QueryWrapper<>();
-        keybindingWrapper.orderByAsc("character_id").orderByAsc("spec_name").orderByAsc("id");
+        keybindingWrapper.orderByAsc("character_id").orderByAsc("binding_name").orderByAsc("id");
         List<WowCharacterKeybinding> keybindings = keybindingMapper.selectList(keybindingWrapper);
 
         long recordCount = (long) characters.size() + mythicRuns.size() + weeklyVaults.size() + keybindings.size();
@@ -221,7 +221,7 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
                 continue;
             }
             Long targetUserId = resolveUserId(source.getOwnerUserId(), context);
-            WowCharacterKeybinding existing = findExistingKeybinding(targetCharacterId, source.getSpecName());
+            WowCharacterKeybinding existing = findExistingKeybinding(targetCharacterId, source.getBindingName());
             source.setCharacterId(targetCharacterId);
             source.setOwnerUserId(targetUserId);
             if (existing != null) {
@@ -278,9 +278,9 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
         return weeklyVaultMapper.selectOne(wrapper);
     }
 
-    private WowCharacterKeybinding findExistingKeybinding(Long characterId, String specName) {
+    private WowCharacterKeybinding findExistingKeybinding(Long characterId, String bindingName) {
         QueryWrapper<WowCharacterKeybinding> wrapper = new QueryWrapper<>();
-        wrapper.eq("character_id", characterId).eq("spec_name", specName);
+        wrapper.eq("character_id", characterId).eq("binding_name", bindingName);
         return keybindingMapper.selectOne(wrapper);
     }
 
