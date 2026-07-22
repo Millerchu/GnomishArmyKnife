@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,17 +79,21 @@ public class WowCharacterService {
     private static final int[] RAID_VAULT_THRESHOLDS = {2, 4, 6};
     private static final int[] MYTHIC_VAULT_THRESHOLDS = {1, 4, 8};
     private static final int[] WORLD_VAULT_THRESHOLDS = {2, 4, 8};
-    private static final Comparator<WowCharacter> DEFAULT_ORDER = (left, right) -> {
-        int itemLevelCompare = compareDecimalDesc(left.getItemLevel(), right.getItemLevel());
-        if (itemLevelCompare != 0) {
-            return itemLevelCompare;
-        }
-        int mythicScoreCompare = compareDecimalDesc(left.getMythicScore(), right.getMythicScore());
-        if (mythicScoreCompare != 0) {
-            return mythicScoreCompare;
-        }
-        return String.valueOf(left.getCharacterName()).compareTo(String.valueOf(right.getCharacterName()));
-    };
+    private static final Comparator<WowCharacter> ID_ORDER = Comparator.comparing(
+            WowCharacter::getId,
+            Comparator.nullsLast(Long::compareTo)
+    );
+    private static final Comparator<WowCharacter> DEFAULT_ORDER = buildDefaultOrder();
+    private static final Map<String, Comparator<WowCharacter>> SORT_ORDERS = Map.of(
+            "faction", textOrder(WowCharacter::getFaction),
+            "characterName", textOrder(WowCharacter::getCharacterName),
+            "specName", textOrder(WowCharacter::getSpecName),
+            "level", integerOrder(WowCharacter::getLevel),
+            "realmName", textOrder(WowCharacter::getRealmName),
+            "itemLevel", decimalOrder(WowCharacter::getItemLevel),
+            "currentKey", currentKeyOrder(),
+            "mythicScore", decimalOrder(WowCharacter::getMythicScore)
+    );
 
     private final WowCharacterMapper wowCharacterMapper;
     private final WowCharacterMythicRunMapper wowCharacterMythicRunMapper;
@@ -120,7 +125,7 @@ public class WowCharacterService {
     public PagedResult<WowCharacterListVO> page(Long currentUserId, WowCharacterQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
         List<WowCharacter> records = filterCharacters(currentUserId, request.getKeyword(), request.getFaction(), request.getClassName());
-        records.sort(DEFAULT_ORDER);
+        records.sort(resolveCharacterOrder(request.getSortField(), request.getSortDirection()));
 
         long total = records.size();
         long fromIndex = Math.max((request.getPageNo() - 1) * request.getPageSize(), 0L);
@@ -1212,6 +1217,61 @@ public class WowCharacterService {
 
     private String normalizeFactionCode(String faction) {
         return faction == null ? DEFAULT_FACTION : faction.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static Comparator<WowCharacter> resolveCharacterOrder(String sortField, String sortDirection) {
+        if (!StringUtils.hasText(sortField) || !StringUtils.hasText(sortDirection)) {
+            return DEFAULT_ORDER;
+        }
+        Comparator<WowCharacter> requestedOrder = SORT_ORDERS.get(sortField.trim());
+        String normalizedDirection = sortDirection.trim().toUpperCase(Locale.ROOT);
+        if (requestedOrder == null || !("ASC".equals(normalizedDirection) || "DESC".equals(normalizedDirection))) {
+            return DEFAULT_ORDER;
+        }
+        Comparator<WowCharacter> directedOrder = "DESC".equals(normalizedDirection)
+                ? requestedOrder.reversed()
+                : requestedOrder;
+        return directedOrder.thenComparing(DEFAULT_ORDER);
+    }
+
+    private static Comparator<WowCharacter> buildDefaultOrder() {
+        Comparator<WowCharacter> order = (left, right) -> {
+            int itemLevelCompare = compareDecimalDesc(left.getItemLevel(), right.getItemLevel());
+            if (itemLevelCompare != 0) {
+                return itemLevelCompare;
+            }
+            int mythicScoreCompare = compareDecimalDesc(left.getMythicScore(), right.getMythicScore());
+            if (mythicScoreCompare != 0) {
+                return mythicScoreCompare;
+            }
+            return safeText(left.getCharacterName()).compareTo(safeText(right.getCharacterName()));
+        };
+        return order.thenComparing(ID_ORDER);
+    }
+
+    private static Comparator<WowCharacter> textOrder(Function<WowCharacter, String> extractor) {
+        return Comparator.comparing(character -> safeText(extractor.apply(character)));
+    }
+
+    private static Comparator<WowCharacter> integerOrder(Function<WowCharacter, Integer> extractor) {
+        return Comparator.comparingInt(character -> valueOrZero(extractor.apply(character)));
+    }
+
+    private static Comparator<WowCharacter> decimalOrder(Function<WowCharacter, BigDecimal> extractor) {
+        return Comparator.comparing(character -> scaleStatic(extractor.apply(character)));
+    }
+
+    private static Comparator<WowCharacter> currentKeyOrder() {
+        return integerOrder(WowCharacter::getMythicBestLevel)
+                .thenComparing(textOrder(WowCharacter::getMythicDungeonName));
+    }
+
+    private static String safeText(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static int valueOrZero(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private static int compareDecimalDesc(BigDecimal left, BigDecimal right) {

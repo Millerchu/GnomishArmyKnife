@@ -31,6 +31,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -202,6 +204,108 @@ class WowCharacterServiceTest {
         assertEquals("B", result.list().get(2).getCharacterName());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "faction", "characterName", "specName", "level",
+            "realmName", "itemLevel", "currentKey", "mythicScore"
+    })
+    void pageShouldSortEverySupportedFieldInBothDirections(String sortField) {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter lower = buildSortableCharacter(
+                1L, "A", "ALLIANCE", "discipline", 70,
+                "A服", "600.00", 10, "艾杰斯亚学院", "1000.00"
+        );
+        WowCharacter higher = buildSortableCharacter(
+                2L, "B", "HORDE", "frost_mage", 80,
+                "B服", "650.00", 12, "通天峰", "2000.00"
+        );
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(higher, lower));
+
+        PagedResult<WowCharacterListVO> ascending = wowCharacterService.page(
+                1L, buildSortRequest(sortField, " asc ", 1L, 10L)
+        );
+        PagedResult<WowCharacterListVO> descending = wowCharacterService.page(
+                1L, buildSortRequest(sortField, "DESC", 1L, 10L)
+        );
+
+        assertCharacterOrder(ascending, "A", "B");
+        assertCharacterOrder(descending, "B", "A");
+    }
+
+    @Test
+    void pageShouldSortCurrentKeyByLevelThenDungeonName() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter academy = buildSortableCharacter(
+                1L, "学院", "ALLIANCE", "discipline", 80,
+                "A服", "650.00", 12, "艾杰斯亚学院", "2000.00"
+        );
+        WowCharacter skyreach = buildSortableCharacter(
+                2L, "通天", "ALLIANCE", "discipline", 80,
+                "A服", "650.00", 12, "通天峰", "2000.00"
+        );
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(skyreach, academy));
+
+        PagedResult<WowCharacterListVO> ascending = wowCharacterService.page(
+                1L, buildSortRequest("currentKey", "ASC", 1L, 10L)
+        );
+        PagedResult<WowCharacterListVO> descending = wowCharacterService.page(
+                1L, buildSortRequest("currentKey", "DESC", 1L, 10L)
+        );
+
+        assertCharacterOrder(ascending, "学院", "通天");
+        assertCharacterOrder(descending, "通天", "学院");
+    }
+
+    @Test
+    void pageShouldFallbackToDefaultOrderForInvalidOrIncompleteSort() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter lower = buildSortableCharacter(
+                1L, "A", "ALLIANCE", "discipline", 70,
+                "A服", "600.00", 10, "艾杰斯亚学院", "1000.00"
+        );
+        WowCharacter higher = buildSortableCharacter(
+                2L, "B", "HORDE", "frost_mage", 80,
+                "B服", "650.00", 12, "通天峰", "2000.00"
+        );
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(lower, higher));
+
+        List<WowCharacterQueryRequest> requests = List.of(
+                buildSortRequest("unknown", "ASC", 1L, 10L),
+                buildSortRequest("characterName", "SIDEWAYS", 1L, 10L),
+                buildSortRequest("characterName", null, 1L, 10L),
+                buildSortRequest(null, "ASC", 1L, 10L)
+        );
+
+        for (WowCharacterQueryRequest request : requests) {
+            assertCharacterOrder(wowCharacterService.page(1L, request), "B", "A");
+        }
+    }
+
+    @Test
+    void pageShouldApplyRequestedSortBeforePagination() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter first = buildSortableCharacter(
+                1L, "A", "ALLIANCE", "discipline", 80,
+                "A服", "600.00", 10, "艾杰斯亚学院", "1000.00"
+        );
+        WowCharacter second = buildSortableCharacter(
+                2L, "B", "ALLIANCE", "discipline", 80,
+                "A服", "600.00", 10, "艾杰斯亚学院", "1000.00"
+        );
+        WowCharacter third = buildSortableCharacter(
+                3L, "C", "ALLIANCE", "discipline", 80,
+                "A服", "600.00", 10, "艾杰斯亚学院", "1000.00"
+        );
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(third, first, second));
+
+        PagedResult<WowCharacterListVO> result = wowCharacterService.page(
+                1L, buildSortRequest("characterName", "ASC", 2L, 1L)
+        );
+
+        assertEquals(3L, result.total());
+        assertCharacterOrder(result, "B");
+    }
+
     @Test
     void overviewShouldReturnFourFeaturedCharacters() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
@@ -308,6 +412,45 @@ class WowCharacterServiceTest {
         character.setCreatedAt(LocalDateTime.now());
         character.setUpdatedAt(LocalDateTime.now());
         return character;
+    }
+
+    private WowCharacter buildSortableCharacter(Long id,
+                                                 String name,
+                                                 String faction,
+                                                 String specName,
+                                                 int level,
+                                                 String realmName,
+                                                 String itemLevel,
+                                                 int mythicBestLevel,
+                                                 String mythicDungeonName,
+                                                 String mythicScore) {
+        WowCharacter character = buildCharacter(
+                id, name, "法师", faction, realmName, itemLevel, mythicScore, false
+        );
+        character.setSpecName(specName);
+        character.setLevel(level);
+        character.setMythicBestLevel(mythicBestLevel);
+        character.setMythicDungeonName(mythicDungeonName);
+        return character;
+    }
+
+    private WowCharacterQueryRequest buildSortRequest(String sortField,
+                                                      String sortDirection,
+                                                      long pageNo,
+                                                      long pageSize) {
+        WowCharacterQueryRequest request = new WowCharacterQueryRequest();
+        request.setPageNo(pageNo);
+        request.setPageSize(pageSize);
+        request.setSortField(sortField);
+        request.setSortDirection(sortDirection);
+        return request;
+    }
+
+    private void assertCharacterOrder(PagedResult<WowCharacterListVO> result, String... expectedNames) {
+        assertEquals(
+                List.of(expectedNames),
+                result.list().stream().map(WowCharacterListVO::getCharacterName).toList()
+        );
     }
 
     private WowCharacterMythicRun buildMythicRun(Long characterId, String dungeonName, int score) {

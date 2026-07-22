@@ -23,6 +23,10 @@ public class WowCharacterQueryRequest {
     @Size(max = 24, message = "className 长度不能超过 24")
     private String className;
 
+    private String sortField;
+
+    private String sortDirection;
+
     public Long getPageNo() {
         return pageNo;
     }
@@ -61,5 +65,21 @@ public class WowCharacterQueryRequest {
 
     public void setClassName(String className) {
         this.className = className;
+    }
+
+    public String getSortField() {
+        return sortField;
+    }
+
+    public void setSortField(String sortField) {
+        this.sortField = sortField;
+    }
+
+    public String getSortDirection() {
+        return sortDirection;
+    }
+
+    public void setSortDirection(String sortDirection) {
+        this.sortDirection = sortDirection;
     }
 }
