@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
 /**
- * WoW 角色专精键位记录实体。
+ * WoW 角色键位方案记录实体。
  */
 @TableName("gak_wow_character_keybinding")
 public class WowCharacterKeybinding {
@@ -15,7 +15,7 @@ public class WowCharacterKeybinding {
     private Long id;
     private Long characterId;
     private Long ownerUserId;
-    private String specName;
+    private String bindingName;
     private String bindingContent;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -44,12 +44,12 @@ public class WowCharacterKeybinding {
         this.ownerUserId = ownerUserId;
     }
 
-    public String getSpecName() {
-        return specName;
+    public String getBindingName() {
+        return bindingName;
     }
 
-    public void setSpecName(String specName) {
-        this.specName = specName;
+    public void setBindingName(String bindingName) {
+        this.bindingName = bindingName;
     }
 
     public String getBindingContent() {

@@ -1,29 +1,20 @@
 package com.gak.wowcharacter.vo;
 
 /**
- * WoW 角色专精键位视图。
+ * WoW 角色键位方案视图。
  */
 public class WowCharacterKeybindingVO {
 
-    private String specName;
-    private String specNameLabel;
+    private String bindingName;
     private Boolean hasKeybinding;
     private String bindingContent;
 
-    public String getSpecName() {
-        return specName;
+    public String getBindingName() {
+        return bindingName;
     }
 
-    public void setSpecName(String specName) {
-        this.specName = specName;
-    }
-
-    public String getSpecNameLabel() {
-        return specNameLabel;
-    }
-
-    public void setSpecNameLabel(String specNameLabel) {
-        this.specNameLabel = specNameLabel;
+    public void setBindingName(String bindingName) {
+        this.bindingName = bindingName;
     }
 
     public Boolean getHasKeybinding() {
