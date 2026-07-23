@@ -628,7 +628,8 @@ INSERT INTO gak_system_app (
     (2008, 'APP_KNOWLEDGE_BASE', '经验库', '/knowledge-base', '知识沉淀', 'REAL', 'URL', NULL, '经验', '/app-icons/app-knowledge-base.png', 'PUBLIC_ASSET', 'app-knowledge-base.png', 'INTERNAL', 'NONE', TRUE, 80, '沉淀问题处理经验和通用操作手册。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2009, 'APP_SOFTWARE_REPO', '软件仓库', '/software-repo', '资源管理', 'DEMO', 'URL', NULL, '软件', '/app-icons/app-software-repo.png', 'PUBLIC_ASSET', 'app-software-repo.png', 'INTERNAL', 'NONE', TRUE, 90, '整理常用软件、版本与下载入口。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (2010, 'APP_HEALTH_RECORD', '健康', '/health', '生活管理', 'REAL', 'URL', NULL, '健康', '/app-icons/app-health-record.png', 'PUBLIC_ASSET', 'app-health-record.png', 'CONFIDENTIAL', 'FIELD', TRUE, 100, '记录体征、就医与个人健康档案。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (2011, 'APP_DATA_DICTIONARY', '数据字典', '/data-dictionary', '系统管理', 'REAL', 'URL', NULL, '字典', '/app-icons/app-data-dictionary.png', 'PUBLIC_ASSET', 'app-data-dictionary.png', 'INTERNAL', 'NONE', TRUE, 110, '维护系统可配置选项与字典项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (2011, 'APP_DATA_DICTIONARY', '数据字典', '/data-dictionary', '系统管理', 'REAL', 'URL', NULL, '字典', '/app-icons/app-data-dictionary.png', 'PUBLIC_ASSET', 'app-data-dictionary.png', 'INTERNAL', 'NONE', TRUE, 110, '维护系统可配置选项与字典项。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (2012, 'APP_INSTRUMENT_PRACTICE', '随身乐器', '/instrument-practice', '音乐练习', 'REAL', 'URL', NULL, '乐器', '/app-icons/app-instrument-practice.webp', 'PUBLIC_ASSET', 'app-instrument-practice.webp', 'PUBLIC', 'NONE', TRUE, 120, '在手机上演奏古筝、吉他和乌克丽丽，并使用节拍器与录制回放练习。', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (app_code) DO UPDATE SET
     app_name = EXCLUDED.app_name,
     route_path = EXCLUDED.route_path,
