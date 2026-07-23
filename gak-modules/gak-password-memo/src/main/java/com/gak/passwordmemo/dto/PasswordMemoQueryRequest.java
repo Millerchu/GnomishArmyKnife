@@ -17,6 +17,9 @@ public class PasswordMemoQueryRequest {
     @Size(max = 255, message = "keyword 长度不能超过 255")
     private String keyword;
 
+    @Size(max = 64, message = "category 长度不能超过 64")
+    private String category;
+
     public Long getPageNo() {
         return pageNo;
     }
@@ -39,5 +42,13 @@ public class PasswordMemoQueryRequest {
 
     public void setKeyword(String keyword) {
         this.keyword = keyword;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
     }
 }

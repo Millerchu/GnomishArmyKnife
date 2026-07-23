@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 public class PasswordMemoListItemVO {
 
     private Long id;
+    private String category;
     private String siteName;
     private String siteUrl;
     private String username;
@@ -24,6 +25,14 @@ public class PasswordMemoListItemVO {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
     }
 
     public String getSiteName() {

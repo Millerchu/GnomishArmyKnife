@@ -1,6 +1,7 @@
 package com.gak.passwordmemo.service;
 
 import com.gak.framework.exception.BusinessException;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.passwordmemo.domain.PasswordMemo;
 import com.gak.passwordmemo.domain.PasswordMemoHistory;
 import com.gak.passwordmemo.dto.CreatePasswordHistoryRequest;
@@ -48,6 +49,9 @@ class PasswordMemoServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private DataDictionaryUsageSupport dataDictionaryUsageSupport;
+
     @InjectMocks
     private PasswordMemoService passwordMemoService;
 
@@ -58,6 +62,9 @@ class PasswordMemoServiceTest {
         when(userMapper.selectById(1L)).thenReturn(user);
         when(passwordMemoCryptoService.encrypt("MemoPassword123"))
                 .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("ciphertext", "nonce"));
+        when(dataDictionaryUsageSupport.normalizeValueByUsage(
+                "APP_PASSWORD_MEMO", "PASSWORD_MEMO", "category", "工作", true))
+                .thenReturn("工作");
         doAnswer(invocation -> {
             PasswordMemo memo = invocation.getArgument(0);
             memo.setId(11L);
@@ -69,6 +76,7 @@ class PasswordMemoServiceTest {
         request.setSiteUrl("https://github.com");
         request.setUsername("octocat");
         request.setPassword("MemoPassword123");
+        request.setCategory("工作");
 
         PasswordMemoDetailVO result = passwordMemoService.create(1L, request);
 
@@ -76,9 +84,11 @@ class PasswordMemoServiceTest {
         verify(passwordMemoMapper).insert(captor.capture());
         PasswordMemo saved = captor.getValue();
         assertEquals(1L, saved.getOwnerUserId());
+        assertEquals("工作", saved.getCategory());
         assertEquals("ciphertext", saved.getPasswordCiphertext());
         assertEquals("nonce", saved.getPasswordNonce());
         assertEquals(11L, result.getId());
+        assertEquals("工作", result.getCategory());
         assertEquals("********", result.getMaskedPassword());
     }
 

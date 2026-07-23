@@ -14,6 +14,7 @@ public class PasswordMemo {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private Long ownerUserId;
+    private String category;
     private String siteName;
     private String siteUrl;
     private String username;
@@ -40,6 +41,14 @@ public class PasswordMemo {
 
     public void setOwnerUserId(Long ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
     }
 
     public String getSiteName() {

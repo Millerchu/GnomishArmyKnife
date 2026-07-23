@@ -11,6 +11,10 @@ import org.springframework.util.StringUtils;
  */
 public class SavePasswordMemoRequest {
 
+    @NotBlank(message = "category 不能为空")
+    @Size(max = 64, message = "category 长度不能超过 64")
+    private String category;
+
     @NotBlank(message = "siteName 不能为空")
     @Size(max = 64, message = "siteName 长度不能超过 64")
     private String siteName;
@@ -45,6 +49,14 @@ public class SavePasswordMemoRequest {
 
     public String getSiteName() {
         return siteName;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
     }
 
     public void setSiteName(String siteName) {

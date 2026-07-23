@@ -32,6 +32,7 @@ UPDATE gak_user SET force_change_password = FALSE WHERE force_change_password IS
 CREATE TABLE IF NOT EXISTS gak_password_memo (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
+    category VARCHAR(64) NOT NULL DEFAULT '其他',
     site_name VARCHAR(64) NOT NULL,
     site_url VARCHAR(255) NOT NULL,
     username VARCHAR(100),
@@ -48,6 +49,14 @@ CREATE TABLE IF NOT EXISTS gak_password_memo (
 ALTER TABLE gak_password_memo ADD COLUMN IF NOT EXISTS password_started_at TIMESTAMP;
 UPDATE gak_password_memo SET password_started_at = created_at WHERE password_started_at IS NULL;
 ALTER TABLE gak_password_memo ALTER COLUMN password_started_at SET NOT NULL;
+ALTER TABLE gak_password_memo ADD COLUMN IF NOT EXISTS category VARCHAR(64);
+ALTER TABLE gak_password_memo ALTER COLUMN category TYPE VARCHAR(64);
+UPDATE gak_password_memo SET category = '生活' WHERE category = 'LIFE';
+UPDATE gak_password_memo SET category = '工作' WHERE category = 'WORK';
+UPDATE gak_password_memo SET category = '其他' WHERE category = 'OTHER';
+UPDATE gak_password_memo SET category = '其他' WHERE category IS NULL OR BTRIM(category) = '';
+ALTER TABLE gak_password_memo ALTER COLUMN category SET DEFAULT '其他';
+ALTER TABLE gak_password_memo ALTER COLUMN category SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS gak_password_memo_history (
     id BIGINT PRIMARY KEY,
@@ -467,6 +476,8 @@ UPDATE gak_system_app SET data_source_mode = 'DEMO' WHERE data_source_mode IS NU
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_password_memo_owner_category_updated
+    ON gak_password_memo (owner_user_id, category, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_password_memo_history_memo_started
     ON gak_password_memo_history (memo_id, usage_started_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_password_memo_history_owner
@@ -840,6 +851,20 @@ WHERE admin_user.username = 'admin'
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary dictionary
     WHERE dictionary.dict_code = 'PERSONAL_BILLS_PAYMENT_METHOD' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5011, 'PASSWORD_MEMO_CATEGORY', '密码备忘录类别', 'ENABLED', '["密码备忘录"]', '密码备忘录使用场景类别',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'PASSWORD_MEMO_CATEGORY' AND dictionary.deleted = FALSE
   );
 
 INSERT INTO gak_data_dictionary (
@@ -1427,6 +1452,48 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5010 AND deleted = FA
   )
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5731, dictionary.id, dictionary.dict_code, 'life', '生活', '生活', 1, 'ENABLED', TRUE,
+       '个人生活场景账号', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PASSWORD_MEMO_CATEGORY' AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = dictionary.id AND item.item_code = 'life' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5732, dictionary.id, dictionary.dict_code, 'work', '工作', '工作', 2, 'ENABLED', FALSE,
+       '工作办公场景账号', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PASSWORD_MEMO_CATEGORY' AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = dictionary.id AND item.item_code = 'work' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5733, dictionary.id, dictionary.dict_code, 'other', '其他', '其他', 99, 'ENABLED', FALSE,
+       '未归入生活或工作的其他场景', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PASSWORD_MEMO_CATEGORY' AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = dictionary.id AND item.item_code = 'other' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+
 
 INSERT INTO gak_data_dictionary_usage (
     id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
@@ -1588,6 +1655,26 @@ WHERE dictionary.dict_code = 'PERSONAL_BILLS_PAYMENT_METHOD'
       AND usage.module_code = 'PERSONAL_BILLS'
       AND usage.biz_field_code = 'paymentMethod'
   );
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001044, 'PASSWORD_MEMO_CATEGORY', dictionary.id, 'APP_PASSWORD_MEMO', '密码备忘录', 'PASSWORD_MEMO', '密码备忘录',
+    'category', '类别', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PASSWORD_MEMO_CATEGORY'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_PASSWORD_MEMO'
+      AND usage.module_code = 'PASSWORD_MEMO'
+      AND usage.biz_field_code = 'category'
+  )
+ON CONFLICT (id) DO NOTHING;
 
 CREATE TEMP TABLE seed_wow_dictionaries (
     id BIGINT PRIMARY KEY,

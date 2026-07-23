@@ -1,6 +1,7 @@
 package com.gak.passwordmemo.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.passwordmemo.domain.PasswordMemo;
@@ -42,23 +43,29 @@ public class PasswordMemoService {
 
     private static final Logger log = LoggerFactory.getLogger(PasswordMemoService.class);
     private static final String MASKED_PASSWORD = "********";
+    private static final String APP_CODE = "APP_PASSWORD_MEMO";
+    private static final String MODULE_CODE = "PASSWORD_MEMO";
+    private static final String CATEGORY_FIELD = "category";
 
     private final PasswordMemoMapper passwordMemoMapper;
     private final PasswordMemoHistoryMapper passwordMemoHistoryMapper;
     private final PasswordMemoCryptoService passwordMemoCryptoService;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     public PasswordMemoService(PasswordMemoMapper passwordMemoMapper,
                                PasswordMemoHistoryMapper passwordMemoHistoryMapper,
                                PasswordMemoCryptoService passwordMemoCryptoService,
                                UserMapper userMapper,
-                               PasswordEncoder passwordEncoder) {
+                               PasswordEncoder passwordEncoder,
+                               DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.passwordMemoMapper = passwordMemoMapper;
         this.passwordMemoHistoryMapper = passwordMemoHistoryMapper;
         this.passwordMemoCryptoService = passwordMemoCryptoService;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
 
     public PagedResult<PasswordMemoListItemVO> page(Long currentUserId, PasswordMemoQueryRequest request) {
@@ -66,6 +73,10 @@ public class PasswordMemoService {
 
         QueryWrapper<PasswordMemo> wrapper = new QueryWrapper<>();
         wrapper.eq("owner_user_id", currentUserId);
+        String category = trimToNull(request.getCategory());
+        if (StringUtils.hasText(category)) {
+            wrapper.eq("category", normalizeCategory(category, false));
+        }
         String keyword = trimToNull(request.getKeyword());
         if (StringUtils.hasText(keyword)) {
             wrapper.and(query -> query.like("site_name", keyword)
@@ -104,6 +115,7 @@ public class PasswordMemoService {
 
         PasswordMemo passwordMemo = new PasswordMemo();
         passwordMemo.setOwnerUserId(currentUserId);
+        passwordMemo.setCategory(normalizeCategory(request.getCategory(), true));
         passwordMemo.setSiteName(request.getSiteName().trim());
         passwordMemo.setSiteUrl(request.getSiteUrl().trim());
         passwordMemo.setUsername(trimToNull(request.getUsername()));
@@ -125,6 +137,7 @@ public class PasswordMemoService {
 
         PasswordMemo current = getOwnedMemoOrThrow(currentUserId, id);
 
+        current.setCategory(normalizeCategory(request.getCategory(), true));
         current.setSiteName(request.getSiteName().trim());
         current.setSiteUrl(request.getSiteUrl().trim());
         current.setUsername(trimToNull(request.getUsername()));
@@ -276,6 +289,7 @@ public class PasswordMemoService {
     private PasswordMemoListItemVO toListItem(PasswordMemo memo) {
         PasswordMemoListItemVO vo = new PasswordMemoListItemVO();
         vo.setId(memo.getId());
+        vo.setCategory(memo.getCategory());
         vo.setSiteName(memo.getSiteName());
         vo.setSiteUrl(memo.getSiteUrl());
         vo.setUsername(memo.getUsername());
@@ -288,6 +302,7 @@ public class PasswordMemoService {
     private PasswordMemoDetailVO toDetail(PasswordMemo memo) {
         PasswordMemoDetailVO vo = new PasswordMemoDetailVO();
         vo.setId(memo.getId());
+        vo.setCategory(memo.getCategory());
         vo.setSiteName(memo.getSiteName());
         vo.setSiteUrl(memo.getSiteUrl());
         vo.setUsername(memo.getUsername());
@@ -366,6 +381,15 @@ public class PasswordMemoService {
     private void validateUsagePeriod(LocalDateTime usageStartedAt, LocalDateTime usageEndedAt) {
         if (!usageStartedAt.isBefore(usageEndedAt)) {
             throw new BusinessException("PASSWORD_HISTORY_PERIOD_INVALID", "使用结束时间必须晚于起始时间");
+        }
+    }
+
+    private String normalizeCategory(String category, boolean required) {
+        try {
+            return dataDictionaryUsageSupport.normalizeValueByUsage(
+                    APP_CODE, MODULE_CODE, CATEGORY_FIELD, category, required);
+        } catch (BusinessException exception) {
+            throw new BusinessException("PASSWORD_MEMO_CATEGORY_INVALID", "密码类别不在可用的数据字典中");
         }
     }
 
