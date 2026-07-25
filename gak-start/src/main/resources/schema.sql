@@ -221,6 +221,19 @@ CREATE TABLE IF NOT EXISTS gak_attachment (
     legacy_source_key VARCHAR(255)
 );
 
+CREATE TABLE IF NOT EXISTS gak_instrument_practice_take (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    instrument_id VARCHAR(24) NOT NULL,
+    tuning_id VARCHAR(64) NOT NULL,
+    bpm INTEGER NOT NULL,
+    meter VARCHAR(8) NOT NULL,
+    duration_ms BIGINT NOT NULL,
+    events_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gak_health_visit (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -510,6 +523,8 @@ CREATE INDEX IF NOT EXISTS idx_attachment_owner_status_created
     ON gak_attachment (owner_user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_attachment_cleanup_deleted
     ON gak_attachment (status, deleted_at) WHERE status = 'DELETED';
+CREATE INDEX IF NOT EXISTS idx_instrument_practice_take_owner_instrument_created
+    ON gak_instrument_practice_take (owner_user_id, instrument_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_updated_at ON gak_knowledge_entry (owner_user_id, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_category ON gak_knowledge_entry (owner_user_id, category_name, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_status_updated_at ON gak_knowledge_entry (status, updated_at DESC, id DESC);
