@@ -18,13 +18,18 @@ public class FuelRecord {
     private Long ownerUserId;
     private String vehicleName;
     private LocalDate fuelDate;
+    private LocalDateTime fuelTime;
     private BigDecimal odometerKm;
     private BigDecimal fuelVolume;
+    private BigDecimal machineUnitPrice;
     private BigDecimal totalAmount;
+    private BigDecimal discountAmount;
     private BigDecimal discountedAmount;
     private BigDecimal unitPrice;
     private String fuelType;
     private String fillType;
+    private Boolean fuelWarningLight;
+    private Boolean lastRecordKnown;
     private String stationName;
     private String note;
     private LocalDateTime createdAt;
@@ -62,6 +67,14 @@ public class FuelRecord {
         this.fuelDate = fuelDate;
     }
 
+    public LocalDateTime getFuelTime() {
+        return fuelTime;
+    }
+
+    public void setFuelTime(LocalDateTime fuelTime) {
+        this.fuelTime = fuelTime;
+    }
+
     public BigDecimal getOdometerKm() {
         return odometerKm;
     }
@@ -78,12 +91,28 @@ public class FuelRecord {
         this.fuelVolume = fuelVolume;
     }
 
+    public BigDecimal getMachineUnitPrice() {
+        return machineUnitPrice;
+    }
+
+    public void setMachineUnitPrice(BigDecimal machineUnitPrice) {
+        this.machineUnitPrice = machineUnitPrice;
+    }
+
     public BigDecimal getTotalAmount() {
         return totalAmount;
     }
 
     public void setTotalAmount(BigDecimal totalAmount) {
         this.totalAmount = totalAmount;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount;
+    }
+
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
     }
 
     public BigDecimal getDiscountedAmount() {
@@ -116,6 +145,22 @@ public class FuelRecord {
 
     public void setFillType(String fillType) {
         this.fillType = fillType;
+    }
+
+    public Boolean getFuelWarningLight() {
+        return fuelWarningLight;
+    }
+
+    public void setFuelWarningLight(Boolean fuelWarningLight) {
+        this.fuelWarningLight = fuelWarningLight;
+    }
+
+    public Boolean getLastRecordKnown() {
+        return lastRecordKnown;
+    }
+
+    public void setLastRecordKnown(Boolean lastRecordKnown) {
+        this.lastRecordKnown = lastRecordKnown;
     }
 
     public String getStationName() {

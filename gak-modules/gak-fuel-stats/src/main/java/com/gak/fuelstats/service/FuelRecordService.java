@@ -209,6 +209,7 @@ public class FuelRecordService {
         QueryWrapper<FuelRecord> wrapper = new QueryWrapper<>();
         wrapper.eq("owner_user_id", currentUserId)
                 .orderByDesc("fuel_date")
+                .orderByDesc("fuel_time")
                 .orderByDesc("odometer_km")
                 .orderByDesc("updated_at")
                 .orderByDesc("id");
@@ -241,6 +242,7 @@ public class FuelRecordService {
         ascending.sort(Comparator
                 .comparing(FuelRecord::getVehicleName, Comparator.nullsLast(String::compareTo))
                 .thenComparing(FuelRecord::getFuelDate, Comparator.nullsLast(LocalDate::compareTo))
+                .thenComparing(FuelRecord::getFuelTime, Comparator.nullsLast(LocalDateTime::compareTo))
                 .thenComparing(FuelRecord::getOdometerKm, Comparator.nullsLast(BigDecimal::compareTo))
                 .thenComparing(FuelRecord::getCreatedAt, Comparator.nullsLast(LocalDateTime::compareTo)));
 
@@ -268,6 +270,7 @@ public class FuelRecordService {
 
         derived.sort(Comparator
                 .comparing(FuelRecordVO::getFuelDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(FuelRecordVO::getFuelTime, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(FuelRecordVO::getOdometerKm, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(FuelRecordVO::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(FuelRecordVO::getId, Comparator.nullsLast(Comparator.reverseOrder())));
@@ -282,14 +285,22 @@ public class FuelRecordService {
         vo.setId(item.getId());
         vo.setVehicleName(item.getVehicleName());
         vo.setFuelDate(item.getFuelDate());
+        vo.setFuelTime(item.getFuelTime() == null && item.getFuelDate() != null
+                ? item.getFuelDate().atStartOfDay()
+                : item.getFuelTime());
         vo.setOdometerKm(scaleOdometer(item.getOdometerKm()));
         vo.setFuelVolume(scaleVolume(item.getFuelVolume()));
+        vo.setMachineUnitPrice(scaleUnitPrice(item.getMachineUnitPrice()));
         vo.setTotalAmount(scaleMoney(item.getTotalAmount()));
         vo.setDiscountedAmount(scaleMoney(item.getDiscountedAmount()));
-        vo.setDiscountAmount(scaleMoney(item.getTotalAmount().subtract(item.getDiscountedAmount())));
+        vo.setDiscountAmount(item.getDiscountAmount() == null
+                ? scaleMoney(item.getTotalAmount().subtract(item.getDiscountedAmount()))
+                : scaleMoney(item.getDiscountAmount()));
         vo.setUnitPrice(scaleUnitPrice(item.getUnitPrice()));
         vo.setFuelType(item.getFuelType());
         vo.setFillType(item.getFillType());
+        vo.setFuelWarningLight(Boolean.TRUE.equals(item.getFuelWarningLight()));
+        vo.setLastRecordKnown(item.getLastRecordKnown() == null || item.getLastRecordKnown());
         vo.setStationName(item.getStationName());
         vo.setNote(item.getNote());
         vo.setDistanceKm(scaleOdometer(distanceKm));
@@ -462,31 +473,46 @@ public class FuelRecordService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fillType 非法");
         }
 
-        BigDecimal totalAmount = request.getTotalAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        BigDecimal discountedAmount = request.getDiscountedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        if (discountedAmount.compareTo(totalAmount) > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "优惠后金额不能大于加油金额");
-        }
-
         BigDecimal fuelVolume = request.getFuelVolume().setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
         BigDecimal odometerKm = request.getOdometerKm().setScale(ODOMETER_SCALE, RoundingMode.HALF_UP);
-        BigDecimal unitPrice = request.getUnitPrice();
-        if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            unitPrice = discountedAmount.divide(fuelVolume, UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
+        BigDecimal machineUnitPrice = request.getMachineUnitPrice();
+        if (machineUnitPrice == null || machineUnitPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            machineUnitPrice = request.getTotalAmount().divide(fuelVolume, UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
         } else {
-            unitPrice = unitPrice.setScale(UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
+            machineUnitPrice = machineUnitPrice.setScale(UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
+        }
+        // 机显金额允许手动修正，用其作为最终金额，保留机显单价仅用于展示与后续编辑。
+        BigDecimal totalAmount = request.getTotalAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        // 实付金额是用户在表单中输入的唯一结算值，单价与优惠均以它为准反算。
+        BigDecimal discountedAmount = request.getDiscountedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        if (discountedAmount.compareTo(BigDecimal.ZERO) < 0 || discountedAmount.compareTo(totalAmount) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "实付金额必须在 0 到机显金额之间");
+        }
+        BigDecimal unitPrice = discountedAmount.divide(fuelVolume, UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
+        BigDecimal discountAmount = totalAmount.subtract(discountedAmount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        LocalDateTime fuelTime = request.getFuelTime();
+        if (fuelTime == null && request.getFuelDate() != null) {
+            fuelTime = request.getFuelDate().atStartOfDay();
+        }
+        if (fuelTime == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fuelTime 不能为空");
         }
 
         return new NormalizedFuelRecord(
                 vehicleName,
-                request.getFuelDate(),
+                fuelTime.toLocalDate(),
+                fuelTime,
                 odometerKm,
                 fuelVolume,
+                machineUnitPrice,
                 totalAmount,
+                discountAmount,
                 discountedAmount,
                 unitPrice,
                 fuelType,
                 fillType,
+                Boolean.TRUE.equals(request.getFuelWarningLight()),
+                request.getLastRecordKnown() == null || request.getLastRecordKnown(),
                 trimToNull(request.getStationName()),
                 trimToNull(request.getNote())
         );
@@ -495,13 +521,18 @@ public class FuelRecordService {
     private void applyNormalized(FuelRecord record, NormalizedFuelRecord normalized) {
         record.setVehicleName(normalized.vehicleName());
         record.setFuelDate(normalized.fuelDate());
+        record.setFuelTime(normalized.fuelTime());
         record.setOdometerKm(normalized.odometerKm());
         record.setFuelVolume(normalized.fuelVolume());
+        record.setMachineUnitPrice(normalized.machineUnitPrice());
         record.setTotalAmount(normalized.totalAmount());
+        record.setDiscountAmount(normalized.discountAmount());
         record.setDiscountedAmount(normalized.discountedAmount());
         record.setUnitPrice(normalized.unitPrice());
         record.setFuelType(normalized.fuelType());
         record.setFillType(normalized.fillType());
+        record.setFuelWarningLight(normalized.fuelWarningLight());
+        record.setLastRecordKnown(normalized.lastRecordKnown());
         record.setStationName(normalized.stationName());
         record.setNote(normalized.note());
     }
@@ -535,13 +566,18 @@ public class FuelRecordService {
 
     private record NormalizedFuelRecord(String vehicleName,
                                         LocalDate fuelDate,
+                                        LocalDateTime fuelTime,
                                         BigDecimal odometerKm,
                                         BigDecimal fuelVolume,
+                                        BigDecimal machineUnitPrice,
                                         BigDecimal totalAmount,
+                                        BigDecimal discountAmount,
                                         BigDecimal discountedAmount,
                                         BigDecimal unitPrice,
                                         String fuelType,
                                         String fillType,
+                                        boolean fuelWarningLight,
+                                        boolean lastRecordKnown,
                                         String stationName,
                                         String note) {
     }

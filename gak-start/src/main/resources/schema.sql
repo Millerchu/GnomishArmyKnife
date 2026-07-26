@@ -585,18 +585,29 @@ CREATE TABLE IF NOT EXISTS gak_fuel_record (
     owner_user_id BIGINT NOT NULL,
     vehicle_name VARCHAR(64) NOT NULL,
     fuel_date DATE NOT NULL,
+    fuel_time TIMESTAMP,
     odometer_km NUMERIC(10, 1) NOT NULL,
     fuel_volume NUMERIC(8, 2) NOT NULL,
+    machine_unit_price NUMERIC(8, 3),
     total_amount NUMERIC(10, 2) NOT NULL,
+    discount_amount NUMERIC(10, 2),
     discounted_amount NUMERIC(10, 2) NOT NULL,
     unit_price NUMERIC(8, 3) NOT NULL,
     fuel_type VARCHAR(16) NOT NULL,
     fill_type VARCHAR(16) NOT NULL,
+    fuel_warning_light BOOLEAN NOT NULL DEFAULT FALSE,
+    last_record_known BOOLEAN NOT NULL DEFAULT TRUE,
     station_name VARCHAR(128),
     note VARCHAR(500),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
+
+ALTER TABLE gak_fuel_record ADD COLUMN IF NOT EXISTS fuel_time TIMESTAMP;
+ALTER TABLE gak_fuel_record ADD COLUMN IF NOT EXISTS machine_unit_price NUMERIC(8, 3);
+ALTER TABLE gak_fuel_record ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2);
+ALTER TABLE gak_fuel_record ADD COLUMN IF NOT EXISTS fuel_warning_light BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE gak_fuel_record ADD COLUMN IF NOT EXISTS last_record_known BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS gak_fuel_vehicle (
     id BIGINT PRIMARY KEY,
