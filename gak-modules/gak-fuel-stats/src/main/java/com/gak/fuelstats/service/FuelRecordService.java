@@ -58,7 +58,7 @@ public class FuelRecordService {
     private static final BigDecimal ZERO_UNIT_PRICE = BigDecimal.ZERO.setScale(UNIT_PRICE_SCALE, RoundingMode.HALF_UP);
     private static final BigDecimal ZERO_CONSUMPTION = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
-    private static final List<String> ALLOWED_FUEL_TYPES = List.of("92", "95", "98", "DIESEL");
+    private static final List<String> ALLOWED_FUEL_TYPES = List.of("92", "95", "98", "DIESEL", "ELECTRIC");
     private static final List<String> ALLOWED_FILL_TYPES = List.of("FULL", "PARTIAL");
     private static final DateTimeFormatter MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MM月", Locale.CHINA);
 

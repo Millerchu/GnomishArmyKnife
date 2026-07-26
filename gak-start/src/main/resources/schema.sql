@@ -598,6 +598,17 @@ CREATE TABLE IF NOT EXISTS gak_fuel_record (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_fuel_vehicle (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    vehicle_name VARCHAR(64) NOT NULL,
+    energy_type VARCHAR(16) NOT NULL,
+    default_fuel_type VARCHAR(16) NOT NULL,
+    default_vehicle BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gak_fuel_price_snapshot (
     id BIGINT PRIMARY KEY,
     publish_date TIMESTAMP NOT NULL,
@@ -636,6 +647,10 @@ CREATE INDEX IF NOT EXISTS idx_fuel_record_owner_date
     ON gak_fuel_record (owner_user_id, fuel_date DESC, odometer_km DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fuel_record_owner_vehicle_date
     ON gak_fuel_record (owner_user_id, vehicle_name, fuel_date ASC, odometer_km ASC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_fuel_vehicle_owner_name
+    ON gak_fuel_vehicle (owner_user_id, vehicle_name);
+CREATE INDEX IF NOT EXISTS idx_fuel_vehicle_owner_default
+    ON gak_fuel_vehicle (owner_user_id, default_vehicle DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fuel_price_snapshot_publish_date
     ON gak_fuel_price_snapshot (publish_date DESC, updated_at DESC);
 
