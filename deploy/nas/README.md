@@ -43,7 +43,7 @@ FRONTEND_ROOT=/你的路径/GnomishArmyKnife-Web ./deploy/nas/scripts/build-imag
 
 | 服务 | 容器内端口 | NAS 对外端口 | 说明 |
 | --- | --- | --- | --- |
-| `gak-web` | `80` | `18080` | 浏览器访问入口 |
+| `gak-web` | `80` | `18088` | NAS 本机反向代理入口 |
 | `gak-app` | `8080` | `127.0.0.1:18081` | 默认只给 NAS 本机调试 |
 | `postgres` | `5432` | `127.0.0.1:25432` | 默认只给 NAS 本机调试 |
 | `redis` | `6379` | 不暴露 | 默认不启动 |
@@ -51,10 +51,11 @@ FRONTEND_ROOT=/你的路径/GnomishArmyKnife-Web ./deploy/nas/scripts/build-imag
 正常使用只需要访问：
 
 ```text
-http://NAS_IP:18080
+内网：http://NAS_HOST:9999/gak/
+外网：https://你的设备域名.ug.link/gak/
 ```
 
-前端请求 `/api/auth/login` 时，Nginx 会转发到后端的 `/auth/login`，所以浏览器端不需要直接访问后端端口。
+`WEB_PORT` 只供 NAS 本机 Nginx 反向代理使用。浏览器统一通过 NAS 同源路径 `/gak/` 访问，前端请求 `/gak/api/auth/login` 时会依次经过 NAS Nginx 和前端容器 Nginx，再转发到后端 `/auth/login`。UGOS 外网隧道会透传该同源路径，因此不需要把 Docker 端口暴露到公网。
 
 ## 三、NAS 前置准备
 
@@ -107,7 +108,7 @@ vi .env
 至少修改这些值：
 
 ```env
-WEB_PORT=18080
+WEB_PORT=18088
 POSTGRES_PASSWORD=换成强密码
 REDIS_PASSWORD=换成强密码
 ```
@@ -133,7 +134,7 @@ docker compose --env-file .env -f docker-compose.yml ps
 浏览器访问：
 
 ```text
-http://NAS_IP:18080
+http://NAS_IP:18088
 ```
 
 ## 五、可选方式：在 NAS 上直接构建
@@ -165,10 +166,15 @@ vi .env
 TZ=Asia/Shanghai
 IMAGE_TAG=1.0.0
 
-WEB_PORT=18080
+WEB_PORT=18088
 APP_BIND=127.0.0.1
 APP_PORT=18081
 JAVA_OPTS=-Xms256m -Xmx768m
+
+GAK_NAS_SSO_ENABLED=true
+GAK_NAS_BASE_URL=http://host.docker.internal:9999
+GAK_NAS_SSO_SESSION_TTL=PT15M
+GAK_NAS_SSO_CODE_TTL=PT30S
 
 POSTGRES_BIND=127.0.0.1
 POSTGRES_PORT=25432
@@ -189,6 +195,7 @@ REDIS_PASSWORD=change_me_redis_password
 - `POSTGRES_PORT` 默认是 `25432`，只用于 NAS 本机调试数据库。如果该端口也被占用，可以继续改成其他未占用端口，例如 `25433`。
 - `APP_BIND` 和 `POSTGRES_BIND` 默认是 `127.0.0.1`，表示只允许 NAS 本机访问。若确实需要局域网访问数据库，可改为 `0.0.0.0`，但不建议长期开放。
 - `SPRING_SQL_INIT_MODE=always` 会在每次后端启动时执行 `schema.sql`。当前 SQL 基本按幂等方式编写，生产稳定后也可以改成 `never`，避免启动时反复检查结构和种子数据。
+- NAS SSO 的交换码默认 30 秒失效且仅可使用一次；由 NAS 登录得到的 GAK 会话默认 15 分钟失效。
 
 ## 七、常用运维命令
 
@@ -340,7 +347,7 @@ SPRING_DATA_REDIS_PASSWORD=你的Redis密码
 4. 项目目录选择 `/volume1/Projects/GAK-App`。
 5. Compose 内容使用 `docker-compose.yml`。
 6. 环境变量使用 `.env` 中的内容。
-7. 启动项目后，访问 `http://NAS_IP:18080`。
+7. 启动项目后，通过 NAS 同源入口 `http://NAS_HOST:9999/gak/` 访问。
 
 图形界面的字段名称可能随绿联系统版本变化；如果找不到 Compose 项目入口，直接使用本文命令行方式最稳定。
 
@@ -407,3 +414,47 @@ mv data/postgres data/postgres.bak.$(date +%Y%m%d_%H%M%S)
 ```
 
 这会生成一个全新的数据库目录。旧目录只是改名保留，没有删除。
+
+## 十三、NAS 单点登录桥接
+
+普通 Compose 应用无法直接使用只面向 `inner` 应用的 UGOS 登录认证能力，因此这里仅在 NAS 管理页同源下托管两个经过审计的静态桥接文件。桥接页读取 `proConfig.accessInfo.api_token` 和 `token_where`，不读取 `proUserInfo.username`，并通过表单正文把 token 交给 GAK 后端。
+
+部署完成后，在 NAS 部署目录执行：
+
+```bash
+cd /volume1/Projects/GAK-App
+./scripts/install-sso-bridge.sh
+```
+
+脚本会完成以下操作：
+
+- 渲染并安装 `/volume1/Projects/GAK-App/sso-bridge/bridge.html` 与 `bridge.js`。
+- 备份已有 `/etc/nginx/conf.d/gak_sso_bridge.conf`。
+- 安装 `/gak-sso/` 静态桥接和 `/gak/` 本机反向代理；桥接页设置严格 CSP 并禁止缓存。
+- 执行 `nginx -t`；失败时自动恢复旧配置，成功后 reload。
+
+安装后入口为：
+
+```text
+内网自动登录：http://NAS_HOST:9999/gak/
+内网手工登录：http://NAS_HOST:9999/gak/syslogin
+外网自动登录：https://你的设备域名.ug.link/gak/
+外网手工登录：https://你的设备域名.ug.link/gak/syslogin
+NAS 桥接页：当前 NAS origin 下的 /gak-sso/bridge.html
+```
+
+GAK 前端容器仍兼容旧的 `/`、`/login` 和 `/syslogin` 地址，并重定向到 `/gak/` 下的新入口。若 NAS 桌面快捷方式支持相对地址，建议改为 `/gak/`。
+
+固件升级后如果 Nginx 自定义配置被清除，重新运行安装脚本即可。需要回滚时执行：
+
+```bash
+./scripts/uninstall-sso-bridge.sh
+```
+
+回滚脚本会把 Nginx 配置改名保留，验证配置并 reload；此时仍可从 Compose 的 `WEB_PORT` 访问 `/gak/syslogin`。内网使用 NAS HTTP 地址，外网使用 UGOS 提供的 HTTPS `ug.link` 地址，回调采用同源相对路径，不再依赖固定域名。
+
+桥接静态文件的本地契约测试：
+
+```bash
+node ./scripts/test-sso-bridge.mjs
+```

@@ -1,0 +1,35 @@
+location = /gak-sso/bridge.html {
+    alias __GAK_SSO_BRIDGE_DIR__/bridge.html;
+
+    add_header Cache-Control "no-store, no-cache, must-revalidate, private" always;
+    add_header Pragma "no-cache" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" always;
+}
+
+location = /gak-sso/bridge.js {
+    alias __GAK_SSO_BRIDGE_DIR__/bridge.js;
+
+    add_header Cache-Control "no-store, no-cache, must-revalidate, private" always;
+    add_header Pragma "no-cache" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" always;
+}
+
+location ^~ /gak-sso/ {
+    return 404;
+}
+
+location ^~ /gak/ {
+    proxy_pass http://127.0.0.1:__GAK_WEB_PORT__/gak/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    client_max_body_size 200m;
+}

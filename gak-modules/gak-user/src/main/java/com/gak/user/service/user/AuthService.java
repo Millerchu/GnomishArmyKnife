@@ -13,6 +13,7 @@ import com.gak.user.service.user.UserValidationSupport.StatusEnabledPair;
 import com.gak.user.vo.user.UserLoginVO;
 import com.gak.user.vo.user.UserProfileVO;
 import jakarta.servlet.http.HttpSession;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -110,6 +111,44 @@ public class AuthService {
         user.setUpdatedAt(now);
 
         return new UserLoginVO(tokenService.issueToken(user.getId()), toUserProfile(user));
+    }
+
+    /**
+     * 校验 NAS 同名用户是否可以登录，不接受 NAS 侧角色覆盖 GAK 权限。
+     */
+    public void requireNasLoginUser(String username) {
+        User user = getByUsername(normalizeUsername(username));
+        if (user == null) {
+            throw new BusinessException("NAS_SSO_USER_NOT_FOUND", "NAS 用户未在 GAK 中创建");
+        }
+        if (!isEnabled(user)) {
+            throw new BusinessException("USER_DISABLED", "用户已被禁用");
+        }
+    }
+
+    /**
+     * 为已通过 NAS 身份校验的同名用户签发限时 GAK 会话。
+     */
+    @Transactional
+    public UserLoginVO loginFromNas(String username, Duration sessionTtl) {
+        User user = getByUsername(normalizeUsername(username));
+        if (user == null) {
+            throw new BusinessException("NAS_SSO_USER_NOT_FOUND", "NAS 用户未在 GAK 中创建");
+        }
+        if (!isEnabled(user)) {
+            throw new BusinessException("USER_DISABLED", "用户已被禁用");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        User updatedUser = new User();
+        updatedUser.setId(user.getId());
+        updatedUser.setLastLoginTime(now);
+        updatedUser.setUpdatedAt(now);
+        userMapper.updateById(updatedUser);
+        user.setLastLoginTime(now);
+        user.setUpdatedAt(now);
+
+        return new UserLoginVO(tokenService.issueNasSsoToken(user.getId(), sessionTtl), toUserProfile(user));
     }
 
     @Transactional

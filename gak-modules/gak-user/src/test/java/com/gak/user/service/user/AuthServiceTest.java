@@ -5,7 +5,9 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.user.domain.user.User;
 import com.gak.user.dto.user.RegisterRequest;
 import com.gak.user.mapper.user.UserMapper;
+import com.gak.user.vo.user.UserLoginVO;
 import com.gak.user.vo.user.UserProfileVO;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,5 +93,52 @@ class AuthServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> authService.register(request));
         assertEquals("PASSWORD_MISMATCH", exception.getCode());
+    }
+
+    @Test
+    void nasLoginShouldKeepRoleFromGakUser() {
+        User user = new User();
+        user.setId(1000L);
+        user.setUsername("millerchu");
+        user.setDisplayName("Miller");
+        user.setRoleCode("USER");
+        user.setStatus("ENABLED");
+        user.setEnabled(true);
+        Duration sessionTtl = Duration.ofMinutes(15);
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(tokenService.issueNasSsoToken(1000L, sessionTtl)).thenReturn("gak-token");
+
+        UserLoginVO result = authService.loginFromNas("millerchu", sessionTtl);
+
+        assertEquals("gak-token", result.token());
+        assertEquals("USER", result.user().getRoleCode());
+        verify(tokenService).issueNasSsoToken(1000L, sessionTtl);
+    }
+
+    @Test
+    void disabledNasMappedUserShouldBeRejected() {
+        User user = new User();
+        user.setId(1000L);
+        user.setUsername("millerchu");
+        user.setRoleCode("ADMIN");
+        user.setStatus("DISABLED");
+        user.setEnabled(false);
+        when(userMapper.selectOne(any())).thenReturn(user);
+
+        BusinessException exception =
+                assertThrows(BusinessException.class, () -> authService.requireNasLoginUser("millerchu"));
+
+        assertEquals("USER_DISABLED", exception.getCode());
+    }
+
+    @Test
+    void missingNasMappedUserShouldBeRejectedWithoutCreatingAccount() {
+        when(userMapper.selectOne(any())).thenReturn(null);
+
+        BusinessException exception =
+                assertThrows(BusinessException.class, () -> authService.requireNasLoginUser("unknown"));
+
+        assertEquals("NAS_SSO_USER_NOT_FOUND", exception.getCode());
+        verify(userMapper, never()).insert(any(User.class));
     }
 }

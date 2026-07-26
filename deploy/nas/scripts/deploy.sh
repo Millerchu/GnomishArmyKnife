@@ -77,6 +77,8 @@ build_image() {
 # 1. Build Images
 ########################
 echo "[1/7] Build docker images..."
+(cd "${BACKEND_ROOT}" && ./mvnw -B -pl gak-start -am test \
+  -Dtest=GakStartApplicationTests -Dsurefire.failIfNoSpecifiedTests=false)
 (cd "${BACKEND_ROOT}" && ./mvnw -B -DskipTests clean package)
 build_image -f "${DEPLOY_DIR}/Dockerfile.prebuilt" -t "${BACKEND_IMAGE_NAME}:${IMAGE_TAG}" "${BACKEND_ROOT}"
 (cd "${FRONTEND_ROOT}" && npm ci && npm run build)
@@ -92,7 +94,8 @@ docker save "${BACKEND_IMAGE_NAME}:${IMAGE_TAG}" "${FRONTEND_IMAGE_NAME}:${IMAGE
 # 3. Pack deploy files
 ########################
 echo "[3/7] Package deploy files..."
-tar --no-xattrs -C "${DEPLOY_DIR}" -zcf "${BUNDLE_TGZ}" docker-compose.yml .env.example scripts
+tar --no-xattrs -C "${DEPLOY_DIR}" -zcf "${BUNDLE_TGZ}" \
+  docker-compose.yml .env.example scripts sso-bridge nginx
 
 ########################
 # 4. Upload
@@ -132,6 +135,9 @@ if [ ! -f .env ]; then
 fi
 
 chmod +x scripts/*.sh
+
+echo "Install NAS SSO bridge..."
+./scripts/install-sso-bridge.sh
 
 echo "Start services..."
 DOCKER_CMD="${REMOTE_DOCKER_CMD}" ./scripts/up.sh

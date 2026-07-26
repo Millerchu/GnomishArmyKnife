@@ -7,7 +7,7 @@ services:
       gak-app:
         condition: service_started
     ports:
-      - "${WEB_PORT:-18080}:80"
+      - "${WEB_PORT:-18088}:80"
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     networks:
@@ -22,6 +22,8 @@ services:
         condition: service_healthy
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-18081}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - JAVA_OPTS=${JAVA_OPTS:--Xms256m -Xmx768m}
@@ -33,6 +35,10 @@ services:
       - GAK_DATA_MIGRATION_STORAGE_DIR=/app/data/data-migrations
       - GAK_HEALTH_FILE_LOCAL_DIR=/app/data/health-records
       - GAK_ATTACHMENT_STORAGE_ROOT=/app/data
+      - GAK_NAS_SSO_ENABLED=${GAK_NAS_SSO_ENABLED:-true}
+      - GAK_NAS_BASE_URL=${GAK_NAS_BASE_URL:-http://host.docker.internal:9999}
+      - GAK_NAS_SSO_SESSION_TTL=${GAK_NAS_SSO_SESSION_TTL:-PT15M}
+      - GAK_NAS_SSO_CODE_TTL=${GAK_NAS_SSO_CODE_TTL:-PT30S}
     volumes:
       - ./data/app:/app/data
     networks:

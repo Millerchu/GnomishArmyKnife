@@ -75,6 +75,8 @@ build_image() {
 }
 
 echo "[1/6] Build images locally ..."
+(cd "${BACKEND_ROOT}" && ./mvnw -B -pl gak-start -am test \
+  -Dtest=GakStartApplicationTests -Dsurefire.failIfNoSpecifiedTests=false)
 (cd "${BACKEND_ROOT}" && ./mvnw -B -DskipTests clean package)
 build_image -f "${DEPLOY_DIR}/Dockerfile.prebuilt" -t "gak-app:${IMAGE_TAG}" "${BACKEND_ROOT}"
 (cd "${FRONTEND_ROOT}" && npm ci && npm run build)
@@ -84,7 +86,8 @@ echo "[2/6] Save images as tar ..."
 docker save "gak-app:${IMAGE_TAG}" "gak-web:${IMAGE_TAG}" -o "${DIST_DIR}/gak-images-${IMAGE_TAG}.tar"
 
 echo "[3/6] Pack deploy files ..."
-tar --no-xattrs -C "${DEPLOY_DIR}" -czf "${DIST_DIR}/deploy-nas.tar.gz" docker-compose.yml .env.example scripts
+tar --no-xattrs -C "${DEPLOY_DIR}" -czf "${DIST_DIR}/deploy-nas.tar.gz" \
+  docker-compose.yml .env.example scripts sso-bridge nginx
 
 echo "[4/6] Upload to NAS ..."
 ssh -p "${SSH_PORT}" "${NAS_HOST}" "mkdir -p '${NAS_SSH_DIR}'"
@@ -97,4 +100,5 @@ ssh -tt -p "${SSH_PORT}" "${NAS_HOST}" "cd '${NAS_SSH_DIR}' && ${REMOTE_DOCKER_C
 echo "[6/6] Done. On NAS run:"
 echo "cd ${NAS_SSH_DIR}"
 echo "cp .env.example .env && vi .env"
+echo "./scripts/install-sso-bridge.sh"
 echo "DOCKER_CMD=\"${REMOTE_DOCKER_CMD}\" ./scripts/up.sh"
