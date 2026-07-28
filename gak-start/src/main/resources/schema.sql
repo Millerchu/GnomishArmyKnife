@@ -318,6 +318,37 @@ CREATE TABLE IF NOT EXISTS gak_todo_item_step (
         FOREIGN KEY (task_id) REFERENCES gak_todo_item (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS gak_requirement (
+    id BIGINT PRIMARY KEY,
+    creator_user_id BIGINT NOT NULL,
+    app_code VARCHAR(64) NOT NULL,
+    app_name VARCHAR(64) NOT NULL,
+    title VARCHAR(100) NOT NULL,
+    description TEXT,
+    status VARCHAR(32) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+ALTER TABLE gak_requirement ADD COLUMN IF NOT EXISTS app_code VARCHAR(64);
+ALTER TABLE gak_requirement ADD COLUMN IF NOT EXISTS app_name VARCHAR(64);
+UPDATE gak_requirement SET app_code = 'APP_GENERAL' WHERE app_code IS NULL OR TRIM(app_code) = '';
+UPDATE gak_requirement SET app_name = '通用' WHERE app_name IS NULL OR TRIM(app_name) = '';
+ALTER TABLE gak_requirement ALTER COLUMN app_code SET NOT NULL;
+ALTER TABLE gak_requirement ALTER COLUMN app_name SET NOT NULL;
+
+CREATE TABLE IF NOT EXISTS gak_requirement_progress_log (
+    id BIGINT PRIMARY KEY,
+    requirement_id BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    remark VARCHAR(300),
+    operator_user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_requirement_progress_log_requirement
+        FOREIGN KEY (requirement_id) REFERENCES gak_requirement (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS gak_work_log (
     id BIGINT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -531,6 +562,12 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_entry_status_updated_at ON gak_knowledg
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_status_updated_at ON gak_knowledge_entry (owner_user_id, status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_step_task_sort ON gak_todo_item_step (task_id, sort_no);
+CREATE INDEX IF NOT EXISTS idx_requirement_status_updated ON gak_requirement (status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_requirement_creator_updated ON gak_requirement (creator_user_id, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_requirement_app_status_updated
+    ON gak_requirement (app_code, status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_requirement_progress_log_requirement_created
+    ON gak_requirement_progress_log (requirement_id, created_at ASC, id ASC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_system_app_code ON gak_system_app (app_code);
 CREATE INDEX IF NOT EXISTS idx_system_app_enabled_sort ON gak_system_app (enabled, sort_no, id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_user_app_permission_user_code ON gak_user_app_permission (user_id, app_code);

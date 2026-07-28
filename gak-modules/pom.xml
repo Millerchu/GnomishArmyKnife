@@ -32,6 +32,7 @@
         <module>gak-health-record</module>
         <module>gak-knowledge-base</module>
         <module>gak-instrument-practice</module>
+        <module>gak-requirement-board</module>
     </modules>
 
 </project>
