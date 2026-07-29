@@ -65,6 +65,7 @@ class RequirementBoardServiceTest {
         request.setAppCode("APP_TODO_LIST");
         request.setTitle("支持导出需求列表");
         request.setDescription("希望能按状态导出当前看板。");
+        request.setPriority("HIGH");
 
         requirementBoardService.create(1L, request);
 
@@ -75,6 +76,7 @@ class RequirementBoardServiceTest {
         assertEquals("PENDING_REVIEW", requirementCaptor.getValue().getStatus());
         assertEquals("APP_TODO_LIST", requirementCaptor.getValue().getAppCode());
         assertEquals("待办清单", requirementCaptor.getValue().getAppName());
+        assertEquals("HIGH", requirementCaptor.getValue().getPriority());
         assertEquals(1L, requirementCaptor.getValue().getVersion());
         assertEquals("提交需求", logCaptor.getValue().getRemark());
         assertEquals("PENDING_REVIEW", logCaptor.getValue().getStatus());
@@ -139,6 +141,7 @@ class RequirementBoardServiceTest {
         request.setAppCode("APP_TODO_LIST");
         request.setTitle("新标题");
         request.setDescription("补充后的描述");
+        request.setPriority("LOW");
         request.setVersion(1L);
 
         requirementBoardService.updateContent(1L, 100L, request);
@@ -148,7 +151,26 @@ class RequirementBoardServiceTest {
         assertEquals("新标题", captor.getValue().getTitle());
         assertEquals("补充后的描述", captor.getValue().getDescription());
         assertEquals("APP_TODO_LIST", captor.getValue().getAppCode());
+        assertEquals("LOW", captor.getValue().getPriority());
         assertEquals(2L, captor.getValue().getVersion());
+    }
+
+    @Test
+    void createShouldRejectInvalidPriority() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "提交者", "USER"));
+        when(requirementAppMapper.selectEnabledAppByCode("APP_TODO_LIST"))
+                .thenReturn(buildApp("APP_TODO_LIST", "待办清单"));
+
+        CreateRequirementRequest request = new CreateRequirementRequest();
+        request.setAppCode("APP_TODO_LIST");
+        request.setTitle("非法优先级需求");
+        request.setPriority("URGENT");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> requirementBoardService.create(1L, request));
+
+        assertEquals("REQUIREMENT_PRIORITY_INVALID", exception.getCode());
+        verify(requirementMapper, never()).insert(any(Requirement.class));
     }
 
     @Test
@@ -235,6 +257,7 @@ class RequirementBoardServiceTest {
         requirement.setAppCode("APP_TODO_LIST");
         requirement.setAppName("待办清单");
         requirement.setTitle(title);
+        requirement.setPriority("MEDIUM");
         requirement.setStatus(status);
         requirement.setVersion(version);
         requirement.setCreatedAt(LocalDateTime.now().minusDays(1));

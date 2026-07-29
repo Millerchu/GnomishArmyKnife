@@ -21,6 +21,10 @@ public class UpdateRequirementRequest {
     @Size(max = 2000, message = "需求描述长度不能超过 2000")
     private String description;
 
+    @NotBlank(message = "需求优先级不能为空")
+    @Size(max = 16, message = "需求优先级长度不能超过 16")
+    private String priority;
+
     @NotNull(message = "version 不能为空")
     @Positive(message = "version 必须大于 0")
     private Long version;
@@ -47,6 +51,14 @@ public class UpdateRequirementRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
     }
 
     public Long getVersion() {

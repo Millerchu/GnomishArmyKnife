@@ -25,6 +25,9 @@ public class RequirementQueryRequest {
     @Size(max = 64, message = "appCode 长度不能超过 64")
     private String appCode;
 
+    @Size(max = 16, message = "priority 长度不能超过 16")
+    private String priority;
+
     public long getPageNo() {
         return pageNo;
     }
@@ -63,5 +66,13 @@ public class RequirementQueryRequest {
 
     public void setAppCode(String appCode) {
         this.appCode = appCode;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
     }
 }

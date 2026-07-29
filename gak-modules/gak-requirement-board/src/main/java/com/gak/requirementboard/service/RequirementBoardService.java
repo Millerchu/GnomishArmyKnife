@@ -9,6 +9,7 @@ import com.gak.requirementboard.dto.CreateRequirementRequest;
 import com.gak.requirementboard.dto.RequirementQueryRequest;
 import com.gak.requirementboard.dto.UpdateRequirementProgressRequest;
 import com.gak.requirementboard.dto.UpdateRequirementRequest;
+import com.gak.requirementboard.enums.RequirementPriority;
 import com.gak.requirementboard.enums.RequirementStatus;
 import com.gak.requirementboard.mapper.RequirementMapper;
 import com.gak.requirementboard.mapper.RequirementAppMapper;
@@ -70,6 +71,7 @@ public class RequirementBoardService {
         ensureCurrentUserExists(currentUserId);
         String normalizedStatus = normalizeOptionalStatus(request.getStatus());
         String normalizedAppCode = normalizeOptionalAppCode(request.getAppCode());
+        String normalizedPriority = normalizeOptionalPriority(request.getPriority());
         String keyword = trimToNull(request.getKeyword());
 
         QueryWrapper<Requirement> wrapper = new QueryWrapper<>();
@@ -78,6 +80,9 @@ public class RequirementBoardService {
         }
         if (normalizedAppCode != null) {
             wrapper.eq("app_code", normalizedAppCode);
+        }
+        if (normalizedPriority != null) {
+            wrapper.eq("priority", normalizedPriority);
         }
         if (keyword != null) {
             wrapper.and(condition -> condition.like("title", keyword).or().like("description", keyword));
@@ -137,6 +142,7 @@ public class RequirementBoardService {
         requirement.setAppName(app.getAppName());
         requirement.setTitle(trimRequired(request.getTitle(), "需求标题不能为空"));
         requirement.setDescription(trimToNull(request.getDescription()));
+        requirement.setPriority(normalizeRequiredPriority(request.getPriority()));
         requirement.setStatus(RequirementStatus.PENDING_REVIEW.name());
         requirement.setVersion(1L);
         requirement.setCreatedAt(now);
@@ -168,7 +174,8 @@ public class RequirementBoardService {
         RequirementAppOptionVO app = getEnabledAppOrThrow(request.getAppCode());
         LocalDateTime now = LocalDateTime.now();
         updateRequirementOrThrow(id, request.getVersion(), null, app,
-                trimRequired(request.getTitle(), "需求标题不能为空"), trimToNull(request.getDescription()), now);
+                trimRequired(request.getTitle(), "需求标题不能为空"), trimToNull(request.getDescription()),
+                normalizeRequiredPriority(request.getPriority()), now);
         return getDetail(currentUserId, id);
     }
 
@@ -184,7 +191,7 @@ public class RequirementBoardService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        updateRequirementOrThrow(id, request.getVersion(), normalizedStatus, null, null, null, now);
+        updateRequirementOrThrow(id, request.getVersion(), normalizedStatus, null, null, null, null, now);
 
         RequirementProgressLog progressLog = new RequirementProgressLog();
         progressLog.setRequirementId(id);
@@ -220,6 +227,7 @@ public class RequirementBoardService {
                                           RequirementAppOptionVO app,
                                           String title,
                                           String description,
+                                          String priority,
                                           LocalDateTime updatedAt) {
         Requirement updated = new Requirement();
         if (status != null) {
@@ -232,6 +240,9 @@ public class RequirementBoardService {
         if (title != null) {
             updated.setTitle(title);
             updated.setDescription(description);
+        }
+        if (priority != null) {
+            updated.setPriority(priority);
         }
         updated.setVersion(version + 1L);
         updated.setUpdatedAt(updatedAt);
@@ -288,6 +299,20 @@ public class RequirementBoardService {
         return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
     }
 
+    private String normalizeOptionalPriority(String priority) {
+        String normalized = trimToNull(priority);
+        return normalized == null ? null : normalizeRequiredPriority(normalized);
+    }
+
+    private String normalizeRequiredPriority(String priority) {
+        String normalized = trimRequired(priority, "需求优先级不能为空").toUpperCase(Locale.ROOT);
+        try {
+            return RequirementPriority.valueOf(normalized).name();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("REQUIREMENT_PRIORITY_INVALID", "需求优先级不合法");
+        }
+    }
+
     private RequirementAppOptionVO getEnabledAppOrThrow(String appCode) {
         String normalizedAppCode = normalizeOptionalAppCode(appCode);
         if (normalizedAppCode == null) {
@@ -337,6 +362,7 @@ public class RequirementBoardService {
         target.setAppName(source.getAppName());
         target.setTitle(source.getTitle());
         target.setDescription(source.getDescription());
+        target.setPriority(source.getPriority());
         target.setStatus(source.getStatus());
         target.setVersion(source.getVersion());
         target.setCreatedAt(source.getCreatedAt());

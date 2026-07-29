@@ -18,6 +18,7 @@ public class Requirement {
     private String appName;
     private String title;
     private String description;
+    private String priority;
     private String status;
     private Long version;
     private LocalDateTime createdAt;
@@ -69,6 +70,14 @@ public class Requirement {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
     }
 
     public String getStatus() {

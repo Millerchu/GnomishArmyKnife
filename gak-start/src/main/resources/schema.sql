@@ -325,6 +325,7 @@ CREATE TABLE IF NOT EXISTS gak_requirement (
     app_name VARCHAR(64) NOT NULL,
     title VARCHAR(100) NOT NULL,
     description TEXT,
+    priority VARCHAR(16) NOT NULL DEFAULT 'MEDIUM',
     status VARCHAR(32) NOT NULL,
     version BIGINT NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL,
@@ -333,10 +334,14 @@ CREATE TABLE IF NOT EXISTS gak_requirement (
 
 ALTER TABLE gak_requirement ADD COLUMN IF NOT EXISTS app_code VARCHAR(64);
 ALTER TABLE gak_requirement ADD COLUMN IF NOT EXISTS app_name VARCHAR(64);
+ALTER TABLE gak_requirement ADD COLUMN IF NOT EXISTS priority VARCHAR(16);
 UPDATE gak_requirement SET app_code = 'APP_GENERAL' WHERE app_code IS NULL OR TRIM(app_code) = '';
 UPDATE gak_requirement SET app_name = '通用' WHERE app_name IS NULL OR TRIM(app_name) = '';
+UPDATE gak_requirement SET priority = 'MEDIUM' WHERE priority IS NULL OR TRIM(priority) = '';
 ALTER TABLE gak_requirement ALTER COLUMN app_code SET NOT NULL;
 ALTER TABLE gak_requirement ALTER COLUMN app_name SET NOT NULL;
+ALTER TABLE gak_requirement ALTER COLUMN priority SET DEFAULT 'MEDIUM';
+ALTER TABLE gak_requirement ALTER COLUMN priority SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS gak_requirement_progress_log (
     id BIGINT PRIMARY KEY,
@@ -566,6 +571,8 @@ CREATE INDEX IF NOT EXISTS idx_requirement_status_updated ON gak_requirement (st
 CREATE INDEX IF NOT EXISTS idx_requirement_creator_updated ON gak_requirement (creator_user_id, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_requirement_app_status_updated
     ON gak_requirement (app_code, status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_requirement_priority_updated
+    ON gak_requirement (priority, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_requirement_progress_log_requirement_created
     ON gak_requirement_progress_log (requirement_id, created_at ASC, id ASC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_system_app_code ON gak_system_app (app_code);

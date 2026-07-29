@@ -19,6 +19,10 @@ public class CreateRequirementRequest {
     @Size(max = 2000, message = "需求描述长度不能超过 2000")
     private String description;
 
+    @NotBlank(message = "需求优先级不能为空")
+    @Size(max = 16, message = "需求优先级长度不能超过 16")
+    private String priority;
+
     public String getAppCode() {
         return appCode;
     }
@@ -41,5 +45,13 @@ public class CreateRequirementRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
     }
 }
