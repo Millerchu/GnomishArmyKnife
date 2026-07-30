@@ -4,6 +4,7 @@ import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.fuelstats.dto.FuelRecordQueryRequest;
 import com.gak.fuelstats.dto.SaveFuelRecordRequest;
+import com.gak.fuelstats.service.FuelPriceService;
 import com.gak.fuelstats.service.FuelRecordService;
 import com.gak.fuelstats.vo.FuelLatestPricesVO;
 import com.gak.fuelstats.vo.FuelRecordVO;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -29,10 +31,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class FuelRecordController {
 
     private final FuelRecordService fuelRecordService;
+    private final FuelPriceService fuelPriceService;
     private final TokenService tokenService;
 
-    public FuelRecordController(FuelRecordService fuelRecordService, TokenService tokenService) {
+    public FuelRecordController(FuelRecordService fuelRecordService,
+                                FuelPriceService fuelPriceService,
+                                TokenService tokenService) {
         this.fuelRecordService = fuelRecordService;
+        this.fuelPriceService = fuelPriceService;
         this.tokenService = tokenService;
     }
 
@@ -87,11 +93,12 @@ public class FuelRecordController {
     }
 
     /**
-     * 查询当前维护的最新油价快照。
+     * 按省级地区查询最新油价。
      */
     @GetMapping("/latest-prices")
-    public ApiResponse<FuelLatestPricesVO> latestPrices() {
-        return ApiResponse.success(fuelRecordService.getLatestPrices());
+    public ApiResponse<FuelLatestPricesVO> latestPrices(
+            @RequestParam(defaultValue = FuelPriceService.DEFAULT_REGION) String region) {
+        return ApiResponse.success(fuelPriceService.getLatestPrices(region));
     }
 
     /**

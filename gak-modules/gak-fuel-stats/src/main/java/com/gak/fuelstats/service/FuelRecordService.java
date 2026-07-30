@@ -4,13 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.attachment.constant.AttachmentConstants;
 import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.response.PagedResult;
-import com.gak.fuelstats.domain.FuelPriceSnapshot;
 import com.gak.fuelstats.domain.FuelRecord;
 import com.gak.fuelstats.dto.FuelRecordQueryRequest;
 import com.gak.fuelstats.dto.SaveFuelRecordRequest;
-import com.gak.fuelstats.mapper.FuelPriceSnapshotMapper;
 import com.gak.fuelstats.mapper.FuelRecordMapper;
-import com.gak.fuelstats.vo.FuelLatestPricesVO;
 import com.gak.fuelstats.vo.FuelMonthlyReportItemVO;
 import com.gak.fuelstats.vo.FuelRecordVO;
 import com.gak.fuelstats.vo.FuelReportsVO;
@@ -50,7 +47,6 @@ public class FuelRecordService {
     private static final int UNIT_PRICE_SCALE = 3;
     private static final int RECENT_RECORD_LIMIT = 4;
     private static final int MONTH_REPORT_SIZE = 12;
-    private static final String LIMIT_ONE_SQL = "LIMIT 1";
     private static final String DEFAULT_VEHICLE_NAME = "未命名车辆";
     private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     private static final BigDecimal ZERO_VOLUME = BigDecimal.ZERO.setScale(VOLUME_SCALE, RoundingMode.HALF_UP);
@@ -63,16 +59,13 @@ public class FuelRecordService {
     private static final DateTimeFormatter MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MM月", Locale.CHINA);
 
     private final FuelRecordMapper fuelRecordMapper;
-    private final FuelPriceSnapshotMapper fuelPriceSnapshotMapper;
     private final UserMapper userMapper;
     private final AttachmentService attachmentService;
 
     public FuelRecordService(FuelRecordMapper fuelRecordMapper,
-                             FuelPriceSnapshotMapper fuelPriceSnapshotMapper,
                              UserMapper userMapper,
                              AttachmentService attachmentService) {
         this.fuelRecordMapper = fuelRecordMapper;
-        this.fuelPriceSnapshotMapper = fuelPriceSnapshotMapper;
         this.userMapper = userMapper;
         this.attachmentService = attachmentService;
     }
@@ -160,29 +153,6 @@ public class FuelRecordService {
         summary.setVehicleStats(buildVehicleStats(records));
         summary.setRecentRecords(records.stream().limit(RECENT_RECORD_LIMIT).toList());
         return summary;
-    }
-
-    /**
-     * 查询最新油价快照。
-     */
-    public FuelLatestPricesVO getLatestPrices() {
-        QueryWrapper<FuelPriceSnapshot> wrapper = new QueryWrapper<>();
-        wrapper.orderByDesc("publish_date").orderByDesc("updated_at").last(LIMIT_ONE_SQL);
-        FuelPriceSnapshot snapshot = fuelPriceSnapshotMapper.selectOne(wrapper);
-
-        FuelLatestPricesVO result = new FuelLatestPricesVO();
-        Map<String, BigDecimal> prices = new LinkedHashMap<>();
-        prices.put("92", scaleMoney(snapshot == null ? null : snapshot.getPrice92()));
-        prices.put("95", scaleMoney(snapshot == null ? null : snapshot.getPrice95()));
-        prices.put("98", scaleMoney(snapshot == null ? null : snapshot.getPrice98()));
-        prices.put("DIESEL", scaleMoney(snapshot == null ? null : snapshot.getPriceDiesel()));
-        result.setPublishDate(snapshot == null ? null : snapshot.getPublishDate());
-        result.setNextAdjustTime(snapshot == null ? null : snapshot.getNextAdjustTime());
-        result.setAdjustWindow(snapshot == null ? null : snapshot.getAdjustWindow());
-        result.setPriceChangeHint(snapshot == null ? null : snapshot.getPriceChangeHint());
-        result.setRemark(snapshot == null ? null : snapshot.getRemark());
-        result.setPrices(prices);
-        return result;
     }
 
     /**

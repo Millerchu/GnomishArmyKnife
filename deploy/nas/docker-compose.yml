@@ -33,6 +33,8 @@ services:
       - GAK_DATA_MIGRATION_STORAGE_DIR=/app/data/data-migrations
       - GAK_HEALTH_FILE_LOCAL_DIR=/app/data/health-records
       - GAK_ATTACHMENT_STORAGE_ROOT=/app/data
+      - GAK_FUEL_PRICE_JUHE_API_KEY=${GAK_FUEL_PRICE_JUHE_API_KEY:-}
+      - GAK_FUEL_PRICE_CACHE_MINUTES=${GAK_FUEL_PRICE_CACHE_MINUTES:-30}
     volumes:
       - ./data/app:/app/data
     networks:

@@ -2,6 +2,7 @@ package com.gak.fuelstats.vo;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,6 +15,11 @@ public class FuelLatestPricesVO {
     private String adjustWindow;
     private String priceChangeHint;
     private String remark;
+    private String region;
+    private String dataSource;
+    private Boolean onlineData;
+    private String dataNotice;
+    private List<String> supportedRegions;
     private Map<String, BigDecimal> prices;
 
     public LocalDateTime getPublishDate() {
@@ -54,6 +60,46 @@ public class FuelLatestPricesVO {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public String getDataSource() {
+        return dataSource;
+    }
+
+    public void setDataSource(String dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    public Boolean getOnlineData() {
+        return onlineData;
+    }
+
+    public void setOnlineData(Boolean onlineData) {
+        this.onlineData = onlineData;
+    }
+
+    public String getDataNotice() {
+        return dataNotice;
+    }
+
+    public void setDataNotice(String dataNotice) {
+        this.dataNotice = dataNotice;
+    }
+
+    public List<String> getSupportedRegions() {
+        return supportedRegions;
+    }
+
+    public void setSupportedRegions(List<String> supportedRegions) {
+        this.supportedRegions = supportedRegions;
     }
 
     public Map<String, BigDecimal> getPrices() {

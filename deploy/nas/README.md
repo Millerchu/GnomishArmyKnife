@@ -178,6 +178,9 @@ POSTGRES_PASSWORD=change_me_strong_password
 
 SPRING_SQL_INIT_MODE=always
 
+GAK_FUEL_PRICE_JUHE_API_KEY=在聚合数据申请的接口Key
+GAK_FUEL_PRICE_CACHE_MINUTES=30
+
 ENABLE_REDIS=false
 REDIS_PASSWORD=change_me_redis_password
 ```
@@ -189,6 +192,8 @@ REDIS_PASSWORD=change_me_redis_password
 - `POSTGRES_PORT` 默认是 `25432`，只用于 NAS 本机调试数据库。如果该端口也被占用，可以继续改成其他未占用端口，例如 `25433`。
 - `APP_BIND` 和 `POSTGRES_BIND` 默认是 `127.0.0.1`，表示只允许 NAS 本机访问。若确实需要局域网访问数据库，可改为 `0.0.0.0`，但不建议长期开放。
 - `SPRING_SQL_INIT_MODE=always` 会在每次后端启动时执行 `schema.sql`。当前 SQL 基本按幂等方式编写，生产稳定后也可以改成 `never`，避免启动时反复检查结构和种子数据。
+- `GAK_FUEL_PRICE_JUHE_API_KEY` 用于调用聚合数据“今日国内油价”接口。未配置或第三方暂时不可用时，油价页面会明确降级为本地快照。
+- `GAK_FUEL_PRICE_CACHE_MINUTES` 控制在线油价的内存缓存时间，默认 30 分钟，避免频繁消耗第三方接口调用额度。
 
 ## 七、常用运维命令
 
