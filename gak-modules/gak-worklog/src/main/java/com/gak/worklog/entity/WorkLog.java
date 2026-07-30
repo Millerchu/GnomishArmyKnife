@@ -21,6 +21,7 @@ public class WorkLog {
     private String location;
     private String projectCode;
     private String content;
+    private String workStatus;
     private String zentaoNo;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
@@ -78,6 +79,14 @@ public class WorkLog {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getWorkStatus() {
+        return workStatus;
+    }
+
+    public void setWorkStatus(String workStatus) {
+        this.workStatus = workStatus;
     }
 
     public String getZentaoNo() {

@@ -3,11 +3,13 @@ package com.gak.worklog.service;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.worklog.dto.CreateWorkLogRequest;
+import com.gak.worklog.dto.UnfinishedWorkItemResponse;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.entity.WorkLog;
 import com.gak.worklog.entity.WorkLogType;
+import com.gak.worklog.enums.WorkLogStatus;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.math.BigDecimal;
@@ -104,6 +106,54 @@ class WorkLogServiceTest {
         assertEquals(decimal("2.5"), response.getOvertimeHours());
         assertEquals(LocalTime.of(20, 30), response.getOffWorkTime());
         assertEquals(List.of("NORMAL", "BUSINESS_TRIP"), response.getTypeCodes());
+        assertEquals(WorkLogStatus.COMPLETED.name(), response.getStatus());
+    }
+
+    @Test
+    void createShouldPersistNormalizedUnfinishedStatus() {
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1012L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 7));
+        request.setStatus("unfinished");
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        ArgumentCaptor<WorkLog> captor = ArgumentCaptor.forClass(WorkLog.class);
+        verify(workLogMapper).insert(captor.capture());
+        assertEquals(WorkLogStatus.UNFINISHED.name(), captor.getValue().getWorkStatus());
+        assertEquals(WorkLogStatus.UNFINISHED.name(), response.getStatus());
+    }
+
+    @Test
+    void createShouldDefaultMissingStatusToCompleted() {
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1013L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 8));
+        request.setStatus(null);
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        assertEquals(WorkLogStatus.COMPLETED.name(), response.getStatus());
+    }
+
+    @Test
+    void createShouldRejectInvalidWorkStatus() {
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 9));
+        request.setStatus("IN_PROGRESS");
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> workLogService.create(1L, request)
+        );
+
+        assertEquals(BAD_REQUEST, exception.getStatusCode());
+        assertEquals("完成状态仅支持已完成或未完成", exception.getReason());
     }
 
     @Test
@@ -315,6 +365,19 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void updateShouldPreserveStoredStatusWhenLegacyRequestOmitsIt() {
+        WorkLog current = buildWorkLog();
+        current.setWorkStatus(WorkLogStatus.UNFINISHED.name());
+        when(workLogMapper.selectById(2001L)).thenReturn(current);
+        UpdateWorkLogRequest request = buildUpdateRequest(LocalDate.of(2026, 3, 23));
+        request.setStatus(null);
+
+        WorkLogResponse response = workLogService.update(1L, 2001L, request);
+
+        assertEquals(WorkLogStatus.UNFINISHED.name(), response.getStatus());
+    }
+
+    @Test
     void createShouldAcceptOvertimeAsIndependentType() {
         when(workLogMapper.countByUserDateAndProject(1L, LocalDate.of(2026, 4, 6), "GAK", null))
                 .thenReturn(0L);
@@ -358,6 +421,37 @@ class WorkLogServiceTest {
         assertEquals(Boolean.FALSE, result.get(0).getBusinessTripReimbursed());
         assertEquals("继续验证", result.get(0).getRemark());
         assertEquals("完成工作日志改版", result.get(0).getBrief());
+        assertEquals(WorkLogStatus.COMPLETED.name(), result.get(0).getStatus());
+    }
+
+    @Test
+    void listUnfinishedWorkItemsShouldReturnLatestUnfinishedCandidates() {
+        WorkLog unfinishedLog = buildWorkLog();
+        unfinishedLog.setWorkStatus(WorkLogStatus.UNFINISHED.name());
+        when(workLogMapper.selectLatestWorkItemsByStatus(
+                1L,
+                WorkLogStatus.UNFINISHED.name(),
+                20
+        )).thenReturn(List.of(unfinishedLog));
+
+        List<UnfinishedWorkItemResponse> result = workLogService.listUnfinishedWorkItems(1L, null);
+
+        assertEquals(1, result.size());
+        assertEquals(2001L, result.get(0).getId());
+        assertEquals("GAK", result.get(0).getProjectCode());
+        assertEquals("完成工作日志改版\n补充周报字段", result.get(0).getWorkItem());
+        assertEquals(WorkLogStatus.UNFINISHED.name(), result.get(0).getStatus());
+    }
+
+    @Test
+    void listUnfinishedWorkItemsShouldRejectOversizedLimit() {
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> workLogService.listUnfinishedWorkItems(1L, 101)
+        );
+
+        assertEquals(BAD_REQUEST, exception.getStatusCode());
+        assertEquals("limit 必须在 1 到 100 之间", exception.getReason());
     }
 
     private CreateWorkLogRequest buildBaseRequest(LocalDate logDate) {
@@ -368,6 +462,7 @@ class WorkLogServiceTest {
         request.setLocation("上海办公室");
         request.setProjectCode("GAK");
         request.setWorkItem("完成工作日志改版");
+        request.setStatus(WorkLogStatus.COMPLETED.name());
         request.setPersonDay(decimal("1.0"));
         request.setRemark("继续验证");
         return request;
@@ -380,6 +475,7 @@ class WorkLogServiceTest {
         request.setLocation("上海办公室");
         request.setProjectCode("GAK");
         request.setWorkItem("更新工作日志");
+        request.setStatus(WorkLogStatus.COMPLETED.name());
         request.setPersonDay(decimal("1.0"));
         request.setOffWorkTime(LocalTime.of(18, 0));
         return request;
@@ -393,6 +489,7 @@ class WorkLogServiceTest {
         workLog.setLocation("上海办公室");
         workLog.setProjectCode("GAK");
         workLog.setContent("完成工作日志改版\n补充周报字段");
+        workLog.setWorkStatus(WorkLogStatus.COMPLETED.name());
         workLog.setPersonDay(decimal("1.0"));
         workLog.setOvertimeHours(decimal("2.0"));
         workLog.setOffWorkTime(LocalTime.of(20, 0));

@@ -3,6 +3,7 @@ package com.gak.worklog.controller;
 import com.gak.framework.response.ApiResponse;
 import com.gak.user.service.user.TokenService;
 import com.gak.worklog.dto.CreateWorkLogRequest;
+import com.gak.worklog.dto.UnfinishedWorkItemResponse;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
 import com.gak.worklog.dto.WorkLogResponse;
@@ -107,6 +108,20 @@ public class WorkLogController {
             HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(workLogService.list(currentUserId, startDate, endDate, typeCode));
+    }
+
+    /**
+     * 查询新增日志时可快速带入的未完成工作内容。
+     *
+     * @param limit 返回条数，默认 20
+     * @return 未完成工作内容
+     */
+    @GetMapping("/unfinished-items")
+    public ApiResponse<List<UnfinishedWorkItemResponse>> listUnfinishedWorkItems(
+            @RequestParam(value = "limit", required = false) Integer limit,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.listUnfinishedWorkItems(currentUserId, limit));
     }
 
     /**

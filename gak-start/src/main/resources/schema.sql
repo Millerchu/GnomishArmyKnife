@@ -361,6 +361,7 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     location VARCHAR(64),
     project_code VARCHAR(128),
     content TEXT NOT NULL,
+    work_status VARCHAR(16) NOT NULL DEFAULT 'COMPLETED',
     zentao_no VARCHAR(255),
     person_day NUMERIC(4, 1) NOT NULL,
     overtime_hours NUMERIC(4, 1),
@@ -371,6 +372,7 @@ CREATE TABLE IF NOT EXISTS gak_work_log (
     remark VARCHAR(500),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT ck_work_log_status CHECK (work_status IN ('COMPLETED', 'UNFINISHED')),
     CONSTRAINT uk_work_log_user_date UNIQUE (user_id, log_date)
     );
 
@@ -509,11 +511,20 @@ ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_storage_type VARCHAR(32
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS icon_file_name VARCHAR(255);
 ALTER TABLE gak_system_app ADD COLUMN IF NOT EXISTS data_source_mode VARCHAR(16) NOT NULL DEFAULT 'DEMO';
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS off_work_time TIME;
+ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS work_status VARCHAR(16) NOT NULL DEFAULT 'COMPLETED';
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_scene VARCHAR(32);
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_amount NUMERIC(8, 2) NOT NULL DEFAULT 0;
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE;
 UPDATE gak_work_log SET business_trip_allowance_amount = 0 WHERE business_trip_allowance_amount IS NULL;
 UPDATE gak_work_log SET business_trip_reimbursed = FALSE WHERE business_trip_reimbursed IS NULL;
+UPDATE gak_work_log
+SET work_status = 'COMPLETED'
+WHERE work_status IS NULL OR work_status NOT IN ('COMPLETED', 'UNFINISHED');
+ALTER TABLE gak_work_log ALTER COLUMN work_status SET DEFAULT 'COMPLETED';
+ALTER TABLE gak_work_log ALTER COLUMN work_status SET NOT NULL;
+ALTER TABLE gak_work_log DROP CONSTRAINT IF EXISTS ck_work_log_status;
+ALTER TABLE gak_work_log
+    ADD CONSTRAINT ck_work_log_status CHECK (work_status IN ('COMPLETED', 'UNFINISHED'));
 ALTER TABLE gak_work_log DROP CONSTRAINT IF EXISTS uk_work_log_user_date;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_work_log_user_date_project
     ON gak_work_log (user_id, log_date, project_code)
@@ -523,6 +534,8 @@ ALTER TABLE IF EXISTS gak_app_audit_log ALTER COLUMN app_id DROP NOT NULL;
 UPDATE gak_system_app SET data_source_mode = 'DEMO' WHERE data_source_mode IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_date DESC);
+CREATE INDEX IF NOT EXISTS idx_work_log_user_status_date
+    ON gak_work_log (user_id, work_status, log_date DESC, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_category_updated

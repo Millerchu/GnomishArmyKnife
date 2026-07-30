@@ -4,11 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.worklog.dto.CreateWorkLogRequest;
+import com.gak.worklog.dto.UnfinishedWorkItemResponse;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.entity.WorkLog;
 import com.gak.worklog.entity.WorkLogType;
+import com.gak.worklog.enums.WorkLogStatus;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.math.BigDecimal;
@@ -47,6 +49,8 @@ public class WorkLogService {
     private static final String ALLOWANCE_SCENE_OUT_OF_CITY_TRANSIT = "OUT_OF_CITY_TRANSIT";
     private static final String ALLOWANCE_SCENE_OUT_OF_CITY_DAILY = "OUT_OF_CITY_DAILY";
     private static final int BRIEF_MAX_LENGTH = 80;
+    private static final int DEFAULT_UNFINISHED_ITEM_LIMIT = 20;
+    private static final int MAX_UNFINISHED_ITEM_LIMIT = 100;
     private static final BigDecimal MAX_DAILY_PERSON_DAY = BigDecimal.ONE.setScale(1, RoundingMode.HALF_UP);
     private static final LocalTime STANDARD_OFF_WORK_TIME = LocalTime.of(18, 0);
     private static final BigDecimal ZERO_HOURS = BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
@@ -79,6 +83,7 @@ public class WorkLogService {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
+        String workStatus = normalizeWorkStatus(request.getStatus(), WorkLogStatus.COMPLETED.name());
         workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, null);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), null);
@@ -100,6 +105,7 @@ public class WorkLogService {
         workLog.setLocation(location);
         workLog.setProjectCode(projectCode);
         workLog.setContent(request.getWorkItem());
+        workLog.setWorkStatus(workStatus);
         workLog.setZentaoNo(request.getZentaoNo());
         workLog.setPersonDay(request.getPersonDay());
         workLog.setOvertimeHours(overtimeHours);
@@ -146,6 +152,7 @@ public class WorkLogService {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
+        String workStatus = normalizeWorkStatus(request.getStatus(), current.getWorkStatus());
         workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, id);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), id);
@@ -164,6 +171,7 @@ public class WorkLogService {
         current.setLocation(location);
         current.setProjectCode(projectCode);
         current.setContent(request.getWorkItem());
+        current.setWorkStatus(workStatus);
         current.setZentaoNo(request.getZentaoNo());
         current.setPersonDay(request.getPersonDay());
         current.setOvertimeHours(overtimeHours);
@@ -268,6 +276,7 @@ public class WorkLogService {
             response.setLocation(workLog.getLocation());
             response.setProjectCode(workLog.getProjectCode());
             response.setBrief(extractBrief(workLog.getContent()));
+            response.setStatus(resolveStoredWorkStatus(workLog.getWorkStatus()));
             response.setPersonDay(workLog.getPersonDay());
             response.setOvertimeHours(workLog.getOvertimeHours());
             response.setOffWorkTime(workLog.getOffWorkTime());
@@ -278,6 +287,40 @@ public class WorkLogService {
             result.add(response);
         }
 
+        return result;
+    }
+
+    /**
+     * 查询仍未完成且尚未被后续同项目、同内容记录标记为完成的快捷候选。
+     *
+     * @param currentUserId 当前登录用户 ID
+     * @param limit 返回条数
+     * @return 未完成工作内容
+     */
+    public List<UnfinishedWorkItemResponse> listUnfinishedWorkItems(Long currentUserId, Integer limit) {
+        if (currentUserId == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "当前用户不能为空");
+        }
+        int normalizedLimit = limit == null ? DEFAULT_UNFINISHED_ITEM_LIMIT : limit;
+        if (normalizedLimit < 1 || normalizedLimit > MAX_UNFINISHED_ITEM_LIMIT) {
+            throw new ResponseStatusException(BAD_REQUEST, "limit 必须在 1 到 100 之间");
+        }
+
+        List<WorkLog> workLogs = workLogMapper.selectLatestWorkItemsByStatus(
+                currentUserId,
+                WorkLogStatus.UNFINISHED.name(),
+                normalizedLimit
+        );
+        List<UnfinishedWorkItemResponse> result = new ArrayList<>();
+        for (WorkLog workLog : workLogs) {
+            UnfinishedWorkItemResponse response = new UnfinishedWorkItemResponse();
+            response.setId(workLog.getId());
+            response.setLogDate(workLog.getLogDate());
+            response.setProjectCode(workLog.getProjectCode());
+            response.setWorkItem(workLog.getContent());
+            response.setStatus(WorkLogStatus.UNFINISHED.name());
+            result.add(response);
+        }
         return result;
     }
 
@@ -331,6 +374,22 @@ public class WorkLogService {
 
     private String normalizeOptionalLocation(String location) {
         return normalizeOptionalUsageValue(LOCATION_FIELD, location, "location 非法");
+    }
+
+    private String normalizeWorkStatus(String status, String fallbackStatus) {
+        String candidateStatus = status == null || status.isBlank() ? fallbackStatus : status;
+        if (candidateStatus == null || candidateStatus.isBlank()) {
+            candidateStatus = WorkLogStatus.COMPLETED.name();
+        }
+        try {
+            return WorkLogStatus.fromCode(candidateStatus).name();
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(BAD_REQUEST, "完成状态仅支持已完成或未完成");
+        }
+    }
+
+    private String resolveStoredWorkStatus(String status) {
+        return normalizeWorkStatus(status, WorkLogStatus.COMPLETED.name());
     }
 
     private void saveTypeRelations(Long workLogId, List<String> typeCodes, LocalDateTime now) {
@@ -517,6 +576,7 @@ public class WorkLogService {
         response.setLocation(workLog.getLocation());
         response.setProjectCode(workLog.getProjectCode());
         response.setWorkItem(workLog.getContent());
+        response.setStatus(resolveStoredWorkStatus(workLog.getWorkStatus()));
         response.setZentaoNo(workLog.getZentaoNo());
         response.setPersonDay(workLog.getPersonDay());
         response.setOvertimeHours(workLog.getOvertimeHours());

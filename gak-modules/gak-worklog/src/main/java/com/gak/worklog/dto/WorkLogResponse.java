@@ -19,6 +19,7 @@ public class WorkLogResponse {
     private String location;
     private String projectCode;
     private String workItem;
+    private String status;
     private String zentaoNo;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
@@ -85,6 +86,14 @@ public class WorkLogResponse {
 
     public void setWorkItem(String workItem) {
         this.workItem = workItem;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getZentaoNo() {

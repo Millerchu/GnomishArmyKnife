@@ -35,6 +35,9 @@ public class UpdateWorkLogRequest {
     @Size(max = 4000)
     private String workItem;
 
+    @Size(max = 16)
+    private String status;
+
     @Size(max = 255)
     private String zentaoNo;
 
@@ -96,6 +99,14 @@ public class UpdateWorkLogRequest {
 
     public void setWorkItem(String workItem) {
         this.workItem = workItem;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getZentaoNo() {

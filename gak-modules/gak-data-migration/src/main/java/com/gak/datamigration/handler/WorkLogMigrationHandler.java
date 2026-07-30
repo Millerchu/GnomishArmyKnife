@@ -9,6 +9,7 @@ import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.worklog.entity.WorkLog;
 import com.gak.worklog.entity.WorkLogType;
+import com.gak.worklog.enums.WorkLogStatus;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.util.ArrayList;
@@ -96,6 +97,7 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
             if (source == null) {
                 continue;
             }
+            source.setWorkStatus(normalizeImportedWorkStatus(source.getWorkStatus()));
             Long targetUserId = resolveUserId(source.getUserId(), context);
             if (targetUserId == null) {
                 throw new BusinessException("DATA_MIGRATION_WORK_LOG_USER_MISSING", "工作日志依赖的用户不存在: " + source.getUserId());
@@ -191,6 +193,20 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
         }
         User sameUser = sourceUserId == null ? null : userMapper.selectById(sourceUserId);
         return sameUser == null ? null : sameUser.getId();
+    }
+
+    private String normalizeImportedWorkStatus(String workStatus) {
+        if (workStatus == null || workStatus.isBlank()) {
+            return WorkLogStatus.COMPLETED.name();
+        }
+        try {
+            return WorkLogStatus.fromCode(workStatus).name();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(
+                    "DATA_MIGRATION_WORK_LOG_STATUS_INVALID",
+                    "工作日志状态非法: " + workStatus
+            );
+        }
     }
 
     private WorkLog copyLog(WorkLog source) {

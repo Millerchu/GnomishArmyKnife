@@ -17,6 +17,7 @@ public class WeeklyWorkLogBriefResponse {
     private String location;
     private String projectCode;
     private String brief;
+    private String status;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
     @JsonFormat(pattern = "HH:mm:ss")
@@ -72,6 +73,14 @@ public class WeeklyWorkLogBriefResponse {
 
     public void setBrief(String brief) {
         this.brief = brief;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public BigDecimal getPersonDay() {
