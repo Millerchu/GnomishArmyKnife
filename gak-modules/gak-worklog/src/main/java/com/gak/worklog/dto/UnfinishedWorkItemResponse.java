@@ -8,6 +8,7 @@ import java.time.LocalDate;
 public class UnfinishedWorkItemResponse {
 
     private Long id;
+    private Long workLogId;
     private LocalDate logDate;
     private String projectCode;
     private String workItem;
@@ -19,6 +20,14 @@ public class UnfinishedWorkItemResponse {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getWorkLogId() {
+        return workLogId;
+    }
+
+    public void setWorkLogId(Long workLogId) {
+        this.workLogId = workLogId;
     }
 
     public LocalDate getLogDate() {

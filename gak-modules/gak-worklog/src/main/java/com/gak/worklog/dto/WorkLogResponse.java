@@ -19,7 +19,11 @@ public class WorkLogResponse {
     private String location;
     private String projectCode;
     private String workItem;
+    /**
+     * 兼容旧客户端的汇总状态，任一条目未完成时为未完成。
+     */
     private String status;
+    private List<WorkLogItemResponse> workItems;
     private String zentaoNo;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
@@ -94,6 +98,14 @@ public class WorkLogResponse {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public List<WorkLogItemResponse> getWorkItems() {
+        return workItems;
+    }
+
+    public void setWorkItems(List<WorkLogItemResponse> workItems) {
+        this.workItems = workItems;
     }
 
     public String getZentaoNo() {

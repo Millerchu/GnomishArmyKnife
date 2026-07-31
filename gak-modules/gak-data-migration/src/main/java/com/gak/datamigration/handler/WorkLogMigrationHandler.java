@@ -8,8 +8,10 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.worklog.entity.WorkLog;
+import com.gak.worklog.entity.WorkLogItem;
 import com.gak.worklog.entity.WorkLogType;
 import com.gak.worklog.enums.WorkLogStatus;
+import com.gak.worklog.mapper.WorkLogItemMapper;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.util.ArrayList;
@@ -28,15 +30,18 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
     private static final String APP_CODE = "APP_WORK_LOG";
 
     private final WorkLogMapper workLogMapper;
+    private final WorkLogItemMapper workLogItemMapper;
     private final WorkLogTypeMapper workLogTypeMapper;
     private final UserMapper userMapper;
     private final DataMigrationArchiveService archiveService;
 
     public WorkLogMigrationHandler(WorkLogMapper workLogMapper,
+                                   WorkLogItemMapper workLogItemMapper,
                                    WorkLogTypeMapper workLogTypeMapper,
                                    UserMapper userMapper,
                                    DataMigrationArchiveService archiveService) {
         this.workLogMapper = workLogMapper;
+        this.workLogItemMapper = workLogItemMapper;
         this.workLogTypeMapper = workLogTypeMapper;
         this.userMapper = userMapper;
         this.archiveService = archiveService;
@@ -82,8 +87,19 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
         typeWrapper.orderByAsc("work_log_id").orderByAsc("type_code").orderByAsc("id");
         List<WorkLogType> workLogTypes = workLogTypeMapper.selectList(typeWrapper);
 
-        long recordCount = (long) workLogs.size() + workLogTypes.size();
-        return new MigrationResourceExportData(resourceCode(), entryPath(), new Payload(workLogs, workLogTypes), recordCount, 0L, List.of());
+        QueryWrapper<WorkLogItem> itemWrapper = new QueryWrapper<>();
+        itemWrapper.orderByAsc("work_log_id").orderByAsc("sort_no").orderByAsc("id");
+        List<WorkLogItem> workLogItems = workLogItemMapper.selectList(itemWrapper);
+
+        long recordCount = (long) workLogs.size() + workLogTypes.size() + workLogItems.size();
+        return new MigrationResourceExportData(
+                resourceCode(),
+                entryPath(),
+                new Payload(workLogs, workLogTypes, workLogItems),
+                recordCount,
+                0L,
+                List.of()
+        );
     }
 
     @Override
@@ -91,6 +107,7 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
     public MigrationResourceImportResult importData(ImportContext context) throws Exception {
         Payload payload = archiveService.readJson(context.packageRoot(), entryPath(), Payload.class);
         Map<Long, List<WorkLogType>> typeMap = buildTypeMap(payload.getWorkLogTypes());
+        Map<Long, List<WorkLogItem>> itemMap = buildItemMap(payload.getWorkLogItems());
         long importedCount = 0L;
 
         for (WorkLog source : payload.getWorkLogs()) {
@@ -152,6 +169,45 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
                 }
                 importedCount++;
             }
+
+            List<WorkLogItem> workItems = itemMap.getOrDefault(source.getId(), List.of());
+            if (workItems.isEmpty()) {
+                workItems = buildLegacyWorkItems(source);
+            }
+            for (WorkLogItem workItem : workItems) {
+                workItem.setStatus(normalizeImportedWorkStatus(workItem.getStatus()));
+                WorkLogItem existingItem = findExistingItem(targetLogId, workItem);
+                if (existingItem != null) {
+                    if (context.isStrict()) {
+                        throw new BusinessException(
+                                "DATA_MIGRATION_WORK_LOG_ITEM_CONFLICT",
+                                "工作日志内容条目已存在: sortNo=" + workItem.getSortNo()
+                        );
+                    }
+                    workItem.setWorkLogId(targetLogId);
+                    if (context.isOverwrite()) {
+                        DataMigrationBeanMergeSupport.overwrite(workItem, existingItem, "id", "workLogId");
+                    } else {
+                        DataMigrationBeanMergeSupport.mergeNewestNonNull(workItem, existingItem, "id", "workLogId");
+                    }
+                    existingItem.setWorkLogId(targetLogId);
+                    workLogItemMapper.updateById(existingItem);
+                } else {
+                    WorkLogItem insertItem = copyItem(workItem);
+                    insertItem.setWorkLogId(targetLogId);
+                    if (insertItem.getId() != null && workLogItemMapper.selectById(insertItem.getId()) != null) {
+                        if (context.isStrict()) {
+                            throw new BusinessException(
+                                    "DATA_MIGRATION_WORK_LOG_ITEM_ID_CONFLICT",
+                                    "工作日志内容条目 ID 冲突: " + insertItem.getId()
+                            );
+                        }
+                        insertItem.setId(null);
+                    }
+                    workLogItemMapper.insert(insertItem);
+                }
+                importedCount++;
+            }
         }
 
         return MigrationResourceImportResult.success(importedCount, 0L, "工作日志导入完成");
@@ -159,8 +215,44 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
 
     private Map<Long, List<WorkLogType>> buildTypeMap(List<WorkLogType> workLogTypes) {
         Map<Long, List<WorkLogType>> result = new LinkedHashMap<>();
+        if (workLogTypes == null) {
+            return result;
+        }
         for (WorkLogType workLogType : workLogTypes) {
             result.computeIfAbsent(workLogType.getWorkLogId(), key -> new ArrayList<>()).add(workLogType);
+        }
+        return result;
+    }
+
+    private Map<Long, List<WorkLogItem>> buildItemMap(List<WorkLogItem> workLogItems) {
+        Map<Long, List<WorkLogItem>> result = new LinkedHashMap<>();
+        if (workLogItems == null) {
+            return result;
+        }
+        for (WorkLogItem workLogItem : workLogItems) {
+            result.computeIfAbsent(workLogItem.getWorkLogId(), key -> new ArrayList<>()).add(workLogItem);
+        }
+        return result;
+    }
+
+    private List<WorkLogItem> buildLegacyWorkItems(WorkLog source) {
+        List<WorkLogItem> result = new ArrayList<>();
+        if (source.getContent() == null) {
+            return result;
+        }
+        int sortNo = 1;
+        for (String line : source.getContent().split("\\r?\\n")) {
+            if (line.isBlank()) {
+                continue;
+            }
+            WorkLogItem workLogItem = new WorkLogItem();
+            workLogItem.setWorkLogId(source.getId());
+            workLogItem.setContent(line.trim());
+            workLogItem.setStatus(source.getWorkStatus());
+            workLogItem.setSortNo(sortNo++);
+            workLogItem.setCreatedAt(source.getCreatedAt());
+            workLogItem.setUpdatedAt(source.getUpdatedAt());
+            result.add(workLogItem);
         }
         return result;
     }
@@ -184,6 +276,16 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
         QueryWrapper<WorkLogType> wrapper = new QueryWrapper<>();
         wrapper.eq("work_log_id", workLogId).eq("type_code", sourceType.getTypeCode());
         return workLogTypeMapper.selectOne(wrapper);
+    }
+
+    private WorkLogItem findExistingItem(Long workLogId, WorkLogItem sourceItem) {
+        WorkLogItem byId = sourceItem.getId() == null ? null : workLogItemMapper.selectById(sourceItem.getId());
+        if (byId != null) {
+            return byId;
+        }
+        QueryWrapper<WorkLogItem> wrapper = new QueryWrapper<>();
+        wrapper.eq("work_log_id", workLogId).eq("sort_no", sourceItem.getSortNo());
+        return workLogItemMapper.selectOne(wrapper);
     }
 
     private Long resolveUserId(Long sourceUserId, ImportContext context) {
@@ -221,6 +323,12 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
         return type;
     }
 
+    private WorkLogItem copyItem(WorkLogItem source) {
+        WorkLogItem workLogItem = new WorkLogItem();
+        DataMigrationBeanMergeSupport.overwrite(source, workLogItem);
+        return workLogItem;
+    }
+
     /**
      * 工作日志导出载荷。
      */
@@ -228,13 +336,17 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
 
         private List<WorkLog> workLogs;
         private List<WorkLogType> workLogTypes;
+        private List<WorkLogItem> workLogItems;
 
         public Payload() {
         }
 
-        public Payload(List<WorkLog> workLogs, List<WorkLogType> workLogTypes) {
+        public Payload(List<WorkLog> workLogs,
+                       List<WorkLogType> workLogTypes,
+                       List<WorkLogItem> workLogItems) {
             this.workLogs = workLogs;
             this.workLogTypes = workLogTypes;
+            this.workLogItems = workLogItems;
         }
 
         public List<WorkLog> getWorkLogs() {
@@ -251,6 +363,14 @@ public class WorkLogMigrationHandler implements MigrationResourceHandler {
 
         public void setWorkLogTypes(List<WorkLogType> workLogTypes) {
             this.workLogTypes = workLogTypes;
+        }
+
+        public List<WorkLogItem> getWorkLogItems() {
+            return workLogItems;
+        }
+
+        public void setWorkLogItems(List<WorkLogItem> workLogItems) {
+            this.workLogItems = workLogItems;
         }
     }
 }

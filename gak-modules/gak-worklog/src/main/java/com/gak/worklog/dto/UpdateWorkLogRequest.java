@@ -1,6 +1,7 @@
 package com.gak.worklog.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.NotEmpty;
@@ -31,12 +32,23 @@ public class UpdateWorkLogRequest {
     @Size(max = 128)
     private String projectCode;
 
-    @NotNull
+    /**
+     * 兼容旧客户端的换行文本字段。
+     */
     @Size(max = 4000)
     private String workItem;
 
+    /**
+     * 兼容旧客户端的日志级汇总状态。
+     */
     @Size(max = 16)
     private String status;
+
+    /**
+     * 新客户端按工作内容条目提交独立状态。
+     */
+    @Size(max = 100)
+    private List<@Valid WorkLogItemRequest> workItems;
 
     @Size(max = 255)
     private String zentaoNo;
@@ -107,6 +119,14 @@ public class UpdateWorkLogRequest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public List<WorkLogItemRequest> getWorkItems() {
+        return workItems;
+    }
+
+    public void setWorkItems(List<WorkLogItemRequest> workItems) {
+        this.workItems = workItems;
     }
 
     public String getZentaoNo() {

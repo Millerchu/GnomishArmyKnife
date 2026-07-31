@@ -6,10 +6,13 @@ import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UnfinishedWorkItemResponse;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
+import com.gak.worklog.dto.WorkLogItemRequest;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.entity.WorkLog;
+import com.gak.worklog.entity.WorkLogItem;
 import com.gak.worklog.entity.WorkLogType;
 import com.gak.worklog.enums.WorkLogStatus;
+import com.gak.worklog.mapper.WorkLogItemMapper;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.math.BigDecimal;
@@ -47,6 +50,9 @@ class WorkLogServiceTest {
 
     @Mock
     private WorkLogMapper workLogMapper;
+
+    @Mock
+    private WorkLogItemMapper workLogItemMapper;
 
     @Mock
     private WorkLogTypeMapper workLogTypeMapper;
@@ -124,6 +130,31 @@ class WorkLogServiceTest {
         ArgumentCaptor<WorkLog> captor = ArgumentCaptor.forClass(WorkLog.class);
         verify(workLogMapper).insert(captor.capture());
         assertEquals(WorkLogStatus.UNFINISHED.name(), captor.getValue().getWorkStatus());
+        assertEquals(WorkLogStatus.UNFINISHED.name(), response.getStatus());
+    }
+
+    @Test
+    void createShouldPersistIndependentStatusForEachWorkItem() {
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1014L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 10));
+        request.setWorkItems(List.of(
+                buildWorkItemRequest("内网MRO4.3环境搭建", WorkLogStatus.COMPLETED.name()),
+                buildWorkItemRequest("结构树多选问题排查修复", WorkLogStatus.UNFINISHED.name())
+        ));
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        ArgumentCaptor<WorkLogItem> itemCaptor = ArgumentCaptor.forClass(WorkLogItem.class);
+        verify(workLogItemMapper, times(2)).insert(itemCaptor.capture());
+        assertEquals(WorkLogStatus.COMPLETED.name(), itemCaptor.getAllValues().get(0).getStatus());
+        assertEquals(WorkLogStatus.UNFINISHED.name(), itemCaptor.getAllValues().get(1).getStatus());
+        assertEquals("内网MRO4.3环境搭建\n结构树多选问题排查修复", response.getWorkItem());
+        assertEquals(WorkLogStatus.COMPLETED.name(), response.getWorkItems().get(0).getStatus());
+        assertEquals(WorkLogStatus.UNFINISHED.name(), response.getWorkItems().get(1).getStatus());
         assertEquals(WorkLogStatus.UNFINISHED.name(), response.getStatus());
     }
 
@@ -428,18 +459,25 @@ class WorkLogServiceTest {
     void listUnfinishedWorkItemsShouldReturnLatestUnfinishedCandidates() {
         WorkLog unfinishedLog = buildWorkLog();
         unfinishedLog.setWorkStatus(WorkLogStatus.UNFINISHED.name());
-        when(workLogMapper.selectLatestWorkItemsByStatus(
+        UnfinishedWorkItemResponse unfinishedItem = new UnfinishedWorkItemResponse();
+        unfinishedItem.setId(3001L);
+        unfinishedItem.setWorkLogId(unfinishedLog.getId());
+        unfinishedItem.setLogDate(unfinishedLog.getLogDate());
+        unfinishedItem.setProjectCode(unfinishedLog.getProjectCode());
+        unfinishedItem.setWorkItem("补充周报字段");
+        unfinishedItem.setStatus(WorkLogStatus.UNFINISHED.name());
+        when(workLogItemMapper.selectLatestByStatus(
                 1L,
                 WorkLogStatus.UNFINISHED.name(),
                 20
-        )).thenReturn(List.of(unfinishedLog));
+        )).thenReturn(List.of(unfinishedItem));
 
         List<UnfinishedWorkItemResponse> result = workLogService.listUnfinishedWorkItems(1L, null);
 
         assertEquals(1, result.size());
-        assertEquals(2001L, result.get(0).getId());
+        assertEquals(3001L, result.get(0).getId());
         assertEquals("GAK", result.get(0).getProjectCode());
-        assertEquals("完成工作日志改版\n补充周报字段", result.get(0).getWorkItem());
+        assertEquals("补充周报字段", result.get(0).getWorkItem());
         assertEquals(WorkLogStatus.UNFINISHED.name(), result.get(0).getStatus());
     }
 
@@ -478,6 +516,13 @@ class WorkLogServiceTest {
         request.setStatus(WorkLogStatus.COMPLETED.name());
         request.setPersonDay(decimal("1.0"));
         request.setOffWorkTime(LocalTime.of(18, 0));
+        return request;
+    }
+
+    private WorkLogItemRequest buildWorkItemRequest(String content, String status) {
+        WorkLogItemRequest request = new WorkLogItemRequest();
+        request.setContent(content);
+        request.setStatus(status);
         return request;
     }
 

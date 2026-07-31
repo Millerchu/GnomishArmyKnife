@@ -7,10 +7,14 @@ import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UnfinishedWorkItemResponse;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
 import com.gak.worklog.dto.WeeklyWorkLogBriefResponse;
+import com.gak.worklog.dto.WorkLogItemRequest;
+import com.gak.worklog.dto.WorkLogItemResponse;
 import com.gak.worklog.dto.WorkLogResponse;
 import com.gak.worklog.entity.WorkLog;
+import com.gak.worklog.entity.WorkLogItem;
 import com.gak.worklog.entity.WorkLogType;
 import com.gak.worklog.enums.WorkLogStatus;
+import com.gak.worklog.mapper.WorkLogItemMapper;
 import com.gak.worklog.mapper.WorkLogMapper;
 import com.gak.worklog.mapper.WorkLogTypeMapper;
 import java.math.BigDecimal;
@@ -60,13 +64,16 @@ public class WorkLogService {
     private static final BigDecimal OUT_OF_CITY_DAILY_ALLOWANCE = BigDecimal.valueOf(160).setScale(2, RoundingMode.HALF_UP);
 
     private final WorkLogMapper workLogMapper;
+    private final WorkLogItemMapper workLogItemMapper;
     private final WorkLogTypeMapper workLogTypeMapper;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
     public WorkLogService(WorkLogMapper workLogMapper,
+                          WorkLogItemMapper workLogItemMapper,
                           WorkLogTypeMapper workLogTypeMapper,
                           DataDictionaryUsageSupport dataDictionaryUsageSupport) {
         this.workLogMapper = workLogMapper;
+        this.workLogItemMapper = workLogItemMapper;
         this.workLogTypeMapper = workLogTypeMapper;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
     }
@@ -83,7 +90,13 @@ public class WorkLogService {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
-        String workStatus = normalizeWorkStatus(request.getStatus(), WorkLogStatus.COMPLETED.name());
+        List<NormalizedWorkItem> workItems = normalizeWorkItems(
+                request.getWorkItems(),
+                request.getWorkItem(),
+                request.getStatus(),
+                WorkLogStatus.COMPLETED.name()
+        );
+        String workStatus = resolveAggregateStatus(workItems);
         workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, null);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), null);
@@ -104,7 +117,7 @@ public class WorkLogService {
         workLog.setLogDate(request.getLogDate());
         workLog.setLocation(location);
         workLog.setProjectCode(projectCode);
-        workLog.setContent(request.getWorkItem());
+        workLog.setContent(serializeWorkItems(workItems));
         workLog.setWorkStatus(workStatus);
         workLog.setZentaoNo(request.getZentaoNo());
         workLog.setPersonDay(request.getPersonDay());
@@ -119,7 +132,8 @@ public class WorkLogService {
         workLogMapper.insert(workLog);
 
         saveTypeRelations(workLog.getId(), typeCodes, now);
-        return buildResponse(workLog, typeCodes);
+        List<WorkLogItem> savedWorkItems = saveWorkItems(workLog.getId(), workItems, now);
+        return buildResponse(workLog, typeCodes, savedWorkItems);
     }
 
     /**
@@ -135,6 +149,7 @@ public class WorkLogService {
         QueryWrapper<WorkLogType> typeWrapper = new QueryWrapper<>();
         typeWrapper.eq("work_log_id", current.getId());
         workLogTypeMapper.delete(typeWrapper);
+        deleteWorkItems(current.getId());
         workLogMapper.deleteById(current.getId());
     }
 
@@ -152,7 +167,13 @@ public class WorkLogService {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
-        String workStatus = normalizeWorkStatus(request.getStatus(), current.getWorkStatus());
+        List<NormalizedWorkItem> workItems = normalizeWorkItems(
+                request.getWorkItems(),
+                request.getWorkItem(),
+                request.getStatus(),
+                current.getWorkStatus()
+        );
+        String workStatus = resolveAggregateStatus(workItems);
         workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, id);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), id);
@@ -170,7 +191,7 @@ public class WorkLogService {
         current.setLogDate(request.getLogDate());
         current.setLocation(location);
         current.setProjectCode(projectCode);
-        current.setContent(request.getWorkItem());
+        current.setContent(serializeWorkItems(workItems));
         current.setWorkStatus(workStatus);
         current.setZentaoNo(request.getZentaoNo());
         current.setPersonDay(request.getPersonDay());
@@ -187,8 +208,10 @@ public class WorkLogService {
         deleteWrapper.eq("work_log_id", id);
         workLogTypeMapper.delete(deleteWrapper);
         saveTypeRelations(id, typeCodes, LocalDateTime.now());
+        deleteWorkItems(id);
+        List<WorkLogItem> savedWorkItems = saveWorkItems(id, workItems, current.getUpdatedAt());
 
-        return buildResponse(current, typeCodes);
+        return buildResponse(current, typeCodes, savedWorkItems);
     }
 
     /**
@@ -200,7 +223,7 @@ public class WorkLogService {
      */
     public WorkLogResponse get(Long currentUserId, Long id) {
         WorkLog workLog = getOwnedByIdOrThrow(currentUserId, id);
-        return buildResponse(workLog, getTypeCodesByWorkLogId(id));
+        return buildResponse(workLog, getTypeCodesByWorkLogId(id), getWorkItemsByLogId(id));
     }
 
     /**
@@ -229,13 +252,14 @@ public class WorkLogService {
         List<WorkLog> workLogs = workLogMapper.selectList(wrapper);
 
         Map<Long, List<String>> typeMap = loadTypeMap(workLogs);
+        Map<Long, List<WorkLogItem>> workItemMap = loadWorkItemMap(workLogs);
         List<WorkLogResponse> result = new ArrayList<>();
         for (WorkLog workLog : workLogs) {
             List<String> types = typeMap.getOrDefault(workLog.getId(), List.of());
             if (normalizedTypeCode != null && !types.contains(normalizedTypeCode)) {
                 continue;
             }
-            result.add(buildResponse(workLog, types));
+            result.add(buildResponse(workLog, types, workItemMap.getOrDefault(workLog.getId(), List.of())));
         }
         return result;
     }
@@ -266,6 +290,7 @@ public class WorkLogService {
 
         List<WorkLog> workLogs = workLogMapper.selectList(wrapper);
         Map<Long, List<String>> typeMap = loadTypeMap(workLogs);
+        Map<Long, List<WorkLogItem>> workItemMap = loadWorkItemMap(workLogs);
         List<WeeklyWorkLogBriefResponse> result = new ArrayList<>();
 
         for (WorkLog workLog : workLogs) {
@@ -277,6 +302,10 @@ public class WorkLogService {
             response.setProjectCode(workLog.getProjectCode());
             response.setBrief(extractBrief(workLog.getContent()));
             response.setStatus(resolveStoredWorkStatus(workLog.getWorkStatus()));
+            response.setWorkItems(buildWorkItemResponses(
+                    workLog,
+                    workItemMap.getOrDefault(workLog.getId(), List.of())
+            ));
             response.setPersonDay(workLog.getPersonDay());
             response.setOvertimeHours(workLog.getOvertimeHours());
             response.setOffWorkTime(workLog.getOffWorkTime());
@@ -306,22 +335,11 @@ public class WorkLogService {
             throw new ResponseStatusException(BAD_REQUEST, "limit 必须在 1 到 100 之间");
         }
 
-        List<WorkLog> workLogs = workLogMapper.selectLatestWorkItemsByStatus(
+        return workLogItemMapper.selectLatestByStatus(
                 currentUserId,
                 WorkLogStatus.UNFINISHED.name(),
                 normalizedLimit
         );
-        List<UnfinishedWorkItemResponse> result = new ArrayList<>();
-        for (WorkLog workLog : workLogs) {
-            UnfinishedWorkItemResponse response = new UnfinishedWorkItemResponse();
-            response.setId(workLog.getId());
-            response.setLogDate(workLog.getLogDate());
-            response.setProjectCode(workLog.getProjectCode());
-            response.setWorkItem(workLog.getContent());
-            response.setStatus(WorkLogStatus.UNFINISHED.name());
-            result.add(response);
-        }
-        return result;
     }
 
     private WorkLog getByIdOrThrow(Long id) {
@@ -390,6 +408,80 @@ public class WorkLogService {
 
     private String resolveStoredWorkStatus(String status) {
         return normalizeWorkStatus(status, WorkLogStatus.COMPLETED.name());
+    }
+
+    /**
+     * 新客户端按条目提交状态；旧客户端仍可提交换行文本和日志级状态。
+     */
+    private List<NormalizedWorkItem> normalizeWorkItems(List<WorkLogItemRequest> requestedItems,
+                                                        String legacyWorkItem,
+                                                        String legacyStatus,
+                                                        String fallbackStatus) {
+        List<NormalizedWorkItem> normalizedItems = new ArrayList<>();
+        if (requestedItems != null && !requestedItems.isEmpty()) {
+            for (WorkLogItemRequest requestedItem : requestedItems) {
+                if (requestedItem == null || requestedItem.getContent() == null
+                        || requestedItem.getContent().isBlank()) {
+                    throw new ResponseStatusException(BAD_REQUEST, "工作内容条目不能为空");
+                }
+                normalizedItems.add(new NormalizedWorkItem(
+                        requestedItem.getContent().trim(),
+                        normalizeWorkStatus(requestedItem.getStatus(), WorkLogStatus.COMPLETED.name())
+                ));
+            }
+        } else {
+            String normalizedLegacyStatus = normalizeWorkStatus(legacyStatus, fallbackStatus);
+            if (legacyWorkItem != null) {
+                for (String line : legacyWorkItem.split("\\r?\\n")) {
+                    if (!line.isBlank()) {
+                        normalizedItems.add(new NormalizedWorkItem(line.trim(), normalizedLegacyStatus));
+                    }
+                }
+            }
+        }
+        if (normalizedItems.isEmpty()) {
+            throw new ResponseStatusException(BAD_REQUEST, "工作内容不能为空");
+        }
+        if (serializeWorkItems(normalizedItems).length() > 4000) {
+            throw new ResponseStatusException(BAD_REQUEST, "工作内容合计不能超过 4000 个字符");
+        }
+        return normalizedItems;
+    }
+
+    private String serializeWorkItems(List<NormalizedWorkItem> workItems) {
+        List<String> contents = workItems.stream().map(NormalizedWorkItem::content).toList();
+        return String.join("\n", contents);
+    }
+
+    private String resolveAggregateStatus(List<NormalizedWorkItem> workItems) {
+        return workItems.stream().anyMatch(item -> WorkLogStatus.UNFINISHED.name().equals(item.status()))
+                ? WorkLogStatus.UNFINISHED.name()
+                : WorkLogStatus.COMPLETED.name();
+    }
+
+    private List<WorkLogItem> saveWorkItems(Long workLogId,
+                                            List<NormalizedWorkItem> workItems,
+                                            LocalDateTime now) {
+        List<WorkLogItem> savedItems = new ArrayList<>();
+        for (int index = 0; index < workItems.size(); index++) {
+            NormalizedWorkItem normalizedItem = workItems.get(index);
+            WorkLogItem workLogItem = new WorkLogItem();
+            workLogItem.setWorkLogId(workLogId);
+            workLogItem.setContent(normalizedItem.content());
+            workLogItem.setStatus(normalizedItem.status());
+            workLogItem.setSortNo(index + 1);
+            workLogItem.setCreatedAt(now);
+            workLogItem.setUpdatedAt(now);
+            workLogItemMapper.insert(workLogItem);
+            savedItems.add(workLogItem);
+        }
+        return savedItems;
+    }
+
+    private void deleteWorkItems(Long workLogId) {
+        QueryWrapper<WorkLogItem> itemWrapper = new QueryWrapper<>();
+        itemWrapper.eq("work_log_id", workLogId);
+        workLogItemMapper.delete(itemWrapper);
     }
 
     private void saveTypeRelations(Long workLogId, List<String> typeCodes, LocalDateTime now) {
@@ -463,6 +555,29 @@ public class WorkLogService {
             result.computeIfAbsent(type.getWorkLogId(), key -> new ArrayList<>()).add(type.getTypeCode());
         }
 
+        return result;
+    }
+
+    private List<WorkLogItem> getWorkItemsByLogId(Long workLogId) {
+        QueryWrapper<WorkLogItem> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("work_log_id", workLogId);
+        queryWrapper.orderByAsc("sort_no").orderByAsc("id");
+        return workLogItemMapper.selectList(queryWrapper);
+    }
+
+    private Map<Long, List<WorkLogItem>> loadWorkItemMap(List<WorkLog> workLogs) {
+        Map<Long, List<WorkLogItem>> result = new HashMap<>();
+        if (workLogs.isEmpty()) {
+            return result;
+        }
+
+        List<Long> workLogIds = workLogs.stream().map(WorkLog::getId).toList();
+        QueryWrapper<WorkLogItem> queryWrapper = new QueryWrapper<>();
+        queryWrapper.in("work_log_id", workLogIds);
+        queryWrapper.orderByAsc("work_log_id").orderByAsc("sort_no").orderByAsc("id");
+        for (WorkLogItem workLogItem : workLogItemMapper.selectList(queryWrapper)) {
+            result.computeIfAbsent(workLogItem.getWorkLogId(), key -> new ArrayList<>()).add(workLogItem);
+        }
         return result;
     }
 
@@ -567,7 +682,9 @@ public class WorkLogService {
         return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
     }
 
-    private WorkLogResponse buildResponse(WorkLog workLog, List<String> typeCodes) {
+    private WorkLogResponse buildResponse(WorkLog workLog,
+                                          List<String> typeCodes,
+                                          List<WorkLogItem> workItems) {
         WorkLogResponse response = new WorkLogResponse();
         response.setId(workLog.getId());
         response.setUserId(workLog.getUserId());
@@ -577,6 +694,7 @@ public class WorkLogService {
         response.setProjectCode(workLog.getProjectCode());
         response.setWorkItem(workLog.getContent());
         response.setStatus(resolveStoredWorkStatus(workLog.getWorkStatus()));
+        response.setWorkItems(buildWorkItemResponses(workLog, workItems));
         response.setZentaoNo(workLog.getZentaoNo());
         response.setPersonDay(workLog.getPersonDay());
         response.setOvertimeHours(workLog.getOvertimeHours());
@@ -590,7 +708,44 @@ public class WorkLogService {
         return response;
     }
 
+    private List<WorkLogItemResponse> buildWorkItemResponses(WorkLog workLog,
+                                                              List<WorkLogItem> storedItems) {
+        List<WorkLogItemResponse> responses = new ArrayList<>();
+        if (storedItems != null && !storedItems.isEmpty()) {
+            for (WorkLogItem storedItem : storedItems) {
+                WorkLogItemResponse response = new WorkLogItemResponse();
+                response.setId(storedItem.getId());
+                response.setContent(storedItem.getContent());
+                response.setStatus(resolveStoredWorkStatus(storedItem.getStatus()));
+                response.setSortNo(storedItem.getSortNo());
+                responses.add(response);
+            }
+            return responses;
+        }
+
+        String fallbackStatus = resolveStoredWorkStatus(workLog.getWorkStatus());
+        String content = workLog.getContent();
+        if (content == null) {
+            return responses;
+        }
+        int sortNo = 1;
+        for (String line : content.split("\\r?\\n")) {
+            if (line.isBlank()) {
+                continue;
+            }
+            WorkLogItemResponse response = new WorkLogItemResponse();
+            response.setContent(line.trim());
+            response.setStatus(fallbackStatus);
+            response.setSortNo(sortNo++);
+            responses.add(response);
+        }
+        return responses;
+    }
+
     private record BusinessTripAllowance(String scene, BigDecimal amount, Boolean reimbursed) {
+    }
+
+    private record NormalizedWorkItem(String content, String status) {
     }
 
     private String extractBrief(String workItem) {

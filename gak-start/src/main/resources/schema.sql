@@ -387,6 +387,22 @@ CREATE TABLE IF NOT EXISTS gak_work_log_type (
     UNIQUE (work_log_id, type_code)
     );
 
+CREATE TABLE IF NOT EXISTS gak_work_log_item (
+    id BIGSERIAL PRIMARY KEY,
+    work_log_id BIGINT NOT NULL,
+    content TEXT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'COMPLETED',
+    sort_no INTEGER NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_work_log_item_work_log
+        FOREIGN KEY (work_log_id) REFERENCES gak_work_log (id) ON DELETE CASCADE,
+    CONSTRAINT uk_work_log_item_sort
+        UNIQUE (work_log_id, sort_no),
+    CONSTRAINT ck_work_log_item_status
+        CHECK (status IN ('COMPLETED', 'UNFINISHED'))
+    );
+
 CREATE TABLE IF NOT EXISTS gak_system_app (
     id BIGINT PRIMARY KEY,
     app_code VARCHAR(64) NOT NULL,
@@ -525,6 +541,22 @@ ALTER TABLE gak_work_log ALTER COLUMN work_status SET NOT NULL;
 ALTER TABLE gak_work_log DROP CONSTRAINT IF EXISTS ck_work_log_status;
 ALTER TABLE gak_work_log
     ADD CONSTRAINT ck_work_log_status CHECK (work_status IN ('COMPLETED', 'UNFINISHED'));
+INSERT INTO gak_work_log_item (work_log_id, content, status, sort_no, created_at, updated_at)
+SELECT log.id,
+       BTRIM(item.content),
+       log.work_status,
+       item.ordinality::INTEGER,
+       log.created_at,
+       log.updated_at
+FROM gak_work_log log
+CROSS JOIN LATERAL regexp_split_to_table(log.content, E'\\r?\\n')
+    WITH ORDINALITY AS item(content, ordinality)
+WHERE BTRIM(item.content) != ''
+  AND NOT EXISTS (
+      SELECT 1
+      FROM gak_work_log_item existing_item
+      WHERE existing_item.work_log_id = log.id
+  );
 ALTER TABLE gak_work_log DROP CONSTRAINT IF EXISTS uk_work_log_user_date;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_work_log_user_date_project
     ON gak_work_log (user_id, log_date, project_code)
@@ -537,6 +569,10 @@ CREATE INDEX IF NOT EXISTS idx_work_log_user_date ON gak_work_log (user_id, log_
 CREATE INDEX IF NOT EXISTS idx_work_log_user_status_date
     ON gak_work_log (user_id, work_status, log_date DESC, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_work_log_type_code ON gak_work_log_type (type_code);
+CREATE INDEX IF NOT EXISTS idx_work_log_item_log_sort
+    ON gak_work_log_item (work_log_id, sort_no, id);
+CREATE INDEX IF NOT EXISTS idx_work_log_item_status_updated
+    ON gak_work_log_item (status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_updated ON gak_password_memo (owner_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_password_memo_owner_category_updated
     ON gak_password_memo (owner_user_id, category, updated_at DESC);
