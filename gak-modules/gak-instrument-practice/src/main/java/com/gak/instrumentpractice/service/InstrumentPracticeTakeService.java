@@ -32,13 +32,14 @@ public class InstrumentPracticeTakeService {
     public static final int MAX_TAKES_PER_INSTRUMENT = 10;
     private static final long MAX_TAKE_DURATION_MS = 10 * 60 * 1000L;
     private static final int MAX_EVENT_COUNT = 20000;
-    private static final Set<String> SUPPORTED_INSTRUMENT_IDS = Set.of("guzheng", "guitar", "ukulele", "piano");
+    private static final Set<String> SUPPORTED_INSTRUMENT_IDS = Set.of("guzheng", "guitar", "ukulele", "pipa", "piano");
     private static final Set<String> SUPPORTED_EVENT_TYPES = Set.of("note", "bend", "damp");
     private static final Set<String> SUPPORTED_METERS = Set.of("2/4", "3/4", "4/4", "6/8");
     private static final Map<String, Set<String>> SUPPORTED_TUNINGS = Map.of(
             "guzheng", Set.of("d-pentatonic", "g-pentatonic"),
             "guitar", Set.of("standard", "drop-d", "dadgad"),
             "ukulele", Set.of("high-g", "low-g"),
+            "pipa", Set.of("standard-adea"),
             "piano", Set.of("concert-pitch")
     );
     private static final TypeReference<List<PerformanceEventRequest>> PERFORMANCE_EVENT_LIST_TYPE = new TypeReference<>() {

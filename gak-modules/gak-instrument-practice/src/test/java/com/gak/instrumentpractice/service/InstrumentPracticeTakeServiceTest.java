@@ -86,6 +86,22 @@ class InstrumentPracticeTakeServiceTest {
         assertEquals("INSTRUMENT_EVENT_TIME_INVALID", exception.getCode());
     }
 
+    @Test
+    void createAcceptsPipaWithStandardTuning() {
+        SaveInstrumentPracticeTakeRequest request = createValidRequest();
+        request.setInstrumentId("pipa");
+        request.setTuningId("standard-adea");
+        request.getEvents().getFirst().setInstrumentId("pipa");
+        when(instrumentPracticeTakeMapper.selectList(any())).thenReturn(List.of());
+
+        instrumentPracticeTakeService.create(USER_ID, request);
+
+        ArgumentCaptor<InstrumentPracticeTake> takeCaptor = ArgumentCaptor.forClass(InstrumentPracticeTake.class);
+        verify(instrumentPracticeTakeMapper).insert(takeCaptor.capture());
+        assertEquals("pipa", takeCaptor.getValue().getInstrumentId());
+        assertEquals("standard-adea", takeCaptor.getValue().getTuningId());
+    }
+
     private SaveInstrumentPracticeTakeRequest createValidRequest() {
         PerformanceEventRequest event = new PerformanceEventRequest();
         event.setAt(500L);
