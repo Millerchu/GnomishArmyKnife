@@ -29,7 +29,7 @@ import org.springframework.util.StringUtils;
 @Service
 public class InstrumentPracticeTakeService {
 
-    public static final int MAX_TAKES_PER_INSTRUMENT = 10;
+    public static final int MAX_TAKES_PER_INSTRUMENT = 30;
     private static final long MAX_TAKE_DURATION_MS = 10 * 60 * 1000L;
     private static final int MAX_EVENT_COUNT = 20000;
     private static final Set<String> SUPPORTED_INSTRUMENT_IDS = Set.of("guzheng", "guitar", "ukulele", "pipa", "piano");
@@ -66,7 +66,7 @@ public class InstrumentPracticeTakeService {
     }
 
     /**
-     * 保存一段录音；同一乐器满十段时，先删除最旧记录，再保存最新录制。
+     * 保存一段录音；同一乐器满三十段时，先删除最旧记录，再保存最新录制。
      */
     @Transactional
     public SaveInstrumentPracticeTakeResultVO create(Long currentUserId, SaveInstrumentPracticeTakeRequest request) {

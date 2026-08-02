@@ -52,7 +52,8 @@ class InstrumentPracticeTakeServiceTest {
     }
 
     @Test
-    void createReplacesOldestTakeWhenInstrumentReachedTenTakes() {
+    void createReplacesOldestTakeWhenInstrumentReachedThirtyTakes() {
+        assertEquals(30, InstrumentPracticeTakeService.MAX_TAKES_PER_INSTRUMENT);
         List<InstrumentPracticeTake> existingTakes = new ArrayList<>();
         for (long id = 1; id <= InstrumentPracticeTakeService.MAX_TAKES_PER_INSTRUMENT; id++) {
             InstrumentPracticeTake take = new InstrumentPracticeTake();
