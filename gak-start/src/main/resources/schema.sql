@@ -666,12 +666,16 @@ CREATE TABLE IF NOT EXISTS gak_data_migration_task_item (
     status VARCHAR(20) NOT NULL,
     record_count BIGINT NOT NULL DEFAULT 0,
     attachment_count BIGINT NOT NULL DEFAULT 0,
-    message VARCHAR(500),
+    message TEXT,
     created_at TIMESTAMP NOT NULL,
     finished_at TIMESTAMP,
     CONSTRAINT fk_data_migration_task_item_task
         FOREIGN KEY (task_id) REFERENCES gak_data_migration_task (id) ON DELETE CASCADE
 );
+
+-- 任务明细会记录资源导入、导出异常原文，不能因长度限制再次导致任务状态更新失败。
+ALTER TABLE gak_data_migration_task_item
+    ALTER COLUMN message TYPE TEXT;
 
 CREATE TABLE IF NOT EXISTS gak_fuel_record (
     id BIGINT PRIMARY KEY,

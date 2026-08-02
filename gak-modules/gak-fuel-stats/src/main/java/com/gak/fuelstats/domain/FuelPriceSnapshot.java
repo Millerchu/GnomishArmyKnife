@@ -1,6 +1,7 @@
 package com.gak.fuelstats.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
@@ -27,9 +28,13 @@ public class FuelPriceSnapshot {
      * 调价趋势或简要说明。
      */
     private String priceChangeHint;
+    @TableField("price_92")
     private BigDecimal price92;
+    @TableField("price_95")
     private BigDecimal price95;
+    @TableField("price_98")
     private BigDecimal price98;
+    @TableField("price_diesel")
     private BigDecimal priceDiesel;
     private String remark;
     private LocalDateTime createdAt;
