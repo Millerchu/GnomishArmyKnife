@@ -1043,6 +1043,34 @@ WHERE admin_user.username = 'admin'
     WHERE dictionary.dict_code = 'APP_ENCRYPTION_MODE' AND dictionary.deleted = FALSE
   );
 
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5012, 'APP_DATA_SOURCE_MODE', '应用数据来源', 'ENABLED', '["应用管理"]', '应用数据来源选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'APP_DATA_SOURCE_MODE' AND dictionary.deleted = FALSE
+  );
+
+INSERT INTO gak_data_dictionary (
+    id, dict_code, dict_name, status, reference_apps_json, description,
+    creator_user_id, creator_name, created_at, updated_at, deleted
+)
+SELECT
+    5013, 'APP_ICON_TYPE', '应用图标类型', 'ENABLED', '["应用管理"]', '应用图标类型选项',
+    admin_user.id, admin_user.display_name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_user admin_user
+WHERE admin_user.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary dictionary
+    WHERE dictionary.dict_code = 'APP_ICON_TYPE' AND dictionary.deleted = FALSE
+  );
+
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1358,6 +1386,72 @@ INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
+SELECT 5611, 5012, 'APP_DATA_SOURCE_MODE', 'real', '真实接口', 'REAL', 1, 'ENABLED', TRUE, '由后端提供真实数据', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5012 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5012 AND item.item_code = 'real' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5612, 5012, 'APP_DATA_SOURCE_MODE', 'demo', '演示数据', 'DEMO', 2, 'ENABLED', FALSE, '使用演示数据', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5012 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5012 AND item.item_code = 'demo' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5621, 5013, 'APP_ICON_TYPE', 'preset', '预设图标', 'PRESET', 1, 'ENABLED', TRUE, '使用内置预设图标', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5013 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5013 AND item.item_code = 'preset' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5622, 5013, 'APP_ICON_TYPE', 'upload', '上传图标', 'UPLOAD', 2, 'ENABLED', FALSE, '使用上传图标', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5013 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5013 AND item.item_code = 'upload' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5623, 5013, 'APP_ICON_TYPE', 'url', '链接图标', 'URL', 3, 'ENABLED', FALSE, '使用公开链接图标', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5013 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5013 AND item.item_code = 'url' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5624, 5013, 'APP_ICON_TYPE', 'text', '文字图标', 'TEXT', 4, 'ENABLED', FALSE, '使用文字图标', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5013 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5013 AND item.item_code = 'text' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
 SELECT 5701, 5008, 'PERSONAL_BILLS_BILL_CATEGORY', 'food', '餐饮', '餐饮', 1, 'ENABLED', TRUE, '日常餐饮支出', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5008 AND deleted = FALSE)
   AND NOT EXISTS (
@@ -1625,6 +1719,101 @@ WHERE dictionary.dict_code = 'PASSWORD_MEMO_CATEGORY' AND dictionary.deleted = F
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = dictionary.id AND item.item_code = 'other' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001101, 'APP_DATA_SOURCE_MODE', dictionary.id, 'APP_APP_MANAGEMENT', '应用管理', 'SYSTEM_APP', '系统应用',
+    'dataSourceMode', '数据来源', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'APP_DATA_SOURCE_MODE'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_APP_MANAGEMENT' AND usage.module_code = 'SYSTEM_APP'
+      AND usage.biz_field_code = 'dataSourceMode'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001102, 'APP_SECURITY_LEVEL', dictionary.id, 'APP_APP_MANAGEMENT', '应用管理', 'SYSTEM_APP', '系统应用',
+    'securityLevel', '安全级别', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'APP_SECURITY_LEVEL'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_APP_MANAGEMENT' AND usage.module_code = 'SYSTEM_APP'
+      AND usage.biz_field_code = 'securityLevel'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001103, 'APP_ENCRYPTION_MODE', dictionary.id, 'APP_APP_MANAGEMENT', '应用管理', 'SYSTEM_APP', '系统应用',
+    'encryptionMode', '加密方式', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'APP_ENCRYPTION_MODE'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_APP_MANAGEMENT' AND usage.module_code = 'SYSTEM_APP'
+      AND usage.biz_field_code = 'encryptionMode'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001104, 'APP_ICON_TYPE', dictionary.id, 'APP_APP_MANAGEMENT', '应用管理', 'SYSTEM_APP', '系统应用',
+    'iconType', '图标类型', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'APP_ICON_TYPE'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_APP_MANAGEMENT' AND usage.module_code = 'SYSTEM_APP'
+      AND usage.biz_field_code = 'iconType'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_usage (
+    id, dict_code, dictionary_id, app_code, app_name, module_code, module_name,
+    biz_field_code, biz_field_name, usage_type, value_mode, allow_multiple, required_flag,
+    status, usage_count, last_used_at, remark, created_at, updated_at
+)
+SELECT
+    7001105, 'USER_STATUS', dictionary.id, 'APP_APP_MANAGEMENT', '应用管理', 'SYSTEM_APP', '系统应用',
+    'status', '状态', 'FORM_FIELD', 'ITEM_VALUE', FALSE, TRUE,
+    'ENABLED', 0, NULL, 'schema init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'USER_STATUS'
+  AND dictionary.deleted = FALSE
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_usage usage
+    WHERE usage.app_code = 'APP_APP_MANAGEMENT' AND usage.module_code = 'SYSTEM_APP'
+      AND usage.biz_field_code = 'status'
   )
 ON CONFLICT (id) DO NOTHING;
 
