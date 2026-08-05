@@ -77,6 +77,9 @@ public class SaveWowCharacterRequest {
     @Valid
     private List<SaveWowCharacterKeybindingRequest> keybindings;
 
+    @Valid
+    private List<SaveWowCharacterMacroRequest> macros;
+
     @AssertTrue(message = "mythicBestLevel > 0 时，mythicDungeonName 必填；mythicDungeonName 非空时，mythicBestLevel 必须 > 0")
     public boolean isMythicDungeonPairValid() {
         int bestLevel = mythicBestLevel == null ? 0 : mythicBestLevel;
@@ -229,5 +232,13 @@ public class SaveWowCharacterRequest {
 
     public void setKeybindings(List<SaveWowCharacterKeybindingRequest> keybindings) {
         this.keybindings = keybindings;
+    }
+
+    public List<SaveWowCharacterMacroRequest> getMacros() {
+        return macros;
+    }
+
+    public void setMacros(List<SaveWowCharacterMacroRequest> macros) {
+        this.macros = macros;
     }
 }

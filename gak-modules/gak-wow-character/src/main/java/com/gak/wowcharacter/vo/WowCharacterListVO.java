@@ -33,6 +33,7 @@ public class WowCharacterListVO {
     private List<WowCharacterMythicRunVO> mythicRuns;
     private List<WowCharacterWeeklyVaultVO> weeklyVaults;
     private List<WowCharacterKeybindingVO> keybindings;
+    private List<WowCharacterMacroVO> macros;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updatedAt;
@@ -227,5 +228,13 @@ public class WowCharacterListVO {
 
     public void setKeybindings(List<WowCharacterKeybindingVO> keybindings) {
         this.keybindings = keybindings;
+    }
+
+    public List<WowCharacterMacroVO> getMacros() {
+        return macros;
+    }
+
+    public void setMacros(List<WowCharacterMacroVO> macros) {
+        this.macros = macros;
     }
 }

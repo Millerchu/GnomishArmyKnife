@@ -146,6 +146,16 @@ SET binding_name = spec_name
 WHERE binding_name IS NULL OR BTRIM(binding_name) = '';
 ALTER TABLE gak_wow_character_keybinding ALTER COLUMN binding_name SET NOT NULL;
 
+CREATE TABLE IF NOT EXISTS gak_wow_character_macro (
+    id BIGINT PRIMARY KEY,
+    character_id BIGINT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    macro_name VARCHAR(64) NOT NULL,
+    macro_content TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gak_personal_bill (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -591,6 +601,8 @@ DROP INDEX IF EXISTS idx_wow_keybinding_owner_character;
 DROP INDEX IF EXISTS uk_wow_keybinding_character_spec;
 CREATE INDEX IF NOT EXISTS idx_wow_keybinding_owner_character ON gak_wow_character_keybinding (owner_user_id, character_id, binding_name);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_keybinding_character_name ON gak_wow_character_keybinding (character_id, LOWER(binding_name));
+CREATE INDEX IF NOT EXISTS idx_wow_macro_owner_character ON gak_wow_character_macro (owner_user_id, character_id, macro_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_macro_character_name ON gak_wow_character_macro (character_id, LOWER(macro_name));
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (owner_user_id, bill_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);

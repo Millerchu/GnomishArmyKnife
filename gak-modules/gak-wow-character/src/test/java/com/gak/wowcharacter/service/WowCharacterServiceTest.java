@@ -10,15 +10,18 @@ import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.domain.WowCharacter;
 import com.gak.wowcharacter.domain.WowCharacterKeybinding;
+import com.gak.wowcharacter.domain.WowCharacterMacro;
 import com.gak.wowcharacter.domain.WowCharacterMythicRun;
 import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
 import com.gak.wowcharacter.dto.SaveWowCharacterKeybindingRequest;
+import com.gak.wowcharacter.dto.SaveWowCharacterMacroRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterMythicRunRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterWeeklyVaultRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
 import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
+import com.gak.wowcharacter.mapper.WowCharacterMacroMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
 import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
@@ -66,6 +69,9 @@ class WowCharacterServiceTest {
     private WowCharacterKeybindingMapper wowCharacterKeybindingMapper;
 
     @Mock
+    private WowCharacterMacroMapper wowCharacterMacroMapper;
+
+    @Mock
     private UserMapper userMapper;
 
     @Mock
@@ -108,6 +114,7 @@ class WowCharacterServiceTest {
         lenient().when(wowCharacterMythicRunMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterWeeklyVaultMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterKeybindingMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(wowCharacterMacroMapper.selectList(any())).thenReturn(List.of());
     }
 
     @Test
@@ -132,6 +139,7 @@ class WowCharacterServiceTest {
                 buildKeybinding("团本治疗", "YmluZGluZ3MtaG9seQ=="),
                 buildKeybinding("大秘境治疗", "")
         ));
+        request.setMacros(List.of(buildMacro("爆发", "/cast 神圣复仇者")));
 
         WowCharacterListVO result = wowCharacterService.create(1L, request);
 
@@ -155,6 +163,9 @@ class WowCharacterServiceTest {
         assertEquals(Boolean.TRUE, result.getKeybindings().get(0).getHasKeybinding());
         assertEquals("YmluZGluZ3MtaG9seQ==", result.getKeybindings().get(0).getBindingContent());
         assertEquals(Boolean.FALSE, result.getKeybindings().get(1).getHasKeybinding());
+        assertEquals(1, result.getMacros().size());
+        assertEquals("爆发", result.getMacros().get(0).getMacroName());
+        assertEquals("/cast 神圣复仇者", result.getMacros().get(0).getMacroContent());
         assertEquals(Boolean.TRUE, result.getIsFeatured());
         assertEquals(new BigDecimal("605.00"), result.getMythicScore());
 
@@ -166,6 +177,10 @@ class WowCharacterServiceTest {
         verify(wowCharacterKeybindingMapper, org.mockito.Mockito.times(2)).insert(keybindingCaptor.capture());
         assertEquals("团本治疗", keybindingCaptor.getAllValues().get(0).getBindingName());
         assertEquals("YmluZGluZ3MtaG9seQ==", keybindingCaptor.getAllValues().get(0).getBindingContent());
+
+        ArgumentCaptor<WowCharacterMacro> macroCaptor = ArgumentCaptor.forClass(WowCharacterMacro.class);
+        verify(wowCharacterMacroMapper).insert(macroCaptor.capture());
+        assertEquals("爆发", macroCaptor.getValue().getMacroName());
     }
 
     @Test
@@ -193,6 +208,20 @@ class WowCharacterServiceTest {
         BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
 
         assertEquals("WOW_KEYBINDING_NAME_DUPLICATE", exception.getCode());
+    }
+
+    @Test
+    void createShouldRejectDuplicateMacroNameIgnoringCase() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        SaveWowCharacterRequest request = buildSaveRequest();
+        request.setMacros(List.of(
+                buildMacro("爆发", "/cast 技能一"),
+                buildMacro("爆发", "/cast 技能二")
+        ));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
+
+        assertEquals("WOW_MACRO_NAME_DUPLICATE", exception.getCode());
     }
 
     @Test
@@ -381,6 +410,13 @@ class WowCharacterServiceTest {
         SaveWowCharacterKeybindingRequest request = new SaveWowCharacterKeybindingRequest();
         request.setBindingName(bindingName);
         request.setBindingContent(bindingContent);
+        return request;
+    }
+
+    private SaveWowCharacterMacroRequest buildMacro(String macroName, String macroContent) {
+        SaveWowCharacterMacroRequest request = new SaveWowCharacterMacroRequest();
+        request.setMacroName(macroName);
+        request.setMacroContent(macroContent);
         return request;
     }
 

@@ -30,6 +30,7 @@ public class WowCharacterSimpleVO {
     private List<WowCharacterMythicRunVO> mythicRuns;
     private List<WowCharacterWeeklyVaultVO> weeklyVaults;
     private List<WowCharacterKeybindingVO> keybindings;
+    private List<WowCharacterMacroVO> macros;
 
     public Long getId() {
         return id;
@@ -205,5 +206,13 @@ public class WowCharacterSimpleVO {
 
     public void setKeybindings(List<WowCharacterKeybindingVO> keybindings) {
         this.keybindings = keybindings;
+    }
+
+    public List<WowCharacterMacroVO> getMacros() {
+        return macros;
+    }
+
+    public void setMacros(List<WowCharacterMacroVO> macros) {
+        this.macros = macros;
     }
 }
