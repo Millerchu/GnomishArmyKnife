@@ -159,6 +159,48 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void createShouldPersistItemZentaoNumbersAndBuildDistinctLogSummary() {
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1015L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 11));
+        request.setZentaoNo("旧的日志级输入");
+        request.setWorkItems(List.of(
+                buildWorkItemRequest("第一项工作", WorkLogStatus.COMPLETED.name(), "6419"),
+                buildWorkItemRequest("第二项工作", WorkLogStatus.UNFINISHED.name(), "6419，6420"),
+                buildWorkItemRequest("第三项工作", WorkLogStatus.COMPLETED.name(), " ")
+        ));
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        ArgumentCaptor<WorkLog> logCaptor = ArgumentCaptor.forClass(WorkLog.class);
+        ArgumentCaptor<WorkLogItem> itemCaptor = ArgumentCaptor.forClass(WorkLogItem.class);
+        verify(workLogMapper).insert(logCaptor.capture());
+        verify(workLogItemMapper, times(3)).insert(itemCaptor.capture());
+        assertEquals("6419,6420", logCaptor.getValue().getZentaoNo());
+        assertEquals("6419,6420", response.getZentaoNo());
+        assertEquals("6419", itemCaptor.getAllValues().get(0).getZentaoNo());
+        assertEquals("6419，6420", response.getWorkItems().get(1).getZentaoNo());
+        assertEquals(null, response.getWorkItems().get(2).getZentaoNo());
+    }
+
+    @Test
+    void getShouldLeaveHistoricalFallbackItemZentaoNumberEmpty() {
+        WorkLog workLog = buildWorkLog();
+        workLog.setZentaoNo("历史汇总编号");
+        when(workLogMapper.selectById(2001L)).thenReturn(workLog);
+
+        WorkLogResponse response = workLogService.get(1L, 2001L);
+
+        assertEquals("历史汇总编号", response.getZentaoNo());
+        assertEquals(2, response.getWorkItems().size());
+        assertEquals(null, response.getWorkItems().get(0).getZentaoNo());
+        assertEquals(null, response.getWorkItems().get(1).getZentaoNo());
+    }
+
+    @Test
     void createShouldDefaultMissingStatusToCompleted() {
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
@@ -409,6 +451,25 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void updateShouldPreserveHistoricalLogZentaoNumberWhenItemsHaveNoMapping() {
+        WorkLog current = buildWorkLog();
+        current.setZentaoNo("6419,6420");
+        when(workLogMapper.selectById(2001L)).thenReturn(current);
+        UpdateWorkLogRequest request = buildUpdateRequest(LocalDate.of(2026, 3, 23));
+        request.setZentaoNo("6419,6420");
+        request.setWorkItems(List.of(
+                buildWorkItemRequest("完成工作日志改版", WorkLogStatus.COMPLETED.name()),
+                buildWorkItemRequest("补充周报字段", WorkLogStatus.COMPLETED.name())
+        ));
+
+        WorkLogResponse response = workLogService.update(1L, 2001L, request);
+
+        assertEquals("6419,6420", response.getZentaoNo());
+        assertEquals(null, response.getWorkItems().get(0).getZentaoNo());
+        assertEquals(null, response.getWorkItems().get(1).getZentaoNo());
+    }
+
+    @Test
     void createShouldAcceptOvertimeAsIndependentType() {
         when(workLogMapper.countByUserDateAndProject(1L, LocalDate.of(2026, 4, 6), "GAK", null))
                 .thenReturn(0L);
@@ -466,6 +527,7 @@ class WorkLogServiceTest {
         unfinishedItem.setProjectCode(unfinishedLog.getProjectCode());
         unfinishedItem.setWorkItem("补充周报字段");
         unfinishedItem.setStatus(WorkLogStatus.UNFINISHED.name());
+        unfinishedItem.setZentaoNo("6419");
         when(workLogItemMapper.selectLatestByStatus(
                 1L,
                 WorkLogStatus.UNFINISHED.name(),
@@ -479,6 +541,7 @@ class WorkLogServiceTest {
         assertEquals("GAK", result.get(0).getProjectCode());
         assertEquals("补充周报字段", result.get(0).getWorkItem());
         assertEquals(WorkLogStatus.UNFINISHED.name(), result.get(0).getStatus());
+        assertEquals("6419", result.get(0).getZentaoNo());
     }
 
     @Test
@@ -520,9 +583,14 @@ class WorkLogServiceTest {
     }
 
     private WorkLogItemRequest buildWorkItemRequest(String content, String status) {
+        return buildWorkItemRequest(content, status, null);
+    }
+
+    private WorkLogItemRequest buildWorkItemRequest(String content, String status, String zentaoNo) {
         WorkLogItemRequest request = new WorkLogItemRequest();
         request.setContent(content);
         request.setStatus(status);
+        request.setZentaoNo(zentaoNo);
         return request;
     }
 

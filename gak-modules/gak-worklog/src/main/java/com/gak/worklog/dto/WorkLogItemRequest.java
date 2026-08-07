@@ -15,6 +15,9 @@ public class WorkLogItemRequest {
     @Size(max = 16)
     private String status;
 
+    @Size(max = 255)
+    private String zentaoNo;
+
     public String getContent() {
         return content;
     }
@@ -29,5 +32,13 @@ public class WorkLogItemRequest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getZentaoNo() {
+        return zentaoNo;
+    }
+
+    public void setZentaoNo(String zentaoNo) {
+        this.zentaoNo = zentaoNo;
     }
 }

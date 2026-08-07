@@ -13,6 +13,7 @@ public class UnfinishedWorkItemResponse {
     private String projectCode;
     private String workItem;
     private String status;
+    private String zentaoNo;
 
     public Long getId() {
         return id;
@@ -60,5 +61,13 @@ public class UnfinishedWorkItemResponse {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getZentaoNo() {
+        return zentaoNo;
+    }
+
+    public void setZentaoNo(String zentaoNo) {
+        this.zentaoNo = zentaoNo;
     }
 }

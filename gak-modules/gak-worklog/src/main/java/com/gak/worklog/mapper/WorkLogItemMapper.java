@@ -19,11 +19,11 @@ public interface WorkLogItemMapper extends BaseMapper<WorkLogItem> {
      */
     @Select({
             "SELECT latest.item_id AS id, latest.work_log_id, latest.log_date, latest.project_code,",
-            "       latest.content AS work_item, latest.status",
+            "       latest.content AS work_item, latest.status, latest.zentao_no",
             "FROM (",
             "    SELECT DISTINCT ON (log.project_code, BTRIM(item.content))",
             "           item.id AS item_id, item.work_log_id, log.log_date, log.project_code,",
-            "           item.content, item.status, item.updated_at, log.updated_at AS log_updated_at",
+            "           item.content, item.status, item.zentao_no, item.updated_at, log.updated_at AS log_updated_at",
             "    FROM gak_work_log_item item",
             "    JOIN gak_work_log log ON log.id = item.work_log_id",
             "    WHERE log.user_id = #{userId}",

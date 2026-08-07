@@ -402,6 +402,7 @@ CREATE TABLE IF NOT EXISTS gak_work_log_item (
     work_log_id BIGINT NOT NULL,
     content TEXT NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT 'COMPLETED',
+    zentao_no VARCHAR(255),
     sort_no INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
@@ -541,6 +542,8 @@ ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS work_status VARCHAR(16) NOT NU
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_scene VARCHAR(32);
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_allowance_amount NUMERIC(8, 2) NOT NULL DEFAULT 0;
 ALTER TABLE gak_work_log ADD COLUMN IF NOT EXISTS business_trip_reimbursed BOOLEAN NOT NULL DEFAULT FALSE;
+-- 历史工作内容不建立无法确认的禅道映射，新列保持为空。
+ALTER TABLE gak_work_log_item ADD COLUMN IF NOT EXISTS zentao_no VARCHAR(255);
 UPDATE gak_work_log SET business_trip_allowance_amount = 0 WHERE business_trip_allowance_amount IS NULL;
 UPDATE gak_work_log SET business_trip_reimbursed = FALSE WHERE business_trip_reimbursed IS NULL;
 UPDATE gak_work_log

@@ -19,6 +19,7 @@ public class WeeklyWorkLogBriefResponse {
     private String brief;
     private String status;
     private List<WorkLogItemResponse> workItems;
+    private String zentaoNo;
     private BigDecimal personDay;
     private BigDecimal overtimeHours;
     @JsonFormat(pattern = "HH:mm:ss")
@@ -90,6 +91,14 @@ public class WeeklyWorkLogBriefResponse {
 
     public void setWorkItems(List<WorkLogItemResponse> workItems) {
         this.workItems = workItems;
+    }
+
+    public String getZentaoNo() {
+        return zentaoNo;
+    }
+
+    public void setZentaoNo(String zentaoNo) {
+        this.zentaoNo = zentaoNo;
     }
 
     public BigDecimal getPersonDay() {

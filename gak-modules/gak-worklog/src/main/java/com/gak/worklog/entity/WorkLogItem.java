@@ -16,6 +16,7 @@ public class WorkLogItem {
     private Long workLogId;
     private String content;
     private String status;
+    private String zentaoNo;
     private Integer sortNo;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -50,6 +51,14 @@ public class WorkLogItem {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getZentaoNo() {
+        return zentaoNo;
+    }
+
+    public void setZentaoNo(String zentaoNo) {
+        this.zentaoNo = zentaoNo;
     }
 
     public Integer getSortNo() {

@@ -26,6 +26,7 @@ import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -97,6 +98,7 @@ public class WorkLogService {
                 WorkLogStatus.COMPLETED.name()
         );
         String workStatus = resolveAggregateStatus(workItems);
+        String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
         workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, null);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), null);
@@ -119,7 +121,7 @@ public class WorkLogService {
         workLog.setProjectCode(projectCode);
         workLog.setContent(serializeWorkItems(workItems));
         workLog.setWorkStatus(workStatus);
-        workLog.setZentaoNo(request.getZentaoNo());
+        workLog.setZentaoNo(zentaoNo);
         workLog.setPersonDay(request.getPersonDay());
         workLog.setOvertimeHours(overtimeHours);
         workLog.setOffWorkTime(request.getOffWorkTime());
@@ -174,6 +176,7 @@ public class WorkLogService {
                 current.getWorkStatus()
         );
         String workStatus = resolveAggregateStatus(workItems);
+        String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
         workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, id);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), id);
@@ -193,7 +196,7 @@ public class WorkLogService {
         current.setProjectCode(projectCode);
         current.setContent(serializeWorkItems(workItems));
         current.setWorkStatus(workStatus);
-        current.setZentaoNo(request.getZentaoNo());
+        current.setZentaoNo(zentaoNo);
         current.setPersonDay(request.getPersonDay());
         current.setOvertimeHours(overtimeHours);
         current.setOffWorkTime(request.getOffWorkTime());
@@ -306,6 +309,7 @@ public class WorkLogService {
                     workLog,
                     workItemMap.getOrDefault(workLog.getId(), List.of())
             ));
+            response.setZentaoNo(workLog.getZentaoNo());
             response.setPersonDay(workLog.getPersonDay());
             response.setOvertimeHours(workLog.getOvertimeHours());
             response.setOffWorkTime(workLog.getOffWorkTime());
@@ -426,7 +430,8 @@ public class WorkLogService {
                 }
                 normalizedItems.add(new NormalizedWorkItem(
                         requestedItem.getContent().trim(),
-                        normalizeWorkStatus(requestedItem.getStatus(), WorkLogStatus.COMPLETED.name())
+                        normalizeWorkStatus(requestedItem.getStatus(), WorkLogStatus.COMPLETED.name()),
+                        normalizeOptionalZentaoNo(requestedItem.getZentaoNo())
                 ));
             }
         } else {
@@ -434,7 +439,7 @@ public class WorkLogService {
             if (legacyWorkItem != null) {
                 for (String line : legacyWorkItem.split("\\r?\\n")) {
                     if (!line.isBlank()) {
-                        normalizedItems.add(new NormalizedWorkItem(line.trim(), normalizedLegacyStatus));
+                        normalizedItems.add(new NormalizedWorkItem(line.trim(), normalizedLegacyStatus, null));
                     }
                 }
             }
@@ -459,6 +464,47 @@ public class WorkLogService {
                 : WorkLogStatus.COMPLETED.name();
     }
 
+    /**
+     * 新客户端的日志级禅道号由条目汇总；旧客户端未提交结构化条目时仍兼容原字段。
+     */
+    private String resolveAggregateZentaoNo(List<NormalizedWorkItem> workItems,
+                                            List<WorkLogItemRequest> requestedItems,
+                                            String legacyZentaoNo) {
+        if (requestedItems == null || requestedItems.isEmpty()) {
+            return normalizeOptionalZentaoNo(legacyZentaoNo);
+        }
+        LinkedHashSet<String> zentaoNumbers = new LinkedHashSet<>();
+        for (NormalizedWorkItem workItem : workItems) {
+            if (workItem.zentaoNo() == null) {
+                continue;
+            }
+            for (String zentaoNumber : workItem.zentaoNo().split("[,，]")) {
+                if (!zentaoNumber.isBlank()) {
+                    zentaoNumbers.add(zentaoNumber.trim());
+                }
+            }
+        }
+        String aggregateZentaoNo = String.join(",", zentaoNumbers);
+        if (aggregateZentaoNo.length() > 255) {
+            throw new ResponseStatusException(BAD_REQUEST, "禅道编号汇总不能超过 255 个字符");
+        }
+        // 历史日志尚无条目级映射时，继续显示并保留原日志级禅道号。
+        return aggregateZentaoNo.isEmpty()
+                ? normalizeOptionalZentaoNo(legacyZentaoNo)
+                : aggregateZentaoNo;
+    }
+
+    private String normalizeOptionalZentaoNo(String zentaoNo) {
+        if (zentaoNo == null || zentaoNo.isBlank()) {
+            return null;
+        }
+        String normalizedZentaoNo = zentaoNo.trim();
+        if (normalizedZentaoNo.length() > 255) {
+            throw new ResponseStatusException(BAD_REQUEST, "单条工作内容的禅道编号不能超过 255 个字符");
+        }
+        return normalizedZentaoNo;
+    }
+
     private List<WorkLogItem> saveWorkItems(Long workLogId,
                                             List<NormalizedWorkItem> workItems,
                                             LocalDateTime now) {
@@ -469,6 +515,7 @@ public class WorkLogService {
             workLogItem.setWorkLogId(workLogId);
             workLogItem.setContent(normalizedItem.content());
             workLogItem.setStatus(normalizedItem.status());
+            workLogItem.setZentaoNo(normalizedItem.zentaoNo());
             workLogItem.setSortNo(index + 1);
             workLogItem.setCreatedAt(now);
             workLogItem.setUpdatedAt(now);
@@ -717,6 +764,7 @@ public class WorkLogService {
                 response.setId(storedItem.getId());
                 response.setContent(storedItem.getContent());
                 response.setStatus(resolveStoredWorkStatus(storedItem.getStatus()));
+                response.setZentaoNo(storedItem.getZentaoNo());
                 response.setSortNo(storedItem.getSortNo());
                 responses.add(response);
             }
@@ -745,7 +793,7 @@ public class WorkLogService {
     private record BusinessTripAllowance(String scene, BigDecimal amount, Boolean reimbursed) {
     }
 
-    private record NormalizedWorkItem(String content, String status) {
+    private record NormalizedWorkItem(String content, String status, String zentaoNo) {
     }
 
     private String extractBrief(String workItem) {

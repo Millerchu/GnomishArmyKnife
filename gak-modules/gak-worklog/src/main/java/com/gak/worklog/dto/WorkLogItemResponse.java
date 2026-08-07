@@ -8,6 +8,7 @@ public class WorkLogItemResponse {
     private Long id;
     private String content;
     private String status;
+    private String zentaoNo;
     private Integer sortNo;
 
     public Long getId() {
@@ -32,6 +33,14 @@ public class WorkLogItemResponse {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getZentaoNo() {
+        return zentaoNo;
+    }
+
+    public void setZentaoNo(String zentaoNo) {
+        this.zentaoNo = zentaoNo;
     }
 
     public Integer getSortNo() {
