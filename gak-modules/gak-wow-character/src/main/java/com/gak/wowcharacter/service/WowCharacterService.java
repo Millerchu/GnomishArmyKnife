@@ -79,6 +79,7 @@ public class WowCharacterService {
     private static final String PROFESSION_DICT_CODE = "WOW_PRIMARY_PROFESSION";
     private static final String DEFAULT_FACTION = "ALLIANCE";
     private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    private static final int MAX_CHARACTER_LEVEL = 90;
     private static final int FEATURED_CHARACTER_LIMIT = 4;
     private static final int[] RAID_VAULT_THRESHOLDS = {2, 4, 6};
     private static final int[] MYTHIC_VAULT_THRESHOLDS = {1, 4, 8};
@@ -207,6 +208,47 @@ public class WowCharacterService {
                 toDomainMacros(current.getId(), currentUserId, normalized.macros(), now));
     }
 
+    /**
+     * 角色详情打开时按国服重置周期初始化低保，并清空上一周期的大秘钥匙。
+     */
+    @Transactional
+    public WowCharacterListVO resetWeeklyProgressIfNeeded(Long currentUserId, Long id) {
+        ensureCurrentUserExists(currentUserId);
+        WowCharacter current = getOwnedCharacterOrThrow(currentUserId, id);
+        List<Long> characterIds = List.of(current.getId());
+        List<WowCharacterWeeklyVault> weeklyVaults = loadWeeklyVaultMap(characterIds)
+                .getOrDefault(current.getId(), Collections.emptyList());
+
+        if (current.getLevel() == null || current.getLevel() < MAX_CHARACTER_LEVEL) {
+            return buildDetailVO(current, characterIds, weeklyVaults);
+        }
+
+        LocalDateTime now = LocalDateTime.now(WowWeeklyResetSchedule.CHINA_ZONE_ID);
+        LocalDate currentWeekStartDate = WowWeeklyResetSchedule.resolveWeekStartDate(now);
+        boolean hasCurrentWeekVault = weeklyVaults.stream()
+                .anyMatch(item -> currentWeekStartDate.equals(item.getWeekStartDate()));
+        if (!hasCurrentWeekVault) {
+            deleteWeeklyVaults(currentUserId, current.getId());
+            current.setMythicBestLevel(0);
+            current.setMythicDungeonName(null);
+            current.setUpdatedAt(now);
+            wowCharacterMapper.updateById(current);
+
+            WowCharacterWeeklyVault currentWeekVault = new WowCharacterWeeklyVault();
+            currentWeekVault.setCharacterId(current.getId());
+            currentWeekVault.setOwnerUserId(currentUserId);
+            currentWeekVault.setWeekStartDate(currentWeekStartDate);
+            currentWeekVault.setRaidProgressCount(0);
+            currentWeekVault.setMythicProgressCount(0);
+            currentWeekVault.setWorldProgressCount(0);
+            currentWeekVault.setCreatedAt(now);
+            currentWeekVault.setUpdatedAt(now);
+            wowCharacterWeeklyVaultMapper.insert(currentWeekVault);
+            weeklyVaults = List.of(currentWeekVault);
+        }
+        return buildDetailVO(current, characterIds, weeklyVaults);
+    }
+
     @Transactional
     public void delete(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
@@ -216,9 +258,7 @@ public class WowCharacterService {
         mythicRunWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
         wowCharacterMythicRunMapper.delete(mythicRunWrapper);
 
-        QueryWrapper<WowCharacterWeeklyVault> weeklyVaultWrapper = new QueryWrapper<>();
-        weeklyVaultWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
-        wowCharacterWeeklyVaultMapper.delete(weeklyVaultWrapper);
+        deleteWeeklyVaults(currentUserId, current.getId());
 
         QueryWrapper<WowCharacterKeybinding> keybindingWrapper = new QueryWrapper<>();
         keybindingWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
@@ -279,6 +319,30 @@ public class WowCharacterService {
                     .like("profession_secondary", trimmedKeyword));
         }
         return new ArrayList<>(wowCharacterMapper.selectList(wrapper));
+    }
+
+    /**
+     * 组装角色详情，避免周重置接口依赖前端持有的旧表单数据。
+     */
+    private WowCharacterListVO buildDetailVO(WowCharacter character,
+                                             List<Long> characterIds,
+                                             List<WowCharacterWeeklyVault> weeklyVaults) {
+        return toListVO(
+                character,
+                loadMythicRunMap(characterIds).getOrDefault(character.getId(), Collections.emptyList()),
+                weeklyVaults,
+                loadKeybindingMap(characterIds).getOrDefault(character.getId(), Collections.emptyList()),
+                loadMacroMap(characterIds).getOrDefault(character.getId(), Collections.emptyList())
+        );
+    }
+
+    /**
+     * 删除角色当前保存的低保记录，为新周期空记录腾出唯一键。
+     */
+    private void deleteWeeklyVaults(Long currentUserId, Long characterId) {
+        QueryWrapper<WowCharacterWeeklyVault> weeklyVaultWrapper = new QueryWrapper<>();
+        weeklyVaultWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
+        wowCharacterWeeklyVaultMapper.delete(weeklyVaultWrapper);
     }
 
     private User ensureCurrentUserExists(Long currentUserId) {

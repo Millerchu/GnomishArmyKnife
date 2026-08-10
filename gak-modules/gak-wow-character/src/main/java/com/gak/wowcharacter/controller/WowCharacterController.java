@@ -57,6 +57,16 @@ public class WowCharacterController {
         return ApiResponse.success(wowCharacterService.update(currentUserId, id, request));
     }
 
+    /**
+     * 打开角色详情时检查国服周重置，并在需要时初始化本周低保。
+     */
+    @PostMapping("/{id}/weekly-reset")
+    public ApiResponse<WowCharacterListVO> resetWeeklyProgress(@PathVariable Long id,
+                                                                HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(wowCharacterService.resetWeeklyProgressIfNeeded(currentUserId, id));
+    }
+
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
