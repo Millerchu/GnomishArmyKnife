@@ -28,6 +28,9 @@ public class RequirementQueryRequest {
     @Size(max = 16, message = "priority 长度不能超过 16")
     private String priority;
 
+    @Size(max = 16, message = "type 长度不能超过 16")
+    private String type;
+
     public long getPageNo() {
         return pageNo;
     }
@@ -74,5 +77,13 @@ public class RequirementQueryRequest {
 
     public void setPriority(String priority) {
         this.priority = priority;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 }

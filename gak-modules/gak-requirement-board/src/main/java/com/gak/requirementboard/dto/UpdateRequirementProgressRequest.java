@@ -10,8 +10,8 @@ import jakarta.validation.constraints.Size;
  */
 public class UpdateRequirementProgressRequest {
 
-    @NotBlank(message = "需求状态不能为空")
-    @Size(max = 32, message = "需求状态长度不能超过 32")
+    @NotBlank(message = "反馈状态不能为空")
+    @Size(max = 32, message = "反馈状态长度不能超过 32")
     private String status;
 
     @Size(max = 300, message = "处理说明长度不能超过 300")

@@ -12,15 +12,19 @@ public class CreateRequirementRequest {
     @Size(max = 64, message = "所属应用编码长度不能超过 64")
     private String appCode;
 
-    @NotBlank(message = "需求标题不能为空")
-    @Size(max = 100, message = "需求标题长度不能超过 100")
+    @NotBlank(message = "类型不能为空")
+    @Size(max = 16, message = "类型长度不能超过 16")
+    private String type;
+
+    @NotBlank(message = "标题不能为空")
+    @Size(max = 100, message = "标题长度不能超过 100")
     private String title;
 
-    @Size(max = 2000, message = "需求描述长度不能超过 2000")
+    @Size(max = 2000, message = "详细描述长度不能超过 2000")
     private String description;
 
-    @NotBlank(message = "需求优先级不能为空")
-    @Size(max = 16, message = "需求优先级长度不能超过 16")
+    @NotBlank(message = "优先级不能为空")
+    @Size(max = 16, message = "优先级长度不能超过 16")
     private String priority;
 
     public String getAppCode() {
@@ -29,6 +33,14 @@ public class CreateRequirementRequest {
 
     public void setAppCode(String appCode) {
         this.appCode = appCode;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 
     public String getTitle() {

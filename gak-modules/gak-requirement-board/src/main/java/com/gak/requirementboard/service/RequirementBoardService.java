@@ -11,6 +11,7 @@ import com.gak.requirementboard.dto.UpdateRequirementProgressRequest;
 import com.gak.requirementboard.dto.UpdateRequirementRequest;
 import com.gak.requirementboard.enums.RequirementPriority;
 import com.gak.requirementboard.enums.RequirementStatus;
+import com.gak.requirementboard.enums.RequirementType;
 import com.gak.requirementboard.mapper.RequirementMapper;
 import com.gak.requirementboard.mapper.RequirementAppMapper;
 import com.gak.requirementboard.mapper.RequirementProgressLogMapper;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -45,9 +47,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class RequirementBoardService {
 
-    private static final String PENDING_REVIEW_REMARK = "提交需求";
-    private static final String REQUIREMENT_NOT_FOUND_MESSAGE = "需求不存在或已删除";
+    private static final String REQUIREMENT_PENDING_REVIEW_REMARK = "提交需求";
+    private static final String BUG_PENDING_REVIEW_REMARK = "提交Bug";
+    private static final String REQUIREMENT_NOT_FOUND_MESSAGE = "反馈不存在或已删除";
     private static final String UNKNOWN_USER_NAME = "未知用户";
+    private static final Map<String, String> SYSTEM_APPLICATIONS = buildSystemApplications();
 
     private final RequirementMapper requirementMapper;
     private final RequirementProgressLogMapper requirementProgressLogMapper;
@@ -72,6 +76,7 @@ public class RequirementBoardService {
         String normalizedStatus = normalizeOptionalStatus(request.getStatus());
         String normalizedAppCode = normalizeOptionalAppCode(request.getAppCode());
         String normalizedPriority = normalizeOptionalPriority(request.getPriority());
+        String normalizedType = normalizeOptionalType(request.getType());
         String keyword = trimToNull(request.getKeyword());
 
         QueryWrapper<Requirement> wrapper = new QueryWrapper<>();
@@ -83,6 +88,9 @@ public class RequirementBoardService {
         }
         if (normalizedPriority != null) {
             wrapper.eq("priority", normalizedPriority);
+        }
+        if (normalizedType != null) {
+            wrapper.eq("type", normalizedType);
         }
         if (keyword != null) {
             wrapper.and(condition -> condition.like("title", keyword).or().like("description", keyword));
@@ -107,7 +115,14 @@ public class RequirementBoardService {
 
     public List<RequirementAppOptionVO> listApps(Long currentUserId) {
         ensureCurrentUserExists(currentUserId);
-        return requirementAppMapper.selectEnabledApps();
+        Map<String, RequirementAppOptionVO> mergedApps = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : SYSTEM_APPLICATIONS.entrySet()) {
+            mergedApps.put(entry.getKey(), buildAppOption(entry.getKey(), entry.getValue()));
+        }
+        for (RequirementAppOptionVO app : requirementAppMapper.selectEnabledApps()) {
+            mergedApps.putIfAbsent(app.getAppCode(), app);
+        }
+        return new ArrayList<>(mergedApps.values());
     }
 
     public RequirementDetailVO getDetail(Long currentUserId, Long id) {
@@ -140,7 +155,8 @@ public class RequirementBoardService {
         requirement.setCreatorUserId(currentUserId);
         requirement.setAppCode(app.getAppCode());
         requirement.setAppName(app.getAppName());
-        requirement.setTitle(trimRequired(request.getTitle(), "需求标题不能为空"));
+        requirement.setType(normalizeRequiredType(request.getType()));
+        requirement.setTitle(trimRequired(request.getTitle(), "标题不能为空"));
         requirement.setDescription(trimToNull(request.getDescription()));
         requirement.setPriority(normalizeRequiredPriority(request.getPriority()));
         requirement.setStatus(RequirementStatus.PENDING_REVIEW.name());
@@ -152,7 +168,7 @@ public class RequirementBoardService {
         RequirementProgressLog progressLog = new RequirementProgressLog();
         progressLog.setRequirementId(requirement.getId());
         progressLog.setStatus(requirement.getStatus());
-        progressLog.setRemark(PENDING_REVIEW_REMARK);
+        progressLog.setRemark(initialProgressRemark(requirement.getType()));
         progressLog.setOperatorUserId(currentUserId);
         progressLog.setCreatedAt(now);
         requirementProgressLogMapper.insert(progressLog);
@@ -168,13 +184,13 @@ public class RequirementBoardService {
         ensureCurrentUserExists(currentUserId);
         Requirement requirement = getRequirementOrThrow(id);
         if (!currentUserId.equals(requirement.getCreatorUserId())) {
-            throw new BusinessException("REQUIREMENT_EDIT_FORBIDDEN", "只能编辑自己提交的需求");
+            throw new BusinessException("REQUIREMENT_EDIT_FORBIDDEN", "只能编辑自己提交的反馈");
         }
 
         RequirementAppOptionVO app = getEnabledAppOrThrow(request.getAppCode());
         LocalDateTime now = LocalDateTime.now();
-        updateRequirementOrThrow(id, request.getVersion(), null, app,
-                trimRequired(request.getTitle(), "需求标题不能为空"), trimToNull(request.getDescription()),
+        updateRequirementOrThrow(id, request.getVersion(), null, app, normalizeRequiredType(request.getType()),
+                trimRequired(request.getTitle(), "标题不能为空"), trimToNull(request.getDescription()),
                 normalizeRequiredPriority(request.getPriority()), now);
         return getDetail(currentUserId, id);
     }
@@ -187,11 +203,11 @@ public class RequirementBoardService {
         String normalizedStatus = normalizeRequiredStatus(request.getStatus());
         Requirement current = getRequirementOrThrow(id);
         if (normalizedStatus.equals(current.getStatus())) {
-            throw new BusinessException("REQUIREMENT_STATUS_UNCHANGED", "请选择与当前状态不同的需求状态");
+            throw new BusinessException("REQUIREMENT_STATUS_UNCHANGED", "请选择与当前状态不同的反馈状态");
         }
 
         LocalDateTime now = LocalDateTime.now();
-        updateRequirementOrThrow(id, request.getVersion(), normalizedStatus, null, null, null, null, now);
+        updateRequirementOrThrow(id, request.getVersion(), normalizedStatus, null, null, null, null, null, now);
 
         RequirementProgressLog progressLog = new RequirementProgressLog();
         progressLog.setRequirementId(id);
@@ -208,13 +224,13 @@ public class RequirementBoardService {
         User currentUser = ensureCurrentUserExists(currentUserId);
         Requirement requirement = getRequirementOrThrow(id);
         if (!currentUserId.equals(requirement.getCreatorUserId()) && !isAdmin(currentUser)) {
-            throw new BusinessException("REQUIREMENT_DELETE_FORBIDDEN", "只能删除自己提交的需求");
+            throw new BusinessException("REQUIREMENT_DELETE_FORBIDDEN", "只能删除自己提交的反馈");
         }
 
         QueryWrapper<Requirement> wrapper = new QueryWrapper<>();
         wrapper.eq("id", id).eq("version", version);
         if (requirementMapper.delete(wrapper) == 0) {
-            throw new BusinessException("REQUIREMENT_VERSION_CONFLICT", "需求已被其他用户更新，请刷新后重试");
+            throw new BusinessException("REQUIREMENT_VERSION_CONFLICT", "反馈已被其他用户更新，请刷新后重试");
         }
     }
 
@@ -225,6 +241,7 @@ public class RequirementBoardService {
                                           Long version,
                                           String status,
                                           RequirementAppOptionVO app,
+                                          String type,
                                           String title,
                                           String description,
                                           String priority,
@@ -236,6 +253,9 @@ public class RequirementBoardService {
         if (app != null) {
             updated.setAppCode(app.getAppCode());
             updated.setAppName(app.getAppName());
+        }
+        if (type != null) {
+            updated.setType(type);
         }
         if (title != null) {
             updated.setTitle(title);
@@ -250,7 +270,7 @@ public class RequirementBoardService {
         UpdateWrapper<Requirement> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id).eq("version", version);
         if (requirementMapper.update(updated, wrapper) == 0) {
-            throw new BusinessException("REQUIREMENT_VERSION_CONFLICT", "需求已被其他用户更新，请刷新后重试");
+            throw new BusinessException("REQUIREMENT_VERSION_CONFLICT", "反馈已被其他用户更新，请刷新后重试");
         }
     }
 
@@ -304,19 +324,28 @@ public class RequirementBoardService {
         return normalized == null ? null : normalizeRequiredPriority(normalized);
     }
 
+    private String normalizeOptionalType(String type) {
+        String normalized = trimToNull(type);
+        return normalized == null ? null : normalizeRequiredType(normalized);
+    }
+
     private String normalizeRequiredPriority(String priority) {
-        String normalized = trimRequired(priority, "需求优先级不能为空").toUpperCase(Locale.ROOT);
+        String normalized = trimRequired(priority, "优先级不能为空").toUpperCase(Locale.ROOT);
         try {
             return RequirementPriority.valueOf(normalized).name();
         } catch (IllegalArgumentException exception) {
-            throw new BusinessException("REQUIREMENT_PRIORITY_INVALID", "需求优先级不合法");
+            throw new BusinessException("REQUIREMENT_PRIORITY_INVALID", "优先级不合法");
         }
     }
 
     private RequirementAppOptionVO getEnabledAppOrThrow(String appCode) {
         String normalizedAppCode = normalizeOptionalAppCode(appCode);
         if (normalizedAppCode == null) {
-            throw new BusinessException("REQUIREMENT_APP_REQUIRED", "请选择需求所属应用");
+            throw new BusinessException("REQUIREMENT_APP_REQUIRED", "请选择反馈所属应用");
+        }
+        String systemAppName = SYSTEM_APPLICATIONS.get(normalizedAppCode);
+        if (systemAppName != null) {
+            return buildAppOption(normalizedAppCode, systemAppName);
         }
         RequirementAppOptionVO app = requirementAppMapper.selectEnabledAppByCode(normalizedAppCode);
         if (app == null) {
@@ -325,12 +354,27 @@ public class RequirementBoardService {
         return app;
     }
 
+    private String normalizeRequiredType(String type) {
+        String normalized = trimRequired(type, "类型不能为空").toUpperCase(Locale.ROOT);
+        try {
+            return RequirementType.valueOf(normalized).name();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("REQUIREMENT_TYPE_INVALID", "类型不合法");
+        }
+    }
+
+    private String initialProgressRemark(String type) {
+        return RequirementType.BUG.name().equals(type)
+                ? BUG_PENDING_REVIEW_REMARK
+                : REQUIREMENT_PENDING_REVIEW_REMARK;
+    }
+
     private String normalizeRequiredStatus(String status) {
-        String normalized = trimRequired(status, "需求状态不能为空").toUpperCase(Locale.ROOT);
+        String normalized = trimRequired(status, "反馈状态不能为空").toUpperCase(Locale.ROOT);
         try {
             return RequirementStatus.valueOf(normalized).name();
         } catch (IllegalArgumentException exception) {
-            throw new BusinessException("REQUIREMENT_STATUS_INVALID", "需求状态不合法");
+            throw new BusinessException("REQUIREMENT_STATUS_INVALID", "反馈状态不合法");
         }
     }
 
@@ -360,6 +404,7 @@ public class RequirementBoardService {
         target.setCreatorName(userNameMap.getOrDefault(source.getCreatorUserId(), UNKNOWN_USER_NAME));
         target.setAppCode(source.getAppCode());
         target.setAppName(source.getAppName());
+        target.setType(source.getType());
         target.setTitle(source.getTitle());
         target.setDescription(source.getDescription());
         target.setPriority(source.getPriority());
@@ -416,5 +461,27 @@ public class RequirementBoardService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private RequirementAppOptionVO buildAppOption(String appCode, String appName) {
+        RequirementAppOptionVO app = new RequirementAppOptionVO();
+        app.setAppCode(appCode);
+        app.setAppName(appName);
+        return app;
+    }
+
+    /**
+     * 系统菜单不进入应用管理目录，但用户仍需要把反馈精确关联到这些功能。
+     */
+    private static Map<String, String> buildSystemApplications() {
+        Map<String, String> systemApps = new LinkedHashMap<>();
+        systemApps.put("APP_USER_MANAGEMENT", "用户管理");
+        systemApps.put("APP_APP_MANAGEMENT", "应用管理");
+        systemApps.put("APP_PERMISSION_MANAGEMENT", "权限管理");
+        systemApps.put("APP_DATA_MIGRATION", "数据迁移");
+        systemApps.put("APP_DATA_DICTIONARY", "数据字典");
+        systemApps.put("APP_USER_BOARD", "用户看板");
+        systemApps.put("APP_NEW_APPLICATION", "新应用");
+        return Collections.unmodifiableMap(systemApps);
     }
 }

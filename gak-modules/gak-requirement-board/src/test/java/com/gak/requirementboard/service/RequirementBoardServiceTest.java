@@ -63,6 +63,7 @@ class RequirementBoardServiceTest {
 
         CreateRequirementRequest request = new CreateRequirementRequest();
         request.setAppCode("APP_TODO_LIST");
+        request.setType("BUG");
         request.setTitle("支持导出需求列表");
         request.setDescription("希望能按状态导出当前看板。");
         request.setPriority("HIGH");
@@ -76,9 +77,10 @@ class RequirementBoardServiceTest {
         assertEquals("PENDING_REVIEW", requirementCaptor.getValue().getStatus());
         assertEquals("APP_TODO_LIST", requirementCaptor.getValue().getAppCode());
         assertEquals("待办清单", requirementCaptor.getValue().getAppName());
+        assertEquals("BUG", requirementCaptor.getValue().getType());
         assertEquals("HIGH", requirementCaptor.getValue().getPriority());
         assertEquals(1L, requirementCaptor.getValue().getVersion());
-        assertEquals("提交需求", logCaptor.getValue().getRemark());
+        assertEquals("提交Bug", logCaptor.getValue().getRemark());
         assertEquals("PENDING_REVIEW", logCaptor.getValue().getStatus());
     }
 
@@ -139,6 +141,7 @@ class RequirementBoardServiceTest {
 
         UpdateRequirementRequest request = new UpdateRequirementRequest();
         request.setAppCode("APP_TODO_LIST");
+        request.setType("REQUIREMENT");
         request.setTitle("新标题");
         request.setDescription("补充后的描述");
         request.setPriority("LOW");
@@ -151,6 +154,7 @@ class RequirementBoardServiceTest {
         assertEquals("新标题", captor.getValue().getTitle());
         assertEquals("补充后的描述", captor.getValue().getDescription());
         assertEquals("APP_TODO_LIST", captor.getValue().getAppCode());
+        assertEquals("REQUIREMENT", captor.getValue().getType());
         assertEquals("LOW", captor.getValue().getPriority());
         assertEquals(2L, captor.getValue().getVersion());
     }
@@ -163,6 +167,7 @@ class RequirementBoardServiceTest {
 
         CreateRequirementRequest request = new CreateRequirementRequest();
         request.setAppCode("APP_TODO_LIST");
+        request.setType("REQUIREMENT");
         request.setTitle("非法优先级需求");
         request.setPriority("URGENT");
 
@@ -171,6 +176,67 @@ class RequirementBoardServiceTest {
 
         assertEquals("REQUIREMENT_PRIORITY_INVALID", exception.getCode());
         verify(requirementMapper, never()).insert(any(Requirement.class));
+    }
+
+    @Test
+    void createShouldAllowFixedSystemApplication() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "提交者", "USER"));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(buildUser(1L, "提交者", "USER")));
+        doAnswer(invocation -> {
+            Requirement requirement = invocation.getArgument(0);
+            requirement.setId(101L);
+            return 1;
+        }).when(requirementMapper).insert(any(Requirement.class));
+
+        CreateRequirementRequest request = new CreateRequirementRequest();
+        request.setAppCode("APP_USER_BOARD");
+        request.setType("REQUIREMENT");
+        request.setTitle("优化用户看板");
+        request.setPriority("MEDIUM");
+
+        requirementBoardService.create(1L, request);
+
+        ArgumentCaptor<Requirement> captor = ArgumentCaptor.forClass(Requirement.class);
+        verify(requirementMapper).insert(captor.capture());
+        assertEquals("APP_USER_BOARD", captor.getValue().getAppCode());
+        assertEquals("用户看板", captor.getValue().getAppName());
+        verify(requirementAppMapper, never()).selectEnabledAppByCode(any());
+    }
+
+    @Test
+    void createShouldRejectInvalidType() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "提交者", "USER"));
+        when(requirementAppMapper.selectEnabledAppByCode("APP_TODO_LIST"))
+                .thenReturn(buildApp("APP_TODO_LIST", "待办清单"));
+
+        CreateRequirementRequest request = new CreateRequirementRequest();
+        request.setAppCode("APP_TODO_LIST");
+        request.setType("TASK");
+        request.setTitle("非法类型条目");
+        request.setPriority("MEDIUM");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> requirementBoardService.create(1L, request));
+
+        assertEquals("REQUIREMENT_TYPE_INVALID", exception.getCode());
+        verify(requirementMapper, never()).insert(any(Requirement.class));
+    }
+
+    @Test
+    void listAppsShouldPreferFixedSystemApplicationAndMergeBusinessApps() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "提交者", "USER"));
+        when(requirementAppMapper.selectEnabledApps()).thenReturn(List.of(
+                buildApp("APP_DATA_DICTIONARY", "旧数据字典名称"),
+                buildApp("APP_TODO_LIST", "待办清单")
+        ));
+
+        List<RequirementAppOptionVO> apps = requirementBoardService.listApps(1L);
+
+        assertEquals(8, apps.size());
+        assertEquals("用户管理", apps.get(0).getAppName());
+        assertEquals("数据字典", apps.get(4).getAppName());
+        assertEquals("新应用", apps.get(6).getAppName());
+        assertEquals("待办清单", apps.get(7).getAppName());
     }
 
     @Test
@@ -241,6 +307,7 @@ class RequirementBoardServiceTest {
         RequirementQueryRequest request = new RequirementQueryRequest();
         request.setPageNo(1L);
         request.setPageSize(50L);
+        request.setType("BUG");
 
         RequirementPageVO result = requirementBoardService.page(1L, request);
 
@@ -248,6 +315,7 @@ class RequirementBoardServiceTest {
         assertEquals(2, result.getList().size());
         assertEquals(5, result.getStatusCounts().size());
         assertEquals("协作者", result.getList().get(0).getCreatorName());
+        assertEquals("REQUIREMENT", result.getList().get(0).getType());
     }
 
     private Requirement buildRequirement(Long id, Long creatorUserId, String title, String status, Long version) {
@@ -256,6 +324,7 @@ class RequirementBoardServiceTest {
         requirement.setCreatorUserId(creatorUserId);
         requirement.setAppCode("APP_TODO_LIST");
         requirement.setAppName("待办清单");
+        requirement.setType("REQUIREMENT");
         requirement.setTitle(title);
         requirement.setPriority("MEDIUM");
         requirement.setStatus(status);

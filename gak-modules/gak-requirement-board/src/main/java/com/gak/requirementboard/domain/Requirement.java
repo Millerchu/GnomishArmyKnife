@@ -16,6 +16,7 @@ public class Requirement {
     private Long creatorUserId;
     private String appCode;
     private String appName;
+    private String type;
     private String title;
     private String description;
     private String priority;
@@ -54,6 +55,14 @@ public class Requirement {
 
     public void setAppName(String appName) {
         this.appName = appName;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 
     public String getTitle() {
