@@ -23,6 +23,9 @@ public class WowCharacterQueryRequest {
     @Size(max = 24, message = "className 长度不能超过 24")
     private String className;
 
+    @Size(max = 32, message = "realmName 长度不能超过 32")
+    private String realmName;
+
     private String sortField;
 
     private String sortDirection;
@@ -65,6 +68,14 @@ public class WowCharacterQueryRequest {
 
     public void setClassName(String className) {
         this.className = className;
+    }
+
+    public String getRealmName() {
+        return realmName;
+    }
+
+    public void setRealmName(String realmName) {
+        this.realmName = realmName;
     }
 
     public String getSortField() {

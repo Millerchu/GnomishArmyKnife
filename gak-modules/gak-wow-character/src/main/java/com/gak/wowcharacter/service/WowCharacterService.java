@@ -132,7 +132,9 @@ public class WowCharacterService {
 
     public PagedResult<WowCharacterListVO> page(Long currentUserId, WowCharacterQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
-        List<WowCharacter> records = filterCharacters(currentUserId, request.getKeyword(), request.getFaction(), request.getClassName());
+        List<WowCharacter> records = filterCharacters(
+                currentUserId, request.getKeyword(), request.getFaction(), request.getClassName(), request.getRealmName()
+        );
         records.sort(resolveCharacterOrder(request.getSortField(), request.getSortDirection()));
 
         long total = records.size();
@@ -273,7 +275,9 @@ public class WowCharacterService {
 
     public WowCharacterOverviewVO overview(Long currentUserId, WowCharacterOverviewQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
-        List<WowCharacter> records = filterCharacters(currentUserId, request.getKeyword(), request.getFaction(), request.getClassName());
+        List<WowCharacter> records = filterCharacters(
+                currentUserId, request.getKeyword(), request.getFaction(), request.getClassName(), null
+        );
         records.sort(DEFAULT_ORDER);
         List<Long> characterIds = extractCharacterIds(records);
         Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(characterIds);
@@ -294,18 +298,26 @@ public class WowCharacterService {
         return overviewVO;
     }
 
-    private List<WowCharacter> filterCharacters(Long currentUserId, String keyword, String faction, String className) {
+    private List<WowCharacter> filterCharacters(Long currentUserId,
+                                                 String keyword,
+                                                 String faction,
+                                                 String className,
+                                                 String realmName) {
         QueryWrapper<WowCharacter> wrapper = new QueryWrapper<>();
         wrapper.eq("owner_user_id", currentUserId);
         String normalizedFaction = normalizeOptionalFaction(faction);
         String normalizedClassName = normalizeOptionalClassName(className);
         String trimmedKeyword = trimToNull(keyword);
+        String trimmedRealmName = trimToNull(realmName);
 
         if (normalizedFaction != null) {
             wrapper.eq("faction", normalizedFaction);
         }
         if (normalizedClassName != null) {
             wrapper.eq("class_name", normalizedClassName);
+        }
+        if (trimmedRealmName != null) {
+            wrapper.eq("realm_name", trimmedRealmName);
         }
         if (trimmedKeyword != null) {
             wrapper.and(query -> query.like("character_name", trimmedKeyword)
