@@ -67,6 +67,15 @@ public class WowCharacterController {
         return ApiResponse.success(wowCharacterService.resetWeeklyProgressIfNeeded(currentUserId, id));
     }
 
+    /**
+     * 手动重置当前用户全部满级角色的本周低保。
+     */
+    @PostMapping("/weekly-reset")
+    public ApiResponse<Long> resetAllWeeklyProgress(HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(wowCharacterService.resetAllWeeklyProgress(currentUserId));
+    }
+
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);

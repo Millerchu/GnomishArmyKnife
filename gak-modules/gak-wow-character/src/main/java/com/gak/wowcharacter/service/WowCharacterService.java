@@ -93,6 +93,7 @@ public class WowCharacterService {
             "faction", textOrder(WowCharacter::getFaction),
             "characterName", textOrder(WowCharacter::getCharacterName),
             "specName", textOrder(WowCharacter::getSpecName),
+            "raceName", textOrder(WowCharacter::getRaceName),
             "level", integerOrder(WowCharacter::getLevel),
             "realmName", textOrder(WowCharacter::getRealmName),
             "itemLevel", decimalOrder(WowCharacter::getItemLevel),
@@ -236,19 +237,44 @@ public class WowCharacterService {
             current.setUpdatedAt(now);
             wowCharacterMapper.updateById(current);
 
-            WowCharacterWeeklyVault currentWeekVault = new WowCharacterWeeklyVault();
-            currentWeekVault.setCharacterId(current.getId());
-            currentWeekVault.setOwnerUserId(currentUserId);
-            currentWeekVault.setWeekStartDate(currentWeekStartDate);
-            currentWeekVault.setRaidProgressCount(0);
-            currentWeekVault.setMythicProgressCount(0);
-            currentWeekVault.setWorldProgressCount(0);
-            currentWeekVault.setCreatedAt(now);
-            currentWeekVault.setUpdatedAt(now);
+            WowCharacterWeeklyVault currentWeekVault = createEmptyWeeklyVault(
+                    current.getId(), currentUserId, currentWeekStartDate, now
+            );
             wowCharacterWeeklyVaultMapper.insert(currentWeekVault);
             weeklyVaults = List.of(currentWeekVault);
         }
         return buildDetailVO(current, characterIds, weeklyVaults);
+    }
+
+    /**
+     * 强制重置当前用户所有满级角色的低保与当前钥匙。
+     */
+    @Transactional
+    public long resetAllWeeklyProgress(Long currentUserId) {
+        ensureCurrentUserExists(currentUserId);
+        List<WowCharacter> characters = filterCharacters(currentUserId, null, null, null, null);
+        if (characters.isEmpty()) {
+            return 0L;
+        }
+
+        LocalDateTime now = LocalDateTime.now(WowWeeklyResetSchedule.CHINA_ZONE_ID);
+        LocalDate currentWeekStartDate = WowWeeklyResetSchedule.resolveWeekStartDate(now);
+        long resetCount = 0L;
+        for (WowCharacter character : characters) {
+            if (character.getLevel() == null || character.getLevel() < MAX_CHARACTER_LEVEL) {
+                continue;
+            }
+            deleteWeeklyVaults(currentUserId, character.getId());
+            character.setMythicBestLevel(0);
+            character.setMythicDungeonName(null);
+            character.setUpdatedAt(now);
+            wowCharacterMapper.updateById(character);
+            wowCharacterWeeklyVaultMapper.insert(createEmptyWeeklyVault(
+                    character.getId(), currentUserId, currentWeekStartDate, now
+            ));
+            resetCount++;
+        }
+        return resetCount;
     }
 
     @Transactional
@@ -355,6 +381,25 @@ public class WowCharacterService {
         QueryWrapper<WowCharacterWeeklyVault> weeklyVaultWrapper = new QueryWrapper<>();
         weeklyVaultWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
         wowCharacterWeeklyVaultMapper.delete(weeklyVaultWrapper);
+    }
+
+    /**
+     * 创建当前周期的空低保记录，三条轨道均从零开始统计。
+     */
+    private WowCharacterWeeklyVault createEmptyWeeklyVault(Long characterId,
+                                                            Long currentUserId,
+                                                            LocalDate weekStartDate,
+                                                            LocalDateTime now) {
+        WowCharacterWeeklyVault weeklyVault = new WowCharacterWeeklyVault();
+        weeklyVault.setCharacterId(characterId);
+        weeklyVault.setOwnerUserId(currentUserId);
+        weeklyVault.setWeekStartDate(weekStartDate);
+        weeklyVault.setRaidProgressCount(0);
+        weeklyVault.setMythicProgressCount(0);
+        weeklyVault.setWorldProgressCount(0);
+        weeklyVault.setCreatedAt(now);
+        weeklyVault.setUpdatedAt(now);
+        return weeklyVault;
     }
 
     private User ensureCurrentUserExists(Long currentUserId) {

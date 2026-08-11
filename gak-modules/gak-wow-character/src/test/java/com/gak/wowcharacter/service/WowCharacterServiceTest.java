@@ -43,6 +43,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -380,6 +381,32 @@ class WowCharacterServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> wowCharacterService.create(1L, request));
         assertEquals("WOW_FEATURED_CHARACTER_LIMIT", exception.getCode());
+    }
+
+    @Test
+    void resetAllWeeklyProgressShouldOnlyResetMaxLevelCharacters() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter maxLevelCharacter = buildCharacter(
+                1L, "安度因", "牧师", "ALLIANCE", "国王之谷", "652.34", "3000.00", false
+        );
+        maxLevelCharacter.setLevel(90);
+        WowCharacter levelingCharacter = buildCharacter(
+                2L, "吉安娜", "法师", "ALLIANCE", "塞拉摩", "640.00", "2800.00", false
+        );
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(maxLevelCharacter, levelingCharacter));
+
+        long resetCount = wowCharacterService.resetAllWeeklyProgress(1L);
+
+        assertEquals(1L, resetCount);
+        assertEquals(0, maxLevelCharacter.getMythicBestLevel());
+        assertNull(maxLevelCharacter.getMythicDungeonName());
+        assertEquals(12, levelingCharacter.getMythicBestLevel());
+        verify(wowCharacterMapper).updateById(maxLevelCharacter);
+        verify(wowCharacterWeeklyVaultMapper).delete(any());
+        ArgumentCaptor<WowCharacterWeeklyVault> vaultCaptor = ArgumentCaptor.forClass(WowCharacterWeeklyVault.class);
+        verify(wowCharacterWeeklyVaultMapper).insert(vaultCaptor.capture());
+        assertEquals(1L, vaultCaptor.getValue().getCharacterId());
+        assertEquals(0, vaultCaptor.getValue().getMythicProgressCount());
     }
 
     private SaveWowCharacterRequest buildSaveRequest() {
