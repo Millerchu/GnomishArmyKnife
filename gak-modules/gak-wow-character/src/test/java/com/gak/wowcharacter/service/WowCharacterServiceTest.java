@@ -1,6 +1,7 @@
 package com.gak.wowcharacter.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.dictionary.DataDictionarySupport;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.dictionary.vo.DictionaryOptionVO;
@@ -24,6 +25,7 @@ import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMacroMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
+import com.gak.wowcharacter.mapper.WowCharacterMythicSeasonHistoryMapper;
 import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
 import com.gak.wowcharacter.vo.WowCharacterListVO;
 import com.gak.wowcharacter.vo.WowCharacterOverviewVO;
@@ -64,6 +66,9 @@ class WowCharacterServiceTest {
     private WowCharacterMythicRunMapper wowCharacterMythicRunMapper;
 
     @Mock
+    private WowCharacterMythicSeasonHistoryMapper wowCharacterMythicSeasonHistoryMapper;
+
+    @Mock
     private WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper;
 
     @Mock
@@ -80,6 +85,9 @@ class WowCharacterServiceTest {
 
     @Mock
     private DataDictionarySupport dataDictionarySupport;
+
+    @Mock
+    private AttachmentService attachmentService;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -116,6 +124,8 @@ class WowCharacterServiceTest {
         lenient().when(wowCharacterWeeklyVaultMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterKeybindingMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterMacroMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(attachmentService.listBusinessAttachments(anyString(), any(), anyString()))
+                .thenReturn(List.of());
     }
 
     @Test
@@ -402,7 +412,7 @@ class WowCharacterServiceTest {
         assertNull(maxLevelCharacter.getMythicDungeonName());
         assertEquals(12, levelingCharacter.getMythicBestLevel());
         verify(wowCharacterMapper).updateById(maxLevelCharacter);
-        verify(wowCharacterWeeklyVaultMapper).delete(any());
+        verify(wowCharacterWeeklyVaultMapper, org.mockito.Mockito.never()).delete(any());
         ArgumentCaptor<WowCharacterWeeklyVault> vaultCaptor = ArgumentCaptor.forClass(WowCharacterWeeklyVault.class);
         verify(wowCharacterWeeklyVaultMapper).insert(vaultCaptor.capture());
         assertEquals(1L, vaultCaptor.getValue().getCharacterId());

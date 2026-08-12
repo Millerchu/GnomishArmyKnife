@@ -2,9 +2,12 @@ package com.gak.wowcharacter.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gak.framework.dictionary.DataDictionarySupport;
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.exception.BusinessException;
@@ -15,6 +18,7 @@ import com.gak.wowcharacter.domain.WowCharacter;
 import com.gak.wowcharacter.domain.WowCharacterKeybinding;
 import com.gak.wowcharacter.domain.WowCharacterMacro;
 import com.gak.wowcharacter.domain.WowCharacterMythicRun;
+import com.gak.wowcharacter.domain.WowCharacterMythicSeasonHistory;
 import com.gak.wowcharacter.domain.WowCharacterWeeklyVault;
 import com.gak.wowcharacter.dto.SaveWowCharacterKeybindingRequest;
 import com.gak.wowcharacter.dto.SaveWowCharacterMacroRequest;
@@ -27,6 +31,7 @@ import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMacroMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
+import com.gak.wowcharacter.mapper.WowCharacterMythicSeasonHistoryMapper;
 import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
 import com.gak.wowcharacter.vo.ClassStatVO;
 import com.gak.wowcharacter.vo.FactionStatVO;
@@ -35,6 +40,9 @@ import com.gak.wowcharacter.vo.WowCharacterKeybindingVO;
 import com.gak.wowcharacter.vo.WowCharacterMacroVO;
 import com.gak.wowcharacter.vo.WowCharacterListVO;
 import com.gak.wowcharacter.vo.WowCharacterMythicRunVO;
+import com.gak.wowcharacter.vo.WowCharacterMythicSeasonHistoryVO;
+import com.gak.wowcharacter.vo.WowSeasonInfoVO;
+import com.gak.wowcharacter.vo.WowSeasonCrestVO;
 import com.gak.wowcharacter.vo.WowCharacterOverviewVO;
 import com.gak.wowcharacter.vo.WowCharacterSimpleVO;
 import com.gak.wowcharacter.vo.WowCharacterWeeklyVaultVO;
@@ -81,6 +89,12 @@ public class WowCharacterService {
     private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final int MAX_CHARACTER_LEVEL = 90;
     private static final int FEATURED_CHARACTER_LIMIT = 4;
+    private static final String CURRENT_VERSION_NAME = "12.1.0";
+    private static final String CURRENT_SEASON_CODE = "MIDNIGHT_S2";
+    private static final String CURRENT_SEASON_NAME = "至暗之夜 第2赛季";
+    private static final String ARCHIVE_SEASON_CODE = "MIDNIGHT_S1";
+    private static final String ARCHIVE_SEASON_NAME = "至暗之夜 第1赛季";
+    private static final int WEEKLY_VAULT_ATTACHMENT_LIMIT = 10;
     private static final int[] RAID_VAULT_THRESHOLDS = {2, 4, 6};
     private static final int[] MYTHIC_VAULT_THRESHOLDS = {1, 4, 8};
     private static final int[] WORLD_VAULT_THRESHOLDS = {2, 4, 8};
@@ -103,6 +117,7 @@ public class WowCharacterService {
 
     private final WowCharacterMapper wowCharacterMapper;
     private final WowCharacterMythicRunMapper wowCharacterMythicRunMapper;
+    private final WowCharacterMythicSeasonHistoryMapper wowCharacterMythicSeasonHistoryMapper;
     private final WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper;
     private final WowCharacterKeybindingMapper wowCharacterKeybindingMapper;
     private final WowCharacterMacroMapper wowCharacterMacroMapper;
@@ -110,18 +125,22 @@ public class WowCharacterService {
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
     private final DataDictionarySupport dataDictionarySupport;
     private final ObjectMapper objectMapper;
+    private final AttachmentService attachmentService;
 
     public WowCharacterService(WowCharacterMapper wowCharacterMapper,
                                WowCharacterMythicRunMapper wowCharacterMythicRunMapper,
+                               WowCharacterMythicSeasonHistoryMapper wowCharacterMythicSeasonHistoryMapper,
                                WowCharacterWeeklyVaultMapper wowCharacterWeeklyVaultMapper,
                                WowCharacterKeybindingMapper wowCharacterKeybindingMapper,
                                WowCharacterMacroMapper wowCharacterMacroMapper,
                                UserMapper userMapper,
                                DataDictionaryUsageSupport dataDictionaryUsageSupport,
                                DataDictionarySupport dataDictionarySupport,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               AttachmentService attachmentService) {
         this.wowCharacterMapper = wowCharacterMapper;
         this.wowCharacterMythicRunMapper = wowCharacterMythicRunMapper;
+        this.wowCharacterMythicSeasonHistoryMapper = wowCharacterMythicSeasonHistoryMapper;
         this.wowCharacterWeeklyVaultMapper = wowCharacterWeeklyVaultMapper;
         this.wowCharacterKeybindingMapper = wowCharacterKeybindingMapper;
         this.wowCharacterMacroMapper = wowCharacterMacroMapper;
@@ -129,6 +148,37 @@ public class WowCharacterService {
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
         this.dataDictionarySupport = dataDictionarySupport;
         this.objectMapper = objectMapper;
+        this.attachmentService = attachmentService;
+    }
+
+    /**
+     * 当前赛季资讯先由服务端集中维护，后续替换外部数据源时前端契约无需变化。
+     */
+    public WowSeasonInfoVO currentSeasonInfo() {
+        List<String> dungeons = dataDictionaryUsageSupport
+                .listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, MYTHIC_DUNGEON_FIELD)
+                .stream().map(DictionaryOptionVO::getItemLabel).toList();
+        WowSeasonInfoVO vo = new WowSeasonInfoVO();
+        vo.setVersionName(CURRENT_VERSION_NAME);
+        vo.setSeasonCode(CURRENT_SEASON_CODE);
+        vo.setSeasonName(CURRENT_SEASON_NAME);
+        vo.setHeadline("至暗之夜 S2 · 史诗钥石地下城轮换");
+        vo.setSummary("新赛季开启后，角色 M+ 评分从 0 重新计算，上一赛季成绩自动进入历史归档。");
+        vo.setHighlights(List.of("M+ 评分赛季重置", "8 个赛季地下城", "低保历史与附件留档"));
+        vo.setDungeons(dungeons);
+        vo.setCrestLimits(List.of(
+                new WowSeasonCrestVO("勇士迷雾纹章", 100),
+                new WowSeasonCrestVO("英雄迷雾纹章", 100),
+                new WowSeasonCrestVO("神话迷雾纹章", 100)
+        ));
+        vo.setWorldBoss("待维护");
+        vo.setHolidayThisWeek("待维护");
+        vo.setHolidayNextWeek("待维护");
+        vo.setCatalystLimit("套装转化：待维护");
+        vo.setSparkLimit("火花上限：待维护");
+        vo.setSpecialEvent("待维护");
+        vo.setSpecialEventDateRange("时间待维护");
+        return vo;
     }
 
     public PagedResult<WowCharacterListVO> page(Long currentUserId, WowCharacterQueryRequest request) {
@@ -231,7 +281,6 @@ public class WowCharacterService {
         boolean hasCurrentWeekVault = weeklyVaults.stream()
                 .anyMatch(item -> currentWeekStartDate.equals(item.getWeekStartDate()));
         if (!hasCurrentWeekVault) {
-            deleteWeeklyVaults(currentUserId, current.getId());
             current.setMythicBestLevel(0);
             current.setMythicDungeonName(null);
             current.setUpdatedAt(now);
@@ -241,7 +290,10 @@ public class WowCharacterService {
                     current.getId(), currentUserId, currentWeekStartDate, now
             );
             wowCharacterWeeklyVaultMapper.insert(currentWeekVault);
-            weeklyVaults = List.of(currentWeekVault);
+            List<WowCharacterWeeklyVault> recordsWithCurrentWeek = new ArrayList<>();
+            recordsWithCurrentWeek.add(currentWeekVault);
+            recordsWithCurrentWeek.addAll(weeklyVaults);
+            weeklyVaults = recordsWithCurrentWeek;
         }
         return buildDetailVO(current, characterIds, weeklyVaults);
     }
@@ -264,17 +316,123 @@ public class WowCharacterService {
             if (character.getLevel() == null || character.getLevel() < MAX_CHARACTER_LEVEL) {
                 continue;
             }
-            deleteWeeklyVaults(currentUserId, character.getId());
             character.setMythicBestLevel(0);
             character.setMythicDungeonName(null);
             character.setUpdatedAt(now);
             wowCharacterMapper.updateById(character);
-            wowCharacterWeeklyVaultMapper.insert(createEmptyWeeklyVault(
-                    character.getId(), currentUserId, currentWeekStartDate, now
-            ));
+            QueryWrapper<WowCharacterWeeklyVault> currentWeekWrapper = new QueryWrapper<>();
+            currentWeekWrapper.eq("character_id", character.getId())
+                    .eq("owner_user_id", currentUserId)
+                    .eq("week_start_date", currentWeekStartDate);
+            if (wowCharacterWeeklyVaultMapper.selectCount(currentWeekWrapper) == 0) {
+                wowCharacterWeeklyVaultMapper.insert(createEmptyWeeklyVault(
+                        character.getId(), currentUserId, currentWeekStartDate, now
+                ));
+            }
             resetCount++;
         }
         return resetCount;
+    }
+
+    /**
+     * 将当前 M+ 成绩按赛季归档后清零，重复执行不会重复生成同一赛季历史。
+     */
+    @Transactional
+    public long archiveAndResetMythicSeason(Long currentUserId) {
+        ensureCurrentUserExists(currentUserId);
+        List<WowCharacter> characters = filterCharacters(currentUserId, null, null, null, null);
+        LocalDateTime now = LocalDateTime.now(WowWeeklyResetSchedule.CHINA_ZONE_ID);
+        long resetCount = 0L;
+        for (WowCharacter character : characters) {
+            if (character.getLevel() == null || character.getLevel() < MAX_CHARACTER_LEVEL) {
+                continue;
+            }
+            QueryWrapper<WowCharacterMythicSeasonHistory> existingWrapper = new QueryWrapper<>();
+            existingWrapper.eq("character_id", character.getId())
+                    .eq("owner_user_id", currentUserId)
+                    .eq("season_code", ARCHIVE_SEASON_CODE);
+            List<WowCharacterMythicRun> runs = loadMythicRunMap(List.of(character.getId()))
+                    .getOrDefault(character.getId(), Collections.emptyList());
+            if (wowCharacterMythicSeasonHistoryMapper.selectCount(existingWrapper) > 0) {
+                boolean hasNewSeasonScore = safeMythicScore(character).compareTo(BigDecimal.ZERO) > 0
+                        || runs.stream().anyMatch(run -> scale2(run.getScore()).compareTo(BigDecimal.ZERO) > 0);
+                if (hasNewSeasonScore) {
+                    throw new BusinessException(
+                            "WOW_MYTHIC_SEASON_ALREADY_ARCHIVED",
+                            "至暗之夜第1赛季已归档，检测到新的 M+ 成绩，已阻止重复结算"
+                    );
+                }
+                continue;
+            }
+
+            WowCharacterMythicSeasonHistory history = new WowCharacterMythicSeasonHistory();
+            history.setCharacterId(character.getId());
+            history.setOwnerUserId(currentUserId);
+            history.setSeasonCode(ARCHIVE_SEASON_CODE);
+            history.setSeasonName(ARCHIVE_SEASON_NAME);
+            history.setMythicScore(safeMythicScore(character));
+            history.setDungeonSnapshotJson(writeMythicSnapshot(runs));
+            history.setArchivedAt(now);
+            wowCharacterMythicSeasonHistoryMapper.insert(history);
+
+            QueryWrapper<WowCharacterMythicRun> runWrapper = new QueryWrapper<>();
+            runWrapper.eq("character_id", character.getId()).eq("owner_user_id", currentUserId);
+            wowCharacterMythicRunMapper.delete(runWrapper);
+            character.setMythicScore(ZERO_DECIMAL);
+            character.setMythicBestLevel(0);
+            character.setMythicDungeonName(null);
+            character.setUpdatedAt(now);
+            wowCharacterMapper.updateById(character);
+            resetCount++;
+        }
+        return resetCount;
+    }
+
+    public List<WowCharacterMythicSeasonHistoryVO> listMythicSeasonHistory(Long currentUserId, Long characterId) {
+        ensureCurrentUserExists(currentUserId);
+        getOwnedCharacterOrThrow(currentUserId, characterId);
+        QueryWrapper<WowCharacterMythicSeasonHistory> wrapper = new QueryWrapper<>();
+        wrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId)
+                .orderByDesc("archived_at").orderByDesc("id");
+        List<WowCharacterMythicSeasonHistoryVO> result = new ArrayList<>();
+        for (WowCharacterMythicSeasonHistory history : wowCharacterMythicSeasonHistoryMapper.selectList(wrapper)) {
+            WowCharacterMythicSeasonHistoryVO vo = new WowCharacterMythicSeasonHistoryVO();
+            vo.setId(history.getId());
+            vo.setSeasonCode(history.getSeasonCode());
+            vo.setSeasonName(history.getSeasonName());
+            vo.setMythicScore(scale2(history.getMythicScore()));
+            vo.setMythicRuns(readMythicSnapshot(history.getDungeonSnapshotJson()));
+            vo.setArchivedAt(history.getArchivedAt());
+            result.add(vo);
+        }
+        return result;
+    }
+
+    private String writeMythicSnapshot(List<WowCharacterMythicRun> runs) {
+        List<WowCharacterMythicRunVO> snapshot = new ArrayList<>();
+        for (WowCharacterMythicRun run : runs) {
+            WowCharacterMythicRunVO item = new WowCharacterMythicRunVO();
+            item.setDungeonName(run.getDungeonName());
+            item.setBestTimedLevel(defaultInt(run.getBestTimedLevel()));
+            item.setScore(scale2(run.getScore()));
+            snapshot.add(item);
+        }
+        try {
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (JsonProcessingException exception) {
+            throw new BusinessException("WOW_MYTHIC_ARCHIVE_SERIALIZE_FAILED", "M+ 赛季成绩归档失败");
+        }
+    }
+
+    private List<WowCharacterMythicRunVO> readMythicSnapshot(String snapshotJson) {
+        if (!StringUtils.hasText(snapshotJson)) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(snapshotJson, new TypeReference<List<WowCharacterMythicRunVO>>() { });
+        } catch (JsonProcessingException exception) {
+            throw new BusinessException("WOW_MYTHIC_ARCHIVE_PARSE_FAILED", "M+ 历史成绩读取失败");
+        }
     }
 
     @Transactional
@@ -285,6 +443,10 @@ public class WowCharacterService {
         QueryWrapper<WowCharacterMythicRun> mythicRunWrapper = new QueryWrapper<>();
         mythicRunWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
         wowCharacterMythicRunMapper.delete(mythicRunWrapper);
+
+        QueryWrapper<WowCharacterMythicSeasonHistory> historyWrapper = new QueryWrapper<>();
+        historyWrapper.eq("character_id", current.getId()).eq("owner_user_id", currentUserId);
+        wowCharacterMythicSeasonHistoryMapper.delete(historyWrapper);
 
         deleteWeeklyVaults(currentUserId, current.getId());
 
@@ -380,6 +542,9 @@ public class WowCharacterService {
     private void deleteWeeklyVaults(Long currentUserId, Long characterId) {
         QueryWrapper<WowCharacterWeeklyVault> weeklyVaultWrapper = new QueryWrapper<>();
         weeklyVaultWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
+        for (WowCharacterWeeklyVault vault : wowCharacterWeeklyVaultMapper.selectList(weeklyVaultWrapper)) {
+            attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT, vault.getId());
+        }
         wowCharacterWeeklyVaultMapper.delete(weeklyVaultWrapper);
     }
 
@@ -591,7 +756,8 @@ public class WowCharacterService {
                     normalizeProgressCount(item.getRaidProgressCount()),
                     normalizeProgressCount(item.getMythicProgressCount()),
                     normalizeProgressCount(item.getWorldProgressCount()),
-                    trimToNull(item.getNote())
+                    trimToNull(item.getNote()),
+                    item.getAttachmentIds() == null ? Collections.emptyList() : new ArrayList<>(item.getAttachmentIds())
             ));
         }
         return new ArrayList<>(result.values());
@@ -632,8 +798,18 @@ public class WowCharacterService {
         QueryWrapper<WowCharacterWeeklyVault> deleteWrapper = new QueryWrapper<>();
         deleteWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
         wowCharacterWeeklyVaultMapper.delete(deleteWrapper);
-        for (WowCharacterWeeklyVault vault : toDomainWeeklyVaults(characterId, currentUserId, normalizedVaults, now)) {
+        List<WowCharacterWeeklyVault> vaults = toDomainWeeklyVaults(characterId, currentUserId, normalizedVaults, now);
+        for (int index = 0; index < vaults.size(); index++) {
+            WowCharacterWeeklyVault vault = vaults.get(index);
             wowCharacterWeeklyVaultMapper.insert(vault);
+            attachmentService.syncBusinessAttachments(
+                    currentUserId,
+                    AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT,
+                    vault.getId(),
+                    AttachmentConstants.USAGE_ATTACHMENT,
+                    normalizedVaults.get(index).attachmentIds(),
+                    WEEKLY_VAULT_ATTACHMENT_LIMIT
+            );
         }
     }
 
@@ -1083,6 +1259,11 @@ public class WowCharacterService {
             vo.setMythicUnlockedCount(calculateUnlockedCount(defaultInt(item.getMythicProgressCount()), MYTHIC_VAULT_THRESHOLDS));
             vo.setWorldUnlockedCount(calculateUnlockedCount(defaultInt(item.getWorldProgressCount()), WORLD_VAULT_THRESHOLDS));
             vo.setNote(item.getNote());
+            vo.setAttachments(attachmentService.listBusinessAttachments(
+                    AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT,
+                    item.getId(),
+                    AttachmentConstants.USAGE_ATTACHMENT
+            ));
             result.add(vo);
         }
         return result;
@@ -1526,7 +1707,8 @@ public class WowCharacterService {
             Integer raidProgressCount,
             Integer mythicProgressCount,
             Integer worldProgressCount,
-            String note
+            String note,
+            List<Long> attachmentIds
     ) {
     }
 

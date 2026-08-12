@@ -11,6 +11,7 @@ public final class AttachmentConstants {
     public static final String BUSINESS_KNOWLEDGE_ENTRY = "KNOWLEDGE_ENTRY";
     public static final String BUSINESS_FUEL_RECORD = "FUEL_RECORD";
     public static final String BUSINESS_USER_AVATAR = "USER_AVATAR";
+    public static final String BUSINESS_WOW_WEEKLY_VAULT = "WOW_WEEKLY_VAULT";
 
     public static final String USAGE_ATTACHMENT = "ATTACHMENT";
     public static final String USAGE_IMAGE = "IMAGE";

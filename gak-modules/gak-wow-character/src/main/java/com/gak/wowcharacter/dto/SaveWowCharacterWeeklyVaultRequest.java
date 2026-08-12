@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * WoW 角色每周低保记录请求。
@@ -32,6 +33,9 @@ public class SaveWowCharacterWeeklyVaultRequest {
 
     @Size(max = 255, message = "note 长度不能超过 255")
     private String note;
+
+    @Size(max = 10, message = "attachmentIds 最多支持 10 个附件")
+    private List<Long> attachmentIds;
 
     public Long getId() {
         return id;
@@ -79,5 +83,13 @@ public class SaveWowCharacterWeeklyVaultRequest {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public List<Long> getAttachmentIds() {
+        return attachmentIds;
+    }
+
+    public void setAttachmentIds(List<Long> attachmentIds) {
+        this.attachmentIds = attachmentIds;
     }
 }

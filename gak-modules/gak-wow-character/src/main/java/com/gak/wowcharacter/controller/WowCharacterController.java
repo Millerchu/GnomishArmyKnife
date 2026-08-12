@@ -9,6 +9,9 @@ import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
 import com.gak.wowcharacter.service.WowCharacterService;
 import com.gak.wowcharacter.vo.WowCharacterListVO;
 import com.gak.wowcharacter.vo.WowCharacterOverviewVO;
+import com.gak.wowcharacter.vo.WowCharacterMythicSeasonHistoryVO;
+import com.gak.wowcharacter.vo.WowSeasonInfoVO;
+import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -74,6 +77,28 @@ public class WowCharacterController {
     public ApiResponse<Long> resetAllWeeklyProgress(HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(wowCharacterService.resetAllWeeklyProgress(currentUserId));
+    }
+
+    @GetMapping("/season")
+    public ApiResponse<WowSeasonInfoVO> currentSeason() {
+        return ApiResponse.success(wowCharacterService.currentSeasonInfo());
+    }
+
+    /**
+     * 版本切换时归档当前成绩，并重置全部满级角色的 M+ 数据。
+     */
+    @PostMapping("/mythic-season-reset")
+    public ApiResponse<Long> resetMythicSeason(HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(wowCharacterService.archiveAndResetMythicSeason(currentUserId));
+    }
+
+    @GetMapping("/{id}/mythic-season-history")
+    public ApiResponse<List<WowCharacterMythicSeasonHistoryVO>> mythicSeasonHistory(
+            @PathVariable Long id,
+            HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(wowCharacterService.listMythicSeasonHistory(currentUserId, id));
     }
 
     @DeleteMapping("/{id}")

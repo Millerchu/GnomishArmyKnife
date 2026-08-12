@@ -108,6 +108,17 @@ CREATE TABLE IF NOT EXISTS gak_wow_character_mythic_run (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_wow_character_mythic_season_history (
+    id BIGINT PRIMARY KEY,
+    character_id BIGINT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    season_code VARCHAR(32) NOT NULL,
+    season_name VARCHAR(64) NOT NULL,
+    mythic_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    dungeon_snapshot_json TEXT NOT NULL DEFAULT '[]',
+    archived_at TIMESTAMP NOT NULL
+);
+
 ALTER TABLE gak_wow_character_mythic_run ADD COLUMN IF NOT EXISTS score NUMERIC(10, 2) NOT NULL DEFAULT 0;
 ALTER TABLE gak_wow_character_mythic_run ALTER COLUMN score TYPE NUMERIC(10, 2) USING score::NUMERIC(10, 2);
 UPDATE gak_wow_character_mythic_run
@@ -603,6 +614,8 @@ CREATE INDEX IF NOT EXISTS idx_wow_character_owner_featured ON gak_wow_character
 CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
 CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_owner_character ON gak_wow_character_mythic_run (owner_user_id, character_id, dungeon_name);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
+CREATE INDEX IF NOT EXISTS idx_wow_mythic_history_owner_character ON gak_wow_character_mythic_season_history (owner_user_id, character_id, archived_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_mythic_history_character_season ON gak_wow_character_mythic_season_history (character_id, season_code);
 CREATE INDEX IF NOT EXISTS idx_wow_weekly_vault_owner_character_week ON gak_wow_character_weekly_vault (owner_user_id, character_id, week_start_date DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_weekly_vault_character_week ON gak_wow_character_weekly_vault (character_id, week_start_date);
 DROP INDEX IF EXISTS idx_wow_keybinding_owner_character;
@@ -2103,14 +2116,14 @@ VALUES
     (6014011, 'WOW_CLASS_NAME', 'shaman', '萨满', '萨满', 11, 'ENABLED', FALSE, '萨满', '{"color":"#0070DE","textColor":"#ffffff"}'),
     (6014012, 'WOW_CLASS_NAME', 'warlock', '术士', '术士', 12, 'ENABLED', FALSE, '术士', '{"color":"#9482C9","textColor":"#100d1d"}'),
     (6014013, 'WOW_CLASS_NAME', 'warrior', '战士', '战士', 13, 'ENABLED', TRUE, '战士', '{"color":"#C79C6E","textColor":"#23170d"}'),
-    (6015001, 'WOW_MYTHIC_DUNGEON', 'magisters_terrace', '魔导师平台', '魔导师平台', 1, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015002, 'WOW_MYTHIC_DUNGEON', 'myssara_caverns', '迈萨拉洞窟', '迈萨拉洞窟', 2, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015003, 'WOW_MYTHIC_DUNGEON', 'the_nexus_sinnus', '节点希纳斯', '节点希纳斯', 3, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015004, 'WOW_MYTHIC_DUNGEON', 'windrunner_spire', '风行者之塔', '风行者之塔', 4, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015005, 'WOW_MYTHIC_DUNGEON', 'aegis_academy', '艾杰斯亚学院', '艾杰斯亚学院', 5, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015006, 'WOW_MYTHIC_DUNGEON', 'saron_mine', '萨隆矿坑', '萨隆矿坑', 6, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015007, 'WOW_MYTHIC_DUNGEON', 'seat_of_the_triumvirate', '执政团之座', '执政团之座', 7, 'ENABLED', FALSE, '赛季副本', NULL),
-    (6015008, 'WOW_MYTHIC_DUNGEON', 'skyreach', '通天峰', '通天峰', 8, 'ENABLED', FALSE, '赛季副本', NULL),
+    (6015201, 'WOW_MYTHIC_DUNGEON', 'altar_of_fangs', '毒牙祭坛', '毒牙祭坛', 1, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015202, 'WOW_MYTHIC_DUNGEON', 'murder_row', '密谋小径', '密谋小径', 2, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015203, 'WOW_MYTHIC_DUNGEON', 'den_of_nalorakk', '纳洛拉克的洞穴', '纳洛拉克的洞穴', 3, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015204, 'WOW_MYTHIC_DUNGEON', 'the_blinding_vale', '夺目谷', '夺目谷', 4, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015205, 'WOW_MYTHIC_DUNGEON', 'voidscar_arena', '虚空之痕竞技场', '虚空之痕竞技场', 5, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015206, 'WOW_MYTHIC_DUNGEON', 'kings_rest', '诸王之眠', '诸王之眠', 6, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015207, 'WOW_MYTHIC_DUNGEON', 'ruby_life_pools', '红玉新生法池', '红玉新生法池', 7, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
+    (6015208, 'WOW_MYTHIC_DUNGEON', 'temple_of_sethraliss', '塞塔里斯神庙', '塞塔里斯神庙', 8, 'ENABLED', FALSE, '至暗之夜第2赛季副本', NULL),
     (6018001, 'WOW_CHARACTER_RACE', 'human', '人类', '人类', 1, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","warlock","warrior"]}'),
     (6018002, 'WOW_CHARACTER_RACE', 'dwarf', '矮人', '矮人', 2, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","hunter","mage","monk","paladin","priest","rogue","shaman","warlock","warrior"]}'),
     (6018003, 'WOW_CHARACTER_RACE', 'night_elf', '暗夜精灵', '暗夜精灵', 3, 'ENABLED', FALSE, 'WoW 可玩种族', '{"factions":["ALLIANCE"],"allowedClassCodes":["death_knight","demon_hunter","druid","hunter","mage","monk","priest","rogue","warlock","warrior"]}'),
