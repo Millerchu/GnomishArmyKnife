@@ -116,6 +116,28 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void createShouldForceHomeAndLeaveProjectForLeaveType() {
+        doAnswer(invocation -> {
+            WorkLog workLog = invocation.getArgument(0);
+            workLog.setId(1002L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 24));
+        request.setTypeCodes(List.of("LEAVE"));
+        request.setLocation("上海办公室");
+        request.setProjectCode("GAK");
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        ArgumentCaptor<WorkLog> captor = ArgumentCaptor.forClass(WorkLog.class);
+        verify(workLogMapper).insert(captor.capture());
+        assertEquals("居家", captor.getValue().getLocation());
+        assertEquals("LEAVE", captor.getValue().getProjectCode());
+        assertEquals("居家", response.getLocation());
+        assertEquals("LEAVE", response.getProjectCode());
+    }
+
+    @Test
     void createShouldPersistNormalizedUnfinishedStatus() {
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);

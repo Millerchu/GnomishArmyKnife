@@ -47,9 +47,12 @@ public class WorkLogService {
     private static final String TYPE_CODES_FIELD = "typeCodes";
     private static final String PROJECT_CODE_FIELD = "projectCode";
     private static final String LOCATION_FIELD = "location";
+    private static final String TYPE_CODE_LEAVE = "LEAVE";
     private static final String TYPE_CODE_CITY_BUSINESS_TRIP = "CITY_BUSINESS_TRIP";
     private static final String TYPE_CODE_OUT_OF_CITY_BUSINESS_TRIP = "OUT_OF_CITY_BUSINESS_TRIP";
     private static final String TYPE_CODE_LEGACY_BUSINESS_TRIP = "BUSINESS_TRIP";
+    private static final String LEAVE_PROJECT_CODE = "LEAVE";
+    private static final String LEAVE_LOCATION = "居家";
     private static final String ALLOWANCE_SCENE_CITY = "CITY";
     private static final String ALLOWANCE_SCENE_OUT_OF_CITY_TRANSIT = "OUT_OF_CITY_TRANSIT";
     private static final String ALLOWANCE_SCENE_OUT_OF_CITY_DAILY = "OUT_OF_CITY_DAILY";
@@ -91,6 +94,7 @@ public class WorkLogService {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
+        WorkLogAffiliation affiliation = resolveWorkLogAffiliation(typeCodes, projectCode, location);
         List<NormalizedWorkItem> workItems = normalizeWorkItems(
                 request.getWorkItems(),
                 request.getWorkItem(),
@@ -100,7 +104,7 @@ public class WorkLogService {
         String workStatus = resolveAggregateStatus(workItems);
         String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
         workLogMapper.lockUserWorkLogs(currentUserId);
-        validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, null);
+        validateDuplicateProject(currentUserId, request.getLogDate(), affiliation.projectCode(), null);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), null);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
@@ -117,8 +121,8 @@ public class WorkLogService {
         WorkLog workLog = new WorkLog();
         workLog.setUserId(currentUserId);
         workLog.setLogDate(request.getLogDate());
-        workLog.setLocation(location);
-        workLog.setProjectCode(projectCode);
+        workLog.setLocation(affiliation.location());
+        workLog.setProjectCode(affiliation.projectCode());
         workLog.setContent(serializeWorkItems(workItems));
         workLog.setWorkStatus(workStatus);
         workLog.setZentaoNo(zentaoNo);
@@ -169,6 +173,7 @@ public class WorkLogService {
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
         String location = normalizeOptionalLocation(request.getLocation());
+        WorkLogAffiliation affiliation = resolveWorkLogAffiliation(typeCodes, projectCode, location);
         List<NormalizedWorkItem> workItems = normalizeWorkItems(
                 request.getWorkItems(),
                 request.getWorkItem(),
@@ -178,7 +183,7 @@ public class WorkLogService {
         String workStatus = resolveAggregateStatus(workItems);
         String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
         workLogMapper.lockUserWorkLogs(currentUserId);
-        validateDuplicateProject(currentUserId, request.getLogDate(), projectCode, id);
+        validateDuplicateProject(currentUserId, request.getLogDate(), affiliation.projectCode(), id);
         validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), id);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
@@ -192,8 +197,8 @@ public class WorkLogService {
         );
 
         current.setLogDate(request.getLogDate());
-        current.setLocation(location);
-        current.setProjectCode(projectCode);
+        current.setLocation(affiliation.location());
+        current.setProjectCode(affiliation.projectCode());
         current.setContent(serializeWorkItems(workItems));
         current.setWorkStatus(workStatus);
         current.setZentaoNo(zentaoNo);
@@ -396,6 +401,18 @@ public class WorkLogService {
 
     private String normalizeOptionalLocation(String location) {
         return normalizeOptionalUsageValue(LOCATION_FIELD, location, "location 非法");
+    }
+
+    /**
+     * 请假日志不应计入实际项目或办公地点，服务端统一覆盖以保证接口直连时的数据一致性。
+     */
+    private WorkLogAffiliation resolveWorkLogAffiliation(List<String> typeCodes,
+                                                         String projectCode,
+                                                         String location) {
+        if (typeCodes.contains(TYPE_CODE_LEAVE)) {
+            return new WorkLogAffiliation(LEAVE_PROJECT_CODE, LEAVE_LOCATION);
+        }
+        return new WorkLogAffiliation(projectCode, location);
     }
 
     private String normalizeWorkStatus(String status, String fallbackStatus) {
@@ -791,6 +808,9 @@ public class WorkLogService {
     }
 
     private record BusinessTripAllowance(String scene, BigDecimal amount, Boolean reimbursed) {
+    }
+
+    private record WorkLogAffiliation(String projectCode, String location) {
     }
 
     private record NormalizedWorkItem(String content, String status, String zentaoNo) {

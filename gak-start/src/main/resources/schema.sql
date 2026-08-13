@@ -1234,17 +1234,6 @@ INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
 )
-SELECT 5314, 5003, 'WORK_LOG_TYPE', 'sick_leave', '病假', 'SICK_LEAVE', 5, 'ENABLED', FALSE, '病假记录', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
-WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
-  AND NOT EXISTS (
-    SELECT 1 FROM gak_data_dictionary_item item
-    WHERE item.dictionary_id = 5003 AND item.item_code = 'sick_leave' AND item.deleted = FALSE
-  )
-ON CONFLICT (id) DO NOTHING;
-INSERT INTO gak_data_dictionary_item (
-    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
-    is_default, description, extra_json, created_at, updated_at, deleted
-)
 SELECT 5315, 5003, 'WORK_LOG_TYPE', 'other', '其他', 'OTHER', 6, 'ENABLED', FALSE, '其他类型', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5003 AND deleted = FALSE)
   AND NOT EXISTS (
@@ -1259,14 +1248,19 @@ SET sort_no = CASE item_value
         WHEN 'LEAVE' THEN 3
         WHEN 'CITY_BUSINESS_TRIP' THEN 4
         WHEN 'OUT_OF_CITY_BUSINESS_TRIP' THEN 5
-        WHEN 'SICK_LEAVE' THEN 6
-        WHEN 'OTHER' THEN 7
+        WHEN 'OTHER' THEN 6
         ELSE sort_no
     END,
     updated_at = CURRENT_TIMESTAMP
 WHERE dictionary_id = 5003
   AND deleted = FALSE
-  AND item_value IN ('NORMAL', 'OVERTIME', 'LEAVE', 'CITY_BUSINESS_TRIP', 'OUT_OF_CITY_BUSINESS_TRIP', 'SICK_LEAVE', 'OTHER');
+  AND item_value IN ('NORMAL', 'OVERTIME', 'LEAVE', 'CITY_BUSINESS_TRIP', 'OUT_OF_CITY_BUSINESS_TRIP', 'OTHER');
+UPDATE gak_data_dictionary_item
+SET deleted = TRUE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE dictionary_id = 5003
+  AND item_code = 'sick_leave'
+  AND deleted = FALSE;
 INSERT INTO gak_data_dictionary_item (
     id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
     is_default, description, extra_json, created_at, updated_at, deleted
@@ -1298,6 +1292,17 @@ WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FA
   AND NOT EXISTS (
     SELECT 1 FROM gak_data_dictionary_item item
     WHERE item.dictionary_id = 5004 AND item.item_code = 'ops' AND item.deleted = FALSE
+  )
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO gak_data_dictionary_item (
+    id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status,
+    is_default, description, extra_json, created_at, updated_at, deleted
+)
+SELECT 5404, 5004, 'WORK_LOG_PROJECT', 'leave', '请假', 'LEAVE', 4, 'ENABLED', FALSE, '请假日志固定归属项目', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+WHERE EXISTS (SELECT 1 FROM gak_data_dictionary WHERE id = 5004 AND deleted = FALSE)
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_data_dictionary_item item
+    WHERE item.dictionary_id = 5004 AND item.item_code = 'leave' AND item.deleted = FALSE
   )
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO gak_data_dictionary_item (
