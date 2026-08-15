@@ -167,6 +167,64 @@ CREATE TABLE IF NOT EXISTS gak_wow_character_macro (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_wow_specialization_guide (
+    id BIGINT PRIMARY KEY,
+    season_code VARCHAR(32) NOT NULL,
+    class_code VARCHAR(32) NOT NULL,
+    class_name VARCHAR(32) NOT NULL,
+    spec_code VARCHAR(64) NOT NULL,
+    spec_name VARCHAR(32) NOT NULL,
+    role_type VARCHAR(16) NOT NULL,
+    sort_no INTEGER NOT NULL,
+    mythic_talent_build_name VARCHAR(128) NOT NULL,
+    mythic_talent_summary TEXT,
+    mythic_talent_import_code TEXT,
+    raid_talent_build_name VARCHAR(128) NOT NULL,
+    raid_talent_summary TEXT,
+    raid_talent_import_code TEXT,
+    stat_priority VARCHAR(512) NOT NULL,
+    rotation_notes TEXT,
+    trinket_ranking TEXT,
+    source_name VARCHAR(128) NOT NULL,
+    source_url VARCHAR(1024) NOT NULL,
+    source_updated_at DATE,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS mythic_talent_build_name VARCHAR(128);
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS mythic_talent_summary TEXT;
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS mythic_talent_import_code TEXT;
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS raid_talent_build_name VARCHAR(128);
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS raid_talent_summary TEXT;
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS raid_talent_import_code TEXT;
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS trinket_ranking TEXT;
+
+-- 兼容早期单套天赋/BIS 字段：先幂等补齐旧字段，避免新安装执行迁移时引用不存在的列。
+-- 使用普通 SQL 而非 DO 代码块，防止 Spring SQL 初始化器按分号错误拆分语句。
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS talent_build_name VARCHAR(128);
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS talent_summary TEXT;
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS talent_import_code TEXT;
+ALTER TABLE gak_wow_specialization_guide ADD COLUMN IF NOT EXISTS bis_notes TEXT;
+
+-- 新版已改由大秘境和团本字段承载天赋，旧字段仅用于迁移历史数据，不再强制新记录写入。
+ALTER TABLE gak_wow_specialization_guide ALTER COLUMN talent_build_name DROP NOT NULL;
+ALTER TABLE gak_wow_specialization_guide ALTER COLUMN talent_summary DROP NOT NULL;
+ALTER TABLE gak_wow_specialization_guide ALTER COLUMN talent_import_code DROP NOT NULL;
+ALTER TABLE gak_wow_specialization_guide ALTER COLUMN bis_notes DROP NOT NULL;
+
+UPDATE gak_wow_specialization_guide
+SET mythic_talent_build_name = COALESCE(mythic_talent_build_name, talent_build_name),
+    mythic_talent_summary = COALESCE(mythic_talent_summary, talent_summary),
+    mythic_talent_import_code = COALESCE(mythic_talent_import_code, talent_import_code),
+    raid_talent_build_name = COALESCE(raid_talent_build_name, talent_build_name),
+    raid_talent_summary = COALESCE(raid_talent_summary, talent_summary),
+    raid_talent_import_code = COALESCE(raid_talent_import_code, talent_import_code),
+    trinket_ranking = COALESCE(trinket_ranking, bis_notes);
+
+ALTER TABLE gak_wow_specialization_guide ALTER COLUMN mythic_talent_build_name SET NOT NULL;
+ALTER TABLE gak_wow_specialization_guide ALTER COLUMN raid_talent_build_name SET NOT NULL;
+
 CREATE TABLE IF NOT EXISTS gak_personal_bill (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
@@ -624,6 +682,8 @@ CREATE INDEX IF NOT EXISTS idx_wow_keybinding_owner_character ON gak_wow_charact
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_keybinding_character_name ON gak_wow_character_keybinding (character_id, LOWER(binding_name));
 CREATE INDEX IF NOT EXISTS idx_wow_macro_owner_character ON gak_wow_character_macro (owner_user_id, character_id, macro_name);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_macro_character_name ON gak_wow_character_macro (character_id, LOWER(macro_name));
+CREATE INDEX IF NOT EXISTS idx_wow_spec_guide_season_sort ON gak_wow_specialization_guide (season_code, sort_no, id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_spec_guide_season_spec ON gak_wow_specialization_guide (season_code, spec_code);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (owner_user_id, bill_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);
@@ -2554,3 +2614,76 @@ WHERE app.enabled = TRUE
     WHERE permission.user_id = admin_user.id
       AND permission.app_code = app.app_code
   );
+
+-- 12.1.0 职业指南初始资料：属性优先级采集自 Wowhead 各专精指南，其他摘要保留为可维护内容。
+INSERT INTO gak_wow_specialization_guide (
+    id, season_code, class_code, class_name, spec_code, spec_name, role_type, sort_no,
+    mythic_talent_build_name, mythic_talent_summary, mythic_talent_import_code,
+    raid_talent_build_name, raid_talent_summary, raid_talent_import_code,
+    stat_priority, rotation_notes, trinket_ranking,
+    source_name, source_url, source_updated_at, created_at, updated_at
+)
+SELECT
+    id, season_code, class_code, class_name, spec_code, spec_name, role_type, sort_no,
+    '12.1 大秘境',
+    '当前为大秘境主流构筑入口，重点兼顾多目标、功能性与高频战斗；具体节点和导入代码按来源页 Mythic+ Talent Builds 维护。',
+    talent_import_code,
+    '12.1 团本',
+    '当前为团本主流构筑入口，重点兼顾单体输出、首领时间轴与生存；具体节点和导入代码按来源页 Raid Talent Builds 维护。',
+    NULL,
+    stat_priority,
+    rotation_notes,
+    CASE role_type
+        WHEN 'TANK' THEN 'S：攻防收益兼顾且适配高压场景的饰品；A：稳定生存或稳定伤害饰品；B：装等过渡。具体饰品名称与分数按当前角色模拟结果维护。'
+        WHEN 'HEALER' THEN 'S：高覆盖治疗或强团队爆发饰品；A：稳定智力、法力或治疗触发饰品；B：装等过渡。具体饰品名称与分数按实战和模拟结果维护。'
+        ELSE 'S：当前专精高收益主动或被动饰品；A：同装等优质替代；B：装等过渡。具体饰品名称与分数按 Raidbots 模拟结果维护。'
+    END,
+    source_name, source_url, source_updated_at, created_at, updated_at
+FROM (
+    VALUES
+        (6020001, 'MIDNIGHT_S2', 'death_knight', '死亡骑士', 'blood_death_knight', '鲜血', 'TANK', 1, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞ 急速 ≥ 暴击 ≥ 精通 = 全能', '保持骨盾与核心减伤覆盖，围绕符文能量规划灵界打击；提前为高额伤害预留资源和防御技能。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/death-knight/blood/overview-pve-tank', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020002, 'MIDNIGHT_S2', 'death_knight', '死亡骑士', 'frost_death_knight', '冰霜', 'DPS', 2, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞ 暴击 ＞＞ 精通 ≥ 急速 ＞＞ 全能', '按优先级维持资源循环，避免符文与符文能量溢出；爆发技能尽量对齐高价值目标、饰品和增益窗口。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/death-knight/frost/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020003, 'MIDNIGHT_S2', 'death_knight', '死亡骑士', 'unholy_death_knight', '邪恶', 'DPS', 3, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞ 暴击 ＞ 精通 ≥ 急速 ＞＞ 全能', '按优先级维持资源循环，避免符文与符文能量溢出；爆发技能尽量对齐高价值目标、饰品和增益窗口。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/death-knight/unholy/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020004, 'MIDNIGHT_S2', 'demon_hunter', '恶魔猎手', 'devourer', '噬灭', 'DPS', 4, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 800 急速 ＞ 暴击 ≥ 精通 ＞＞ 全能', '避免怒气与灵魂残片溢出，规划虚空变形窗口；移动前先调整站位，确保关键读条和爆发不被打断。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/demon-hunter/devourer/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020005, 'MIDNIGHT_S2', 'demon_hunter', '恶魔猎手', 'havoc', '浩劫', 'DPS', 5, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 暴击 ＞ 精通 ＞ 急速 ＞＞ 全能', '按优先级维持怒气循环，避免资源溢出；将变形及高伤技能放入增益窗口，并预留机动技能处理机制。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/demon-hunter/havoc/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020006, 'MIDNIGHT_S2', 'demon_hunter', '恶魔猎手', 'vengeance', '复仇', 'TANK', 6, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 急速 = 暴击 = 全能 ≥ 精通', '保持尖刺与主动减伤覆盖，合理收集和消耗灵魂残片；为高压波次预留恶魔变形及群体控制。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/demon-hunter/vengeance/overview-pve-tank', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020007, 'MIDNIGHT_S2', 'druid', '德鲁伊', 'balance', '平衡', 'DPS', 7, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 精通 ＞ 暴击 ＞＞ 急速 ＞ 全能', '维持核心周期效果并避免星界能量溢出；提前为日月蚀和爆发窗口规划资源，移动时使用瞬发技能。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/druid/balance/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020008, 'MIDNIGHT_S2', 'druid', '德鲁伊', 'feral', '野性', 'DPS', 8, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 精通 ＞ 急速 ＞ 暴击 ＞ 全能', '保持流血效果并避免能量和连击点溢出；在增益覆盖下刷新高质量持续伤害，爆发对齐高价值目标。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/druid/feral/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020009, 'MIDNIGHT_S2', 'druid', '德鲁伊', 'guardian', '守护', 'TANK', 9, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 急速 ＞ 全能 ＞ 暴击 ＞ 精通', '保持铁鬃等主动减伤，避免怒气溢出；根据伤害类型安排生存技能，并用控制和位移稳定怪群。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/druid/guardian/overview-pve-tank', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020010, 'MIDNIGHT_S2', 'druid', '德鲁伊', 'restoration_druid', '恢复', 'HEALER', 10, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 急速 = 精通 ＞ 全能 ＞＞ 暴击', '根据伤害轴提前铺设持续治疗，避免在无伤阶段过度消耗法力；关键群伤前规划化身、宁静等治疗窗口。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/druid/restoration/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020011, 'MIDNIGHT_S2', 'evoker', '唤魔师', 'augmentation', '增辉', 'DPS', 11, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 精通 ＞ 暴击 ＞ 急速 ＞ 全能', '围绕队友爆发维持主要增益，避免精华资源溢出；提前选择高收益增益目标，并在机制前调整站位。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/evoker/augmentation/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020012, 'MIDNIGHT_S2', 'evoker', '唤魔师', 'devastation', '湮灭', 'DPS', 12, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 暴击 ＞ 精通 ≥ 急速 ＞ 全能', '避免精华和增益浪费，蓄力技能按目标数量选择等级；将深呼吸和爆发技能对齐高价值目标。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/evoker/devastation/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020013, 'MIDNIGHT_S2', 'evoker', '唤魔师', 'preservation', '恩护', 'HEALER', 13, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 精通 ＞ 暴击 ≥ 急速 ＞ 全能', '提前布置回响与蓄力治疗，按伤害轴安排时间膨胀等大技能；注意短射程站位并控制法力消耗。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/evoker/preservation/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020014, 'MIDNIGHT_S2', 'hunter', '猎人', 'beast_mastery', '野兽控制', 'DPS', 14, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 精通 ＞ 暴击 ＞ 急速 ＞ 全能', '保持核心宠物增益并避免集中值溢出；按优先级使用高伤技能，利用全移动施法持续输出和处理机制。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/hunter/beast-mastery/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020015, 'MIDNIGHT_S2', 'hunter', '猎人', 'marksmanship', '射击', 'DPS', 15, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞＞ 暴击 ＞ 精通 ＞ 全能 ＞ 急速', '围绕瞄准射击等核心技能规划集中值与站位；爆发对齐易伤和饰品窗口，移动前预留瞬发技能。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/hunter/marksmanship/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020016, 'MIDNIGHT_S2', 'hunter', '猎人', 'survival', '生存', 'DPS', 16, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 精通 ＞ 暴击 = 急速 ＞ 全能', '按优先级使用炸弹与近战核心技能，避免集中值和充能浪费；爆发对齐怪群存活时间并保留机动能力。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/hunter/survival/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020017, 'MIDNIGHT_S2', 'mage', '法师', 'arcane', '奥术', 'DPS', 17, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 急速 ＞＞ 全能 = 暴击 = 精通', '区分爆发与节能阶段，围绕奥术充能和法力规划输出；关键爆发前预留资源，移动时使用瞬发与位移。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/mage/arcane/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020018, 'MIDNIGHT_S2', 'mage', '法师', 'fire', '火焰', 'DPS', 18, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 急速 ＞ 精通 ＞ 全能 ＞ 暴击', '围绕燃烧窗口规划必爆与瞬发技能，避免火焰冲击充能浪费；移动和机制期间维持有效施法。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/mage/fire/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020019, 'MIDNIGHT_S2', 'mage', '法师', 'frost_mage', '冰霜', 'DPS', 19, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 精通 ≥ 暴击 ＞ 急速 ≥ 全能', '合理消耗冰冷智慧等触发，避免充能浪费；冰脉与饰品对齐高价值目标，移动时优先使用瞬发技能。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/mage/frost/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020020, 'MIDNIGHT_S2', 'monk', '武僧', 'brewmaster', '酒仙', 'TANK', 20, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞＞ 暴击 = 全能 = 精通 ＞ 急速', '保持醉拳处理与核心减伤循环，避免能量和技能充能浪费；高压阶段提前安排天神酒等防御技能。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/monk/brewmaster/overview-pve-tank', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020021, 'MIDNIGHT_S2', 'monk', '武僧', 'mistweaver', '织雾', 'HEALER', 21, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 急速 ＞ 暴击 ＞ 全能 ＞＞ 精通', '根据构筑维持关键增益和持续治疗，提前应对群体伤害；在安全窗口输出转化治疗并控制法力。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/monk/mistweaver/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020022, 'MIDNIGHT_S2', 'monk', '武僧', 'windwalker', '踏风', 'DPS', 22, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 急速 = 暴击 = 精通 ＞＞ 全能', '避免重复技能破坏精通收益，平衡能量与真气；爆发技能对齐高价值目标，并利用高机动性减少停手。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/monk/windwalker/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020023, 'MIDNIGHT_S2', 'paladin', '圣骑士', 'holy_paladin', '神圣', 'HEALER', 23, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 精通 ＞ 暴击 = 急速 ＞ 全能', '保持近战或远程构筑的核心资源循环，避免圣能溢出；按伤害轴安排翅膀、光环掌握等团队技能。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/paladin/holy/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020024, 'MIDNIGHT_S2', 'paladin', '圣骑士', 'protection_paladin', '防护', 'TANK', 24, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞ 急速 = 全能 ＞ 暴击 ＞ 精通', '保持正义盾击等主动减伤覆盖，避免圣能溢出；合理利用打断、群控和祝福为队伍处理机制。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/paladin/protection/overview-pve-tank', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020025, 'MIDNIGHT_S2', 'paladin', '圣骑士', 'retribution', '惩戒', 'DPS', 25, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞ 精通 ＞ 急速 = 暴击 ＞ 全能', '避免圣能和生成技能充能浪费，按目标数选择终结技；翅膀与饰品对齐高价值目标和团队增益。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/paladin/retribution/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020026, 'MIDNIGHT_S2', 'priest', '牧师', 'discipline', '戒律', 'HEALER', 26, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 急速 ＞ 精通 ＞ 暴击 ＞ 全能', '根据伤害轴提前铺设救赎并准备输出转化窗口；避免临时补救耗尽法力，大技能按团队安排使用。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/priest/discipline/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020027, 'MIDNIGHT_S2', 'priest', '牧师', 'holy_priest', '神圣', 'HEALER', 27, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 暴击 ＞ 全能 = 精通 ＞ 急速', '按伤害类型选择圣言与对应减冷却技能，避免过量治疗；大范围伤害前规划神圣赞美诗等治疗窗口。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/priest/holy/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020028, 'MIDNIGHT_S2', 'priest', '牧师', 'shadow', '暗影', 'DPS', 28, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 急速 ＞ 精通 ＞ 暴击 ＞ 全能', '保持关键持续伤害并避免资源溢出；爆发技能对齐高价值目标，移动前规划瞬发技能与站位。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/priest/shadow/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020029, 'MIDNIGHT_S2', 'rogue', '潜行者', 'assassination', '奇袭', 'DPS', 29, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 暴击 ＞ 急速 ＞ 精通 ＞ 全能', '保持毒药与流血效果，避免能量和连击点溢出；在增益覆盖下刷新高质量持续伤害并规划消失窗口。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/rogue/assassination/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020030, 'MIDNIGHT_S2', 'rogue', '潜行者', 'outlaw', '狂徒', 'DPS', 30, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞＞ 急速 = 暴击 ＞ 全能 ＞ 精通', '维持核心增益并避免能量和连击点溢出；高频使用冷却缩减循环，冲动等爆发尽量不空转。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/rogue/outlaw/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020031, 'MIDNIGHT_S2', 'rogue', '潜行者', 'subtlety', '敏锐', 'DPS', 31, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞ 精通 ＞ 1100 急速 ≥ 暴击 ＞ 全能', '围绕暗影之舞规划能量、连击点和终结技；爆发窗口前预留资源，避免舞期间空转或溢出。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/rogue/subtlety/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020032, 'MIDNIGHT_S2', 'shaman', '萨满', 'elemental', '元素', 'DPS', 32, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 精通 ＞ 急速 = 暴击 ＞ 全能', '保持关键效果并避免漩涡值溢出；按目标数量选择消耗技能，爆发与元素宠物对齐高价值目标。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/shaman/elemental/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020033, 'MIDNIGHT_S2', 'shaman', '萨满', 'enhancement', '增强', 'DPS', 33, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '敏捷 ＞＞ 精通 = 急速 ＞ 暴击 ＞＞ 全能', '按优先级消耗漩涡武器并管理技能触发，避免层数和充能浪费；爆发与野性狼魂对齐高价值目标。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/shaman/enhancement/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020034, 'MIDNIGHT_S2', 'shaman', '萨满', 'restoration_shaman', '恢复', 'HEALER', 34, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞ 暴击 ＞ 急速 ＞ 全能 = 精通', '维持核心增益并按伤害类型选择治疗法术；提前安排灵魂链接、治疗之潮等大技能，同时控制法力。', '优先更高装等与第二赛季四件套；治疗饰品和同装等散件按来源页更新，并结合实战与模拟复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/shaman/restoration/overview-pve-healer', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020035, 'MIDNIGHT_S2', 'warlock', '术士', 'affliction', '痛苦', 'DPS', 35, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 急速 ＞ 暴击 ＞ 全能 ＞ 精通', '保持高价值持续伤害并避免灵魂碎片溢出；根据目标存活时间选择是否铺设，爆发对齐饰品和增益。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/warlock/affliction/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020036, 'MIDNIGHT_S2', 'warlock', '术士', 'demonology', '恶魔学识', 'DPS', 36, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 暴击 ＞ 急速 ＞ 精通 ＞ 全能', '围绕恶魔数量和核心冷却规划碎片，避免资源溢出；暴君等爆发前完成铺垫，移动前预留瞬发技能。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/warlock/demonology/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020037, 'MIDNIGHT_S2', 'warlock', '术士', 'destruction', '毁灭', 'DPS', 37, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '智力 ＞＞ 急速 ＞ 精通 ≥ 暴击 ＞ 全能', '保持献祭并避免灵魂碎片溢出；按目标数量选择混乱箭或火雨，爆发技能对齐高价值目标。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/warlock/destruction/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020038, 'MIDNIGHT_S2', 'warrior', '战士', 'arms', '武器', 'DPS', 38, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞＞ 暴击 ＞ 急速 ＞ 精通 ＞ 全能', '保持核心减益并避免怒气溢出；将巨人打击等窗口与高伤技能、饰品和团队增益对齐。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/warrior/arms/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020039, 'MIDNIGHT_S2', 'warrior', '战士', 'fury', '狂怒', 'DPS', 39, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞＞ 精通 ＞ 急速 ＞ 暴击 ＞ 全能', '维持激怒覆盖并避免怒气溢出；高频使用核心技能，鲁莽等爆发对齐高价值目标与饰品。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/warrior/fury/overview-pve-dps', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+        (6020040, 'MIDNIGHT_S2', 'warrior', '战士', 'protection_warrior', '防护', 'TANK', 40, '12.1 综合 PvE', '团本与大秘境的天赋侧重点不同，当前构筑以来源页 Talent Builds 为准；热修后可在此更新摘要与导入代码。', NULL, '力量 ＞ 急速 ＞ 暴击 ≥ 全能 ＞ 精通', '保持盾牌格挡等主动减伤并合理消耗怒气；高额伤害前预留盾墙等技能，用控制和位移稳定怪群。', '优先更高装等与第二赛季四件套；武器、饰品及同装等散件按来源页更新，并用 Raidbots 复核。', 'Wowhead 12.1.0 职业指南', 'https://www.wowhead.com/guide/classes/warrior/protection/overview-pve-tank', DATE '2026-08-14', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+) AS seeded_wow_specialization_guides (
+    id, season_code, class_code, class_name, spec_code, spec_name, role_type, sort_no,
+    talent_build_name, talent_summary, talent_import_code, stat_priority, rotation_notes, bis_notes,
+    source_name, source_url, source_updated_at, created_at, updated_at
+)
+ON CONFLICT (season_code, spec_code) DO NOTHING;

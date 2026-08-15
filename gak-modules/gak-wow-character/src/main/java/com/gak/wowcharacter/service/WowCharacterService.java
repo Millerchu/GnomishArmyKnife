@@ -14,6 +14,7 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
+import com.gak.wowcharacter.constant.WowSeasonConstants;
 import com.gak.wowcharacter.domain.WowCharacter;
 import com.gak.wowcharacter.domain.WowCharacterKeybinding;
 import com.gak.wowcharacter.domain.WowCharacterMacro;
@@ -89,11 +90,6 @@ public class WowCharacterService {
     private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final int MAX_CHARACTER_LEVEL = 90;
     private static final int FEATURED_CHARACTER_LIMIT = 4;
-    private static final String CURRENT_VERSION_NAME = "12.1.0";
-    private static final String CURRENT_SEASON_CODE = "MIDNIGHT_S2";
-    private static final String CURRENT_SEASON_NAME = "至暗之夜 第2赛季";
-    private static final String ARCHIVE_SEASON_CODE = "MIDNIGHT_S1";
-    private static final String ARCHIVE_SEASON_NAME = "至暗之夜 第1赛季";
     private static final int WEEKLY_VAULT_ATTACHMENT_LIMIT = 10;
     private static final int[] RAID_VAULT_THRESHOLDS = {2, 4, 6};
     private static final int[] MYTHIC_VAULT_THRESHOLDS = {1, 4, 8};
@@ -159,9 +155,9 @@ public class WowCharacterService {
                 .listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, MYTHIC_DUNGEON_FIELD)
                 .stream().map(DictionaryOptionVO::getItemLabel).toList();
         WowSeasonInfoVO vo = new WowSeasonInfoVO();
-        vo.setVersionName(CURRENT_VERSION_NAME);
-        vo.setSeasonCode(CURRENT_SEASON_CODE);
-        vo.setSeasonName(CURRENT_SEASON_NAME);
+        vo.setVersionName(WowSeasonConstants.CURRENT_VERSION_NAME);
+        vo.setSeasonCode(WowSeasonConstants.CURRENT_SEASON_CODE);
+        vo.setSeasonName(WowSeasonConstants.CURRENT_SEASON_NAME);
         vo.setHeadline("至暗之夜 S2 · 史诗钥石地下城轮换");
         vo.setSummary("新赛季开启后，角色 M+ 评分从 0 重新计算，上一赛季成绩自动进入历史归档。");
         vo.setHighlights(List.of("M+ 评分赛季重置", "8 个赛季地下城", "低保历史与附件留档"));
@@ -350,7 +346,7 @@ public class WowCharacterService {
             QueryWrapper<WowCharacterMythicSeasonHistory> existingWrapper = new QueryWrapper<>();
             existingWrapper.eq("character_id", character.getId())
                     .eq("owner_user_id", currentUserId)
-                    .eq("season_code", ARCHIVE_SEASON_CODE);
+                    .eq("season_code", WowSeasonConstants.ARCHIVE_SEASON_CODE);
             List<WowCharacterMythicRun> runs = loadMythicRunMap(List.of(character.getId()))
                     .getOrDefault(character.getId(), Collections.emptyList());
             if (wowCharacterMythicSeasonHistoryMapper.selectCount(existingWrapper) > 0) {
@@ -368,8 +364,8 @@ public class WowCharacterService {
             WowCharacterMythicSeasonHistory history = new WowCharacterMythicSeasonHistory();
             history.setCharacterId(character.getId());
             history.setOwnerUserId(currentUserId);
-            history.setSeasonCode(ARCHIVE_SEASON_CODE);
-            history.setSeasonName(ARCHIVE_SEASON_NAME);
+            history.setSeasonCode(WowSeasonConstants.ARCHIVE_SEASON_CODE);
+            history.setSeasonName(WowSeasonConstants.ARCHIVE_SEASON_NAME);
             history.setMythicScore(safeMythicScore(character));
             history.setDungeonSnapshotJson(writeMythicSnapshot(runs));
             history.setArchivedAt(now);
