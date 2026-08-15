@@ -62,6 +62,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import org.springframework.http.HttpStatus;
@@ -255,6 +256,77 @@ public class WowCharacterService {
                 toDomainWeeklyVaults(current.getId(), currentUserId, normalized.weeklyVaults(), now),
                 toDomainKeybindings(current.getId(), currentUserId, normalized.keybindings(), now),
                 toDomainMacros(current.getId(), currentUserId, normalized.macros(), now));
+    }
+
+    /**
+     * 独立保存单周低保，只校验低保自身数据，不读取或改写角色当前钥匙等无关资料。
+     */
+    @Transactional
+    public void saveWeeklyVault(Long currentUserId, Long characterId,
+                                SaveWowCharacterWeeklyVaultRequest request) {
+        ensureCurrentUserExists(currentUserId);
+        getOwnedCharacterOrThrow(currentUserId, characterId);
+        NormalizedWeeklyVault normalized = normalizeWeeklyVaults(List.of(request)).get(0);
+        WowCharacterWeeklyVault weeklyVault = resolveWeeklyVaultForSave(
+                currentUserId, characterId, request.getId(), normalized.weekStartDate()
+        );
+        LocalDateTime now = LocalDateTime.now();
+        if (weeklyVault == null) {
+            weeklyVault = new WowCharacterWeeklyVault();
+            weeklyVault.setCharacterId(characterId);
+            weeklyVault.setOwnerUserId(currentUserId);
+            weeklyVault.setCreatedAt(now);
+            applyWeeklyVault(weeklyVault, normalized, now);
+            wowCharacterWeeklyVaultMapper.insert(weeklyVault);
+        } else {
+            applyWeeklyVault(weeklyVault, normalized, now);
+            wowCharacterWeeklyVaultMapper.updateById(weeklyVault);
+        }
+        attachmentService.syncBusinessAttachments(
+                currentUserId,
+                AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT,
+                weeklyVault.getId(),
+                AttachmentConstants.USAGE_ATTACHMENT,
+                normalized.attachmentIds(),
+                WEEKLY_VAULT_ATTACHMENT_LIMIT
+        );
+    }
+
+    private WowCharacterWeeklyVault resolveWeeklyVaultForSave(Long currentUserId,
+                                                               Long characterId,
+                                                               Long weeklyVaultId,
+                                                               LocalDate weekStartDate) {
+        WowCharacterWeeklyVault requestedVault = null;
+        if (weeklyVaultId != null) {
+            requestedVault = wowCharacterWeeklyVaultMapper.selectById(weeklyVaultId);
+            if (requestedVault == null
+                    || !Objects.equals(requestedVault.getCharacterId(), characterId)
+                    || !Objects.equals(requestedVault.getOwnerUserId(), currentUserId)) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "每周低保记录不存在");
+            }
+        }
+
+        QueryWrapper<WowCharacterWeeklyVault> weekWrapper = new QueryWrapper<>();
+        weekWrapper.eq("character_id", characterId)
+                .eq("owner_user_id", currentUserId)
+                .eq("week_start_date", weekStartDate);
+        WowCharacterWeeklyVault vaultForWeek = wowCharacterWeeklyVaultMapper.selectOne(weekWrapper);
+        if (requestedVault != null && vaultForWeek != null
+                && !Objects.equals(requestedVault.getId(), vaultForWeek.getId())) {
+            throw new BusinessException("WOW_WEEKLY_VAULT_DUPLICATE_WEEK", "该周低保记录已存在");
+        }
+        return requestedVault != null ? requestedVault : vaultForWeek;
+    }
+
+    private void applyWeeklyVault(WowCharacterWeeklyVault weeklyVault,
+                                  NormalizedWeeklyVault normalized,
+                                  LocalDateTime now) {
+        weeklyVault.setWeekStartDate(normalized.weekStartDate());
+        weeklyVault.setRaidProgressCount(normalized.raidProgressCount());
+        weeklyVault.setMythicProgressCount(normalized.mythicProgressCount());
+        weeklyVault.setWorldProgressCount(normalized.worldProgressCount());
+        weeklyVault.setNote(normalized.note());
+        weeklyVault.setUpdatedAt(now);
     }
 
     /**

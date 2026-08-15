@@ -4,6 +4,7 @@ import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.user.service.user.TokenService;
 import com.gak.wowcharacter.dto.SaveWowCharacterRequest;
+import com.gak.wowcharacter.dto.SaveWowCharacterWeeklyVaultRequest;
 import com.gak.wowcharacter.dto.WowCharacterOverviewQueryRequest;
 import com.gak.wowcharacter.dto.WowCharacterQueryRequest;
 import com.gak.wowcharacter.service.WowCharacterService;
@@ -58,6 +59,18 @@ public class WowCharacterController {
                                                   HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(wowCharacterService.update(currentUserId, id, request));
+    }
+
+    /**
+     * 单独保存一周低保，避免快捷维护时触发完整角色资料校验。
+     */
+    @PutMapping("/{id}/weekly-vault")
+    public ApiResponse<Void> saveWeeklyVault(@PathVariable Long id,
+                                             @Valid @RequestBody SaveWowCharacterWeeklyVaultRequest request,
+                                             HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        wowCharacterService.saveWeeklyVault(currentUserId, id, request);
+        return ApiResponse.success();
     }
 
     /**

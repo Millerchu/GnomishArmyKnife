@@ -394,6 +394,41 @@ class WowCharacterServiceTest {
     }
 
     @Test
+    void saveWeeklyVaultShouldIgnoreUnrelatedInvalidCurrentMythicKey() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter character = buildCharacter(
+                7L, "安度因", "牧师", "ALLIANCE", "国王之谷", "652.34", "0.00", false
+        );
+        character.setMythicBestLevel(0);
+        character.setMythicDungeonName("旧赛季副本");
+        when(wowCharacterMapper.selectOne(any())).thenReturn(character);
+
+        WowCharacterWeeklyVault weeklyVault = new WowCharacterWeeklyVault();
+        weeklyVault.setId(11L);
+        weeklyVault.setCharacterId(7L);
+        weeklyVault.setOwnerUserId(1L);
+        weeklyVault.setWeekStartDate(LocalDate.of(2026, 8, 6));
+        weeklyVault.setRaidProgressCount(1);
+        weeklyVault.setMythicProgressCount(2);
+        weeklyVault.setWorldProgressCount(6);
+        weeklyVault.setCreatedAt(LocalDateTime.now());
+        weeklyVault.setUpdatedAt(LocalDateTime.now());
+        when(wowCharacterWeeklyVaultMapper.selectById(11L)).thenReturn(weeklyVault);
+
+        SaveWowCharacterWeeklyVaultRequest request = buildWeeklyVault(LocalDate.of(2026, 8, 6), 1, 4, 6);
+        request.setId(11L);
+        request.setAttachmentIds(List.of());
+
+        wowCharacterService.saveWeeklyVault(1L, 7L, request);
+
+        ArgumentCaptor<WowCharacterWeeklyVault> vaultCaptor = ArgumentCaptor.forClass(WowCharacterWeeklyVault.class);
+        verify(wowCharacterWeeklyVaultMapper).updateById(vaultCaptor.capture());
+        assertEquals(4, vaultCaptor.getValue().getMythicProgressCount());
+        assertEquals("旧赛季副本", character.getMythicDungeonName());
+        verify(wowCharacterMapper, org.mockito.Mockito.never()).updateById(any(WowCharacter.class));
+    }
+
+    @Test
     void resetAllWeeklyProgressShouldOnlyResetMaxLevelCharacters() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         WowCharacter maxLevelCharacter = buildCharacter(
