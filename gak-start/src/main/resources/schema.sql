@@ -674,8 +674,41 @@ CREATE INDEX IF NOT EXISTS idx_wow_mythic_run_owner_character ON gak_wow_charact
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_mythic_run_character_dungeon ON gak_wow_character_mythic_run (character_id, dungeon_name);
 CREATE INDEX IF NOT EXISTS idx_wow_mythic_history_owner_character ON gak_wow_character_mythic_season_history (owner_user_id, character_id, archived_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_mythic_history_character_season ON gak_wow_character_mythic_season_history (character_id, season_code);
+
+-- 低保只保留国服当前周期；旧附件先进入延迟清理状态，再删除历史记录。
+WITH current_wow_week AS (
+    SELECT CASE
+        WHEN china_now < DATE_TRUNC('week', china_now) + INTERVAL '3 days 7 hours'
+            THEN (DATE_TRUNC('week', china_now) - INTERVAL '4 days')::DATE
+        ELSE (DATE_TRUNC('week', china_now) + INTERVAL '3 days')::DATE
+    END AS week_start_date
+    FROM (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai' AS china_now) current_time
+)
+UPDATE gak_attachment
+SET status = 'DELETED', deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP)
+WHERE business_type = 'WOW_WEEKLY_VAULT'
+  AND business_id IN (
+      SELECT vault.id
+      FROM gak_wow_character_weekly_vault vault, current_wow_week
+      WHERE vault.week_start_date <> current_wow_week.week_start_date
+  )
+  AND status <> 'DELETED';
+
+WITH current_wow_week AS (
+    SELECT CASE
+        WHEN china_now < DATE_TRUNC('week', china_now) + INTERVAL '3 days 7 hours'
+            THEN (DATE_TRUNC('week', china_now) - INTERVAL '4 days')::DATE
+        ELSE (DATE_TRUNC('week', china_now) + INTERVAL '3 days')::DATE
+    END AS week_start_date
+    FROM (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai' AS china_now) current_time
+)
+DELETE FROM gak_wow_character_weekly_vault vault
+USING current_wow_week
+WHERE vault.week_start_date <> current_wow_week.week_start_date;
+
 CREATE INDEX IF NOT EXISTS idx_wow_weekly_vault_owner_character_week ON gak_wow_character_weekly_vault (owner_user_id, character_id, week_start_date DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_weekly_vault_character_week ON gak_wow_character_weekly_vault (character_id, week_start_date);
+DROP INDEX IF EXISTS uk_wow_weekly_vault_character_week;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_weekly_vault_character ON gak_wow_character_weekly_vault (character_id);
 DROP INDEX IF EXISTS idx_wow_keybinding_owner_character;
 DROP INDEX IF EXISTS uk_wow_keybinding_character_spec;
 CREATE INDEX IF NOT EXISTS idx_wow_keybinding_owner_character ON gak_wow_character_keybinding (owner_user_id, character_id, binding_name);

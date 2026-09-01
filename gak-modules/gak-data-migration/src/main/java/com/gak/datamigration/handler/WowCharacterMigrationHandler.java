@@ -16,6 +16,8 @@ import com.gak.wowcharacter.mapper.WowCharacterKeybindingMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMapper;
 import com.gak.wowcharacter.mapper.WowCharacterMythicRunMapper;
 import com.gak.wowcharacter.mapper.WowCharacterWeeklyVaultMapper;
+import com.gak.wowcharacter.service.WowWeeklyResetSchedule;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +93,8 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
         List<WowCharacterMythicRun> mythicRuns = mythicRunMapper.selectList(runWrapper);
 
         QueryWrapper<WowCharacterWeeklyVault> vaultWrapper = new QueryWrapper<>();
-        vaultWrapper.orderByAsc("character_id").orderByAsc("week_start_date").orderByAsc("id");
+        vaultWrapper.eq("week_start_date", WowWeeklyResetSchedule.currentWeekStartDate())
+                .orderByAsc("character_id").orderByAsc("id");
         List<WowCharacterWeeklyVault> weeklyVaults = weeklyVaultMapper.selectList(vaultWrapper);
 
         QueryWrapper<WowCharacterKeybinding> keybindingWrapper = new QueryWrapper<>();
@@ -186,7 +189,11 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
                                     List<WowCharacterWeeklyVault> weeklyVaults,
                                     Map<Long, Long> characterIdMappings) {
         long importedCount = 0L;
+        LocalDate currentWeekStartDate = WowWeeklyResetSchedule.currentWeekStartDate();
         for (WowCharacterWeeklyVault source : weeklyVaults) {
+            if (!currentWeekStartDate.equals(source.getWeekStartDate())) {
+                continue;
+            }
             Long targetCharacterId = characterIdMappings.get(source.getCharacterId());
             if (targetCharacterId == null) {
                 continue;
@@ -272,7 +279,7 @@ public class WowCharacterMigrationHandler implements MigrationResourceHandler {
         return mythicRunMapper.selectOne(wrapper);
     }
 
-    private WowCharacterWeeklyVault findExistingVault(Long characterId, java.time.LocalDate weekStartDate) {
+    private WowCharacterWeeklyVault findExistingVault(Long characterId, LocalDate weekStartDate) {
         QueryWrapper<WowCharacterWeeklyVault> wrapper = new QueryWrapper<>();
         wrapper.eq("character_id", characterId).eq("week_start_date", weekStartDate);
         return weeklyVaultMapper.selectOne(wrapper);

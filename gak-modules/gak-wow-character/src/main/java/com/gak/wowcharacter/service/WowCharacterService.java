@@ -161,7 +161,7 @@ public class WowCharacterService {
         vo.setSeasonName(WowSeasonConstants.CURRENT_SEASON_NAME);
         vo.setHeadline("至暗之夜 S2 · 史诗钥石地下城轮换");
         vo.setSummary("新赛季开启后，角色 M+ 评分从 0 重新计算，上一赛季成绩自动进入历史归档。");
-        vo.setHighlights(List.of("M+ 评分赛季重置", "8 个赛季地下城", "低保历史与附件留档"));
+        vo.setHighlights(List.of("M+ 评分赛季重置", "8 个赛季地下城", "本周低保与附件记录"));
         vo.setDungeons(dungeons);
         vo.setCrestLimits(List.of(
                 new WowSeasonCrestVO("勇士迷雾纹章", 100),
@@ -267,6 +267,7 @@ public class WowCharacterService {
         ensureCurrentUserExists(currentUserId);
         getOwnedCharacterOrThrow(currentUserId, characterId);
         NormalizedWeeklyVault normalized = normalizeWeeklyVaults(List.of(request)).get(0);
+        deleteHistoricalWeeklyVaults(currentUserId, characterId, normalized.weekStartDate());
         WowCharacterWeeklyVault weeklyVault = resolveWeeklyVaultForSave(
                 currentUserId, characterId, request.getId(), normalized.weekStartDate()
         );
@@ -346,6 +347,9 @@ public class WowCharacterService {
 
         LocalDateTime now = LocalDateTime.now(WowWeeklyResetSchedule.CHINA_ZONE_ID);
         LocalDate currentWeekStartDate = WowWeeklyResetSchedule.resolveWeekStartDate(now);
+        weeklyVaults = retainCurrentWeeklyVault(
+                currentUserId, current.getId(), weeklyVaults, currentWeekStartDate
+        );
         boolean hasCurrentWeekVault = weeklyVaults.stream()
                 .anyMatch(item -> currentWeekStartDate.equals(item.getWeekStartDate()));
         if (!hasCurrentWeekVault) {
@@ -358,10 +362,7 @@ public class WowCharacterService {
                     current.getId(), currentUserId, currentWeekStartDate, now
             );
             wowCharacterWeeklyVaultMapper.insert(currentWeekVault);
-            List<WowCharacterWeeklyVault> recordsWithCurrentWeek = new ArrayList<>();
-            recordsWithCurrentWeek.add(currentWeekVault);
-            recordsWithCurrentWeek.addAll(weeklyVaults);
-            weeklyVaults = recordsWithCurrentWeek;
+            weeklyVaults = List.of(currentWeekVault);
         }
         return buildDetailVO(current, characterIds, weeklyVaults);
     }
@@ -381,6 +382,7 @@ public class WowCharacterService {
         LocalDate currentWeekStartDate = WowWeeklyResetSchedule.resolveWeekStartDate(now);
         long resetCount = 0L;
         for (WowCharacter character : characters) {
+            deleteHistoricalWeeklyVaults(currentUserId, character.getId(), currentWeekStartDate);
             if (character.getLevel() == null || character.getLevel() < MAX_CHARACTER_LEVEL) {
                 continue;
             }
@@ -617,6 +619,36 @@ public class WowCharacterService {
     }
 
     /**
+     * 删除非当前周期低保，并将其附件标记为待清理。
+     */
+    private void deleteHistoricalWeeklyVaults(Long currentUserId, Long characterId,
+                                              LocalDate currentWeekStartDate) {
+        QueryWrapper<WowCharacterWeeklyVault> historyWrapper = new QueryWrapper<>();
+        historyWrapper.eq("character_id", characterId)
+                .eq("owner_user_id", currentUserId)
+                .ne("week_start_date", currentWeekStartDate);
+        List<WowCharacterWeeklyVault> historicalVaults = wowCharacterWeeklyVaultMapper.selectList(historyWrapper);
+        for (WowCharacterWeeklyVault historicalVault : historicalVaults) {
+            attachmentService.deleteByBusiness(
+                    AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT, historicalVault.getId()
+            );
+        }
+        if (!historicalVaults.isEmpty()) {
+            wowCharacterWeeklyVaultMapper.delete(historyWrapper);
+        }
+    }
+
+    private List<WowCharacterWeeklyVault> retainCurrentWeeklyVault(Long currentUserId,
+                                                                   Long characterId,
+                                                                   List<WowCharacterWeeklyVault> weeklyVaults,
+                                                                   LocalDate currentWeekStartDate) {
+        deleteHistoricalWeeklyVaults(currentUserId, characterId, currentWeekStartDate);
+        return weeklyVaults.stream()
+                .filter(item -> currentWeekStartDate.equals(item.getWeekStartDate()))
+                .toList();
+    }
+
+    /**
      * 创建当前周期的空低保记录，三条轨道均从零开始统计。
      */
     private WowCharacterWeeklyVault createEmptyWeeklyVault(Long characterId,
@@ -810,6 +842,10 @@ public class WowCharacterService {
         if (requestList == null || requestList.isEmpty()) {
             return Collections.emptyList();
         }
+        if (requestList.size() > 1) {
+            throw new BusinessException("WOW_WEEKLY_VAULT_CURRENT_ONLY", "低保记录只允许保留当前周");
+        }
+        LocalDate currentWeekStartDate = WowWeeklyResetSchedule.currentWeekStartDate();
         Map<LocalDate, NormalizedWeeklyVault> result = new LinkedHashMap<>();
         for (SaveWowCharacterWeeklyVaultRequest item : requestList) {
             if (item.getWeekStartDate() == null) {
@@ -817,6 +853,9 @@ public class WowCharacterService {
             }
             if (result.containsKey(item.getWeekStartDate())) {
                 throw new BusinessException("WOW_WEEKLY_VAULT_DUPLICATE_WEEK", "weeklyVaults 存在重复周起始日期");
+            }
+            if (!currentWeekStartDate.equals(item.getWeekStartDate())) {
+                throw new BusinessException("WOW_WEEKLY_VAULT_CURRENT_ONLY", "只能维护当前周低保记录");
             }
             result.put(item.getWeekStartDate(), new NormalizedWeeklyVault(
                     item.getId(),
@@ -862,23 +901,39 @@ public class WowCharacterService {
         }
     }
 
-    private void syncWeeklyVaults(Long currentUserId, Long characterId, List<NormalizedWeeklyVault> normalizedVaults, LocalDateTime now) {
-        QueryWrapper<WowCharacterWeeklyVault> deleteWrapper = new QueryWrapper<>();
-        deleteWrapper.eq("character_id", characterId).eq("owner_user_id", currentUserId);
-        wowCharacterWeeklyVaultMapper.delete(deleteWrapper);
-        List<WowCharacterWeeklyVault> vaults = toDomainWeeklyVaults(characterId, currentUserId, normalizedVaults, now);
-        for (int index = 0; index < vaults.size(); index++) {
-            WowCharacterWeeklyVault vault = vaults.get(index);
-            wowCharacterWeeklyVaultMapper.insert(vault);
-            attachmentService.syncBusinessAttachments(
-                    currentUserId,
-                    AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT,
-                    vault.getId(),
-                    AttachmentConstants.USAGE_ATTACHMENT,
-                    normalizedVaults.get(index).attachmentIds(),
-                    WEEKLY_VAULT_ATTACHMENT_LIMIT
-            );
+    private void syncWeeklyVaults(Long currentUserId, Long characterId,
+                                  List<NormalizedWeeklyVault> normalizedVaults, LocalDateTime now) {
+        LocalDate currentWeekStartDate = normalizedVaults.isEmpty()
+                ? WowWeeklyResetSchedule.currentWeekStartDate()
+                : normalizedVaults.get(0).weekStartDate();
+        deleteHistoricalWeeklyVaults(currentUserId, characterId, currentWeekStartDate);
+        if (normalizedVaults.isEmpty()) {
+            deleteWeeklyVaults(currentUserId, characterId);
+            return;
         }
+
+        NormalizedWeeklyVault normalized = normalizedVaults.get(0);
+        QueryWrapper<WowCharacterWeeklyVault> currentWrapper = new QueryWrapper<>();
+        currentWrapper.eq("character_id", characterId)
+                .eq("owner_user_id", currentUserId)
+                .eq("week_start_date", currentWeekStartDate);
+        WowCharacterWeeklyVault weeklyVault = wowCharacterWeeklyVaultMapper.selectOne(currentWrapper);
+        if (weeklyVault == null) {
+            weeklyVault = createEmptyWeeklyVault(characterId, currentUserId, currentWeekStartDate, now);
+            applyWeeklyVault(weeklyVault, normalized, now);
+            wowCharacterWeeklyVaultMapper.insert(weeklyVault);
+        } else {
+            applyWeeklyVault(weeklyVault, normalized, now);
+            wowCharacterWeeklyVaultMapper.updateById(weeklyVault);
+        }
+        attachmentService.syncBusinessAttachments(
+                currentUserId,
+                AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT,
+                weeklyVault.getId(),
+                AttachmentConstants.USAGE_ATTACHMENT,
+                normalized.attachmentIds(),
+                WEEKLY_VAULT_ATTACHMENT_LIMIT
+        );
     }
 
     private void syncKeybindings(Long currentUserId, Long characterId, List<NormalizedKeybinding> normalizedKeybindings, LocalDateTime now) {
@@ -1006,7 +1061,9 @@ public class WowCharacterService {
             return Collections.emptyMap();
         }
         QueryWrapper<WowCharacterWeeklyVault> wrapper = new QueryWrapper<>();
-        wrapper.in("character_id", characterIds).orderByDesc("week_start_date").orderByDesc("id");
+        wrapper.in("character_id", characterIds)
+                .eq("week_start_date", WowWeeklyResetSchedule.currentWeekStartDate())
+                .orderByAsc("character_id").orderByDesc("id");
         Map<Long, List<WowCharacterWeeklyVault>> result = new HashMap<>();
         for (WowCharacterWeeklyVault item : wowCharacterWeeklyVaultMapper.selectList(wrapper)) {
             result.computeIfAbsent(item.getCharacterId(), key -> new ArrayList<>()).add(item);

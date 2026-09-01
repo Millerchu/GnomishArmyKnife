@@ -145,7 +145,9 @@ class WowCharacterServiceTest {
         ));
         request.setMythicBestLevel(14);
         request.setMythicDungeonName("通天峰");
-        request.setWeeklyVaults(List.of(buildWeeklyVault(LocalDate.of(2026, 5, 11), 4, 8, 4)));
+        request.setWeeklyVaults(List.of(buildWeeklyVault(
+                WowWeeklyResetSchedule.currentWeekStartDate(), 4, 8, 4
+        )));
         request.setKeybindings(List.of(
                 buildKeybinding("团本治疗", "YmluZGluZ3MtaG9seQ=="),
                 buildKeybinding("大秘境治疗", "")
@@ -407,7 +409,8 @@ class WowCharacterServiceTest {
         weeklyVault.setId(11L);
         weeklyVault.setCharacterId(7L);
         weeklyVault.setOwnerUserId(1L);
-        weeklyVault.setWeekStartDate(LocalDate.of(2026, 8, 6));
+        LocalDate currentWeekStartDate = WowWeeklyResetSchedule.currentWeekStartDate();
+        weeklyVault.setWeekStartDate(currentWeekStartDate);
         weeklyVault.setRaidProgressCount(1);
         weeklyVault.setMythicProgressCount(2);
         weeklyVault.setWorldProgressCount(6);
@@ -415,7 +418,7 @@ class WowCharacterServiceTest {
         weeklyVault.setUpdatedAt(LocalDateTime.now());
         when(wowCharacterWeeklyVaultMapper.selectById(11L)).thenReturn(weeklyVault);
 
-        SaveWowCharacterWeeklyVaultRequest request = buildWeeklyVault(LocalDate.of(2026, 8, 6), 1, 4, 6);
+        SaveWowCharacterWeeklyVaultRequest request = buildWeeklyVault(currentWeekStartDate, 1, 4, 6);
         request.setId(11L);
         request.setAttachmentIds(List.of());
 
@@ -426,6 +429,47 @@ class WowCharacterServiceTest {
         assertEquals(4, vaultCaptor.getValue().getMythicProgressCount());
         assertEquals("旧赛季副本", character.getMythicDungeonName());
         verify(wowCharacterMapper, org.mockito.Mockito.never()).updateById(any(WowCharacter.class));
+    }
+
+    @Test
+    void saveWeeklyVaultShouldRejectHistoricalWeek() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(wowCharacterMapper.selectOne(any())).thenReturn(buildCharacter(
+                7L, "安度因", "牧师", "ALLIANCE", "国王之谷", "652.34", "0.00", false
+        ));
+        SaveWowCharacterWeeklyVaultRequest request = buildWeeklyVault(
+                WowWeeklyResetSchedule.currentWeekStartDate().minusWeeks(1), 1, 4, 6
+        );
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> wowCharacterService.saveWeeklyVault(1L, 7L, request)
+        );
+
+        assertEquals("WOW_WEEKLY_VAULT_CURRENT_ONLY", exception.getCode());
+    }
+
+    @Test
+    void saveWeeklyVaultShouldDeleteHistoricalRecordAndAttachment() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(wowCharacterMapper.selectOne(any())).thenReturn(buildCharacter(
+                7L, "安度因", "牧师", "ALLIANCE", "国王之谷", "652.34", "0.00", false
+        ));
+        WowCharacterWeeklyVault historicalVault = new WowCharacterWeeklyVault();
+        historicalVault.setId(10L);
+        historicalVault.setCharacterId(7L);
+        historicalVault.setOwnerUserId(1L);
+        historicalVault.setWeekStartDate(WowWeeklyResetSchedule.currentWeekStartDate().minusWeeks(1));
+        when(wowCharacterWeeklyVaultMapper.selectList(any())).thenReturn(List.of(historicalVault));
+        SaveWowCharacterWeeklyVaultRequest request = buildWeeklyVault(
+                WowWeeklyResetSchedule.currentWeekStartDate(), 1, 4, 6
+        );
+
+        wowCharacterService.saveWeeklyVault(1L, 7L, request);
+
+        verify(attachmentService).deleteByBusiness("WOW_WEEKLY_VAULT", 10L);
+        verify(wowCharacterWeeklyVaultMapper).delete(any());
+        verify(wowCharacterWeeklyVaultMapper).insert(any(WowCharacterWeeklyVault.class));
     }
 
     @Test
