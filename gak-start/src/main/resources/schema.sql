@@ -682,7 +682,7 @@ WITH current_wow_week AS (
             THEN (DATE_TRUNC('week', china_now) - INTERVAL '4 days')::DATE
         ELSE (DATE_TRUNC('week', china_now) + INTERVAL '3 days')::DATE
     END AS week_start_date
-    FROM (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai' AS china_now) current_time
+    FROM (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai' AS china_now) china_clock
 )
 UPDATE gak_attachment
 SET status = 'DELETED', deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP)
@@ -700,7 +700,7 @@ WITH current_wow_week AS (
             THEN (DATE_TRUNC('week', china_now) - INTERVAL '4 days')::DATE
         ELSE (DATE_TRUNC('week', china_now) + INTERVAL '3 days')::DATE
     END AS week_start_date
-    FROM (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai' AS china_now) current_time
+    FROM (SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai' AS china_now) china_clock
 )
 DELETE FROM gak_wow_character_weekly_vault vault
 USING current_wow_week
