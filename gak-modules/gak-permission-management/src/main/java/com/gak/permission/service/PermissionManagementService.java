@@ -1,6 +1,7 @@
 package com.gak.permission.service;
 
 import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.framework.message.*;
 import com.gak.attachment.service.AttachmentService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -74,6 +75,7 @@ public class PermissionManagementService {
             .comparing(SystemApp::getSortNo, Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(SystemApp::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
+    private final MessagePublisher messagePublisher;
     private final UserMapper userMapper;
     private final SystemAppMapper systemAppMapper;
     private final UserAppPermissionMapper userAppPermissionMapper;
@@ -88,7 +90,8 @@ public class PermissionManagementService {
                                        PermissionAuditLogMapper permissionAuditLogMapper,
                                        ObjectMapper objectMapper,
                                        DataDictionaryUsageSupport dataDictionaryUsageSupport,
-                                       AttachmentService attachmentService) {
+                                       AttachmentService attachmentService, MessagePublisher messagePublisher) {
+        this.messagePublisher = messagePublisher;
         this.userMapper = userMapper;
         this.systemAppMapper = systemAppMapper;
         this.userAppPermissionMapper = userAppPermissionMapper;
@@ -198,7 +201,7 @@ public class PermissionManagementService {
         }
 
         UserAppPermissionVO after = buildUserAppPermissionVO(userId);
-        saveAuditLog(currentUserId,
+        Long auditId = saveAuditLog(currentUserId,
                 userId,
                 PermissionAuditActionType.REPLACE_APPS,
                 before,
@@ -206,6 +209,8 @@ public class PermissionManagementService {
                 traceId,
                 ip,
                 userAgent);
+
+        publishPermissionChange(currentUserId, userId, auditId, before.getGrantedFeatureCodes(), after.getGrantedFeatureCodes());
 
         UpdateUserAppPermissionVO result = new UpdateUserAppPermissionVO();
         result.setUserId(userId);
@@ -535,7 +540,27 @@ public class PermissionManagementService {
         return value.trim();
     }
 
-    private void saveAuditLog(Long operatorUserId,
+    /** 真实授权差异与审计、消息一起提交，无变化保存不打扰用户。 */
+    private void publishPermissionChange(Long operatorId, Long userId, Long auditId, List<String> before, List<String> after) {
+        List<String> granted = after.stream().filter(code -> !before.contains(code)).toList();
+        List<String> revoked = before.stream().filter(code -> !after.contains(code)).toList();
+        if (granted.isEmpty() && revoked.isEmpty()) { return; }
+        String body = "你的应用权限已更新。";
+        if (!granted.isEmpty()) { body += "\n新增应用：" + permissionAppNames(granted); }
+        if (!revoked.isEmpty()) { body += "\n收回应用：" + permissionAppNames(revoked); }
+        messagePublisher.publish(new PublishMessageCommand("PERMISSION", String.valueOf(auditId), operatorId,
+                MessageAudience.USERS, List.of(userId), MessageCategory.SECURITY, MessagePriority.IMPORTANT,
+                "应用权限变更通知", body, MessageTarget.HOME));
+    }
+
+    private String permissionAppNames(List<String> codes) {
+        QueryWrapper<SystemApp> query = new QueryWrapper<>();
+        query.in("app_code", codes).orderByAsc("sort_no").orderByAsc("id");
+        return systemAppMapper.selectList(query).stream().filter(app -> codes.contains(app.getAppCode()))
+                .map(SystemApp::getAppName).collect(Collectors.joining("、"));
+    }
+
+    private Long saveAuditLog(Long operatorUserId,
                               Long targetUserId,
                               PermissionAuditActionType actionType,
                               Object before,
@@ -554,6 +579,7 @@ public class PermissionManagementService {
         auditLog.setUserAgent(trimToNull(userAgent));
         auditLog.setCreatedAt(LocalDateTime.now());
         permissionAuditLogMapper.insert(auditLog);
+        return auditLog.getId();
     }
 
     private String toJsonSafely(Object value) {

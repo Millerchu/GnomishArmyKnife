@@ -18,6 +18,7 @@
     <description>业务模块聚合层</description>
 
     <modules>
+        <module>gak-message</module>
         <module>gak-user</module>
         <module>gak-attachment</module>
         <module>gak-worklog</module>

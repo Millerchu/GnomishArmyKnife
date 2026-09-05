@@ -21,6 +21,7 @@
     <description>GAK 启动模块</description>
 
     <dependencies>
+        <dependency><groupId>com.gak</groupId><artifactId>gak-message</artifactId><version>${project.version}</version></dependency>
         <dependency>
             <groupId>com.gak</groupId>
             <artifactId>gak-framework</artifactId>

@@ -49,6 +49,9 @@ import static org.mockito.Mockito.when;
 class PermissionManagementServiceTest {
 
     @Mock
+    private com.gak.framework.message.MessagePublisher messagePublisher;
+
+    @Mock
     private UserMapper userMapper;
 
     @Mock
@@ -152,11 +155,27 @@ class PermissionManagementServiceTest {
                 "JUnit"
         );
 
+        ArgumentCaptor<com.gak.framework.message.PublishMessageCommand> notification = ArgumentCaptor.forClass(com.gak.framework.message.PublishMessageCommand.class);
+        verify(messagePublisher).publish(notification.capture());
+        assertEquals(List.of(2L), notification.getValue().userIds());
+        assertEquals("PERMISSION", notification.getValue().source());
+        assertEquals("你的应用权限已更新。\n新增应用：待办列表", notification.getValue().body());
         verify(userAppPermissionMapper).delete(any());
         verify(userAppPermissionMapper, times(2)).insert(any(UserAppPermission.class));
         verify(permissionAuditLogMapper).insert(any(PermissionAuditLog.class));
         assertEquals(2, result.getPermissionCount());
         assertIterableEquals(List.of("APP_CALCULATOR", "APP_TODO_LIST"), result.getGrantedFeatureCodes());
+    }
+
+    @Test
+    void unchangedPermissionsShouldNotNotify() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "admin", "ADMIN"));
+        when(userMapper.selectById(2L)).thenReturn(buildUser(2L, "alice", "USER"));
+        when(userAppPermissionMapper.selectList(any())).thenReturn(List.of());
+        UpdateUserAppPermissionRequest request = new UpdateUserAppPermissionRequest();
+        request.setGrantedFeatureCodes(List.of());
+        permissionManagementService.replaceUserAppPermissions(1L, 2L, request, "trace-empty", "127.0.0.1", "JUnit");
+        org.mockito.Mockito.verifyNoInteractions(messagePublisher);
     }
 
     @Test
