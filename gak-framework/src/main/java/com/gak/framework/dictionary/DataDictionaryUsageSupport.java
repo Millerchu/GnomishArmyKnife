@@ -14,6 +14,14 @@ public interface DataDictionaryUsageSupport {
 
     List<DictionaryOptionVO> listEnabledOptionsByUsage(String appCode, String moduleCode, String bizFieldCode);
 
+    /**
+     * 向指定业务字段绑定的字典中新增启用选项。
+     */
+    DictionaryOptionVO createEnabledOptionByUsage(String appCode,
+                                                  String moduleCode,
+                                                  String bizFieldCode,
+                                                  String optionName);
+
     void validateByUsage(String appCode, String moduleCode, String bizFieldCode, String value, boolean required);
 
     void validateMultiValueByUsage(String appCode,

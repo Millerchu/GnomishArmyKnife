@@ -2,6 +2,7 @@ package com.gak.worklog.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.exception.BusinessException;
 import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UnfinishedWorkItemResponse;
@@ -140,6 +141,22 @@ public class WorkLogService {
         saveTypeRelations(workLog.getId(), typeCodes, now);
         List<WorkLogItem> savedWorkItems = saveWorkItems(workLog.getId(), workItems, now);
         return buildResponse(workLog, typeCodes, savedWorkItems);
+    }
+
+    /**
+     * 新增工作日志项目字典项，供日志表单就地创建并立即选择。
+     *
+     * @param projectName 项目名称
+     * @return 新增或已存在的项目选项
+     */
+    @Transactional
+    public DictionaryOptionVO createProject(String projectName) {
+        return dataDictionaryUsageSupport.createEnabledOptionByUsage(
+                APP_CODE,
+                MODULE_CODE,
+                PROJECT_CODE_FIELD,
+                projectName
+        );
     }
 
     /**

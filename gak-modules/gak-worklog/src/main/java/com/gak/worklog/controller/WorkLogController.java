@@ -1,7 +1,9 @@
 package com.gak.worklog.controller;
 
 import com.gak.framework.response.ApiResponse;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.user.service.user.TokenService;
+import com.gak.worklog.dto.CreateWorkLogProjectRequest;
 import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UnfinishedWorkItemResponse;
 import com.gak.worklog.dto.UpdateWorkLogRequest;
@@ -49,6 +51,17 @@ public class WorkLogController {
                                                HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(workLogService.create(currentUserId, request));
+    }
+
+    /**
+     * 从工作日志表单就地新增项目字典项。
+     */
+    @PostMapping("/projects")
+    public ApiResponse<DictionaryOptionVO> createProject(
+            @Valid @RequestBody CreateWorkLogProjectRequest request,
+            HttpServletRequest httpServletRequest) {
+        tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.createProject(request.getProjectName()));
     }
 
     /**

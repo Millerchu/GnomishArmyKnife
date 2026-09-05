@@ -1,6 +1,7 @@
 package com.gak.worklog.service;
 
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
+import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.framework.exception.BusinessException;
 import com.gak.worklog.dto.CreateWorkLogRequest;
 import com.gak.worklog.dto.UnfinishedWorkItemResponse;
@@ -113,6 +114,24 @@ class WorkLogServiceTest {
         assertEquals(LocalTime.of(20, 30), response.getOffWorkTime());
         assertEquals(List.of("NORMAL", "BUSINESS_TRIP"), response.getTypeCodes());
         assertEquals(WorkLogStatus.COMPLETED.name(), response.getStatus());
+    }
+
+    @Test
+    void createProjectShouldAppendOptionThroughWorkLogProjectBinding() {
+        DictionaryOptionVO option = new DictionaryOptionVO();
+        option.setItemLabel("新建交付项目");
+        option.setItemValue("新建交付项目");
+        when(dataDictionaryUsageSupport.createEnabledOptionByUsage(
+                "APP_WORK_LOG",
+                "WORK_LOG",
+                "projectCode",
+                "新建交付项目"
+        )).thenReturn(option);
+
+        DictionaryOptionVO result = workLogService.createProject("新建交付项目");
+
+        assertEquals("新建交付项目", result.getItemLabel());
+        assertEquals("新建交付项目", result.getItemValue());
     }
 
     @Test
