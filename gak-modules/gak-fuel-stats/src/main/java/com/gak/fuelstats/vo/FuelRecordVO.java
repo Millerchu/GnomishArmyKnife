@@ -30,6 +30,9 @@ public class FuelRecordVO {
     private String note;
     private BigDecimal distanceKm;
     private BigDecimal fuelConsumption;
+    /** 已闭合加满周期的里程和油量；未闭合或记录不连续时为空。 */
+    private BigDecimal consumptionDistanceKm;
+    private BigDecimal consumptionFuelVolume;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<AttachmentVO> attachments;
@@ -185,6 +188,14 @@ public class FuelRecordVO {
     public void setFuelConsumption(BigDecimal fuelConsumption) {
         this.fuelConsumption = fuelConsumption;
     }
+
+    public BigDecimal getConsumptionDistanceKm() { return consumptionDistanceKm; }
+
+    public void setConsumptionDistanceKm(BigDecimal value) { this.consumptionDistanceKm = value; }
+
+    public BigDecimal getConsumptionFuelVolume() { return consumptionFuelVolume; }
+
+    public void setConsumptionFuelVolume(BigDecimal value) { this.consumptionFuelVolume = value; }
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

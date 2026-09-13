@@ -41,6 +41,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class FuelRecordService {
 
+    private static final String FILL_TYPE_FULL = "FULL";
     private static final int MONEY_SCALE = 2;
     private static final int VOLUME_SCALE = 2;
     private static final int ODOMETER_SCALE = 1;
@@ -214,28 +215,14 @@ public class FuelRecordService {
                 .thenComparing(FuelRecord::getFuelDate, Comparator.nullsLast(LocalDate::compareTo))
                 .thenComparing(FuelRecord::getFuelTime, Comparator.nullsLast(LocalDateTime::compareTo))
                 .thenComparing(FuelRecord::getOdometerKm, Comparator.nullsLast(BigDecimal::compareTo))
-                .thenComparing(FuelRecord::getCreatedAt, Comparator.nullsLast(LocalDateTime::compareTo)));
+                .thenComparing(FuelRecord::getCreatedAt, Comparator.nullsLast(LocalDateTime::compareTo))
+                .thenComparing(FuelRecord::getId, Comparator.nullsLast(Long::compareTo)));
 
-        Map<String, FuelRecord> previousByVehicle = new LinkedHashMap<>();
+        Map<String, ConsumptionCycle> cyclesByVehicle = new LinkedHashMap<>();
         List<FuelRecordVO> derived = new ArrayList<>();
         for (FuelRecord item : ascending) {
-            FuelRecord previous = previousByVehicle.get(item.getVehicleName());
-            BigDecimal distanceKm = ZERO_ODOMETER;
-            BigDecimal fuelConsumption = null;
-            if (previous != null
-                    && item.getOdometerKm() != null
-                    && previous.getOdometerKm() != null
-                    && item.getOdometerKm().compareTo(previous.getOdometerKm()) > 0) {
-                distanceKm = item.getOdometerKm().subtract(previous.getOdometerKm()).setScale(1, RoundingMode.HALF_UP);
-                if (distanceKm.compareTo(BigDecimal.ZERO) > 0) {
-                    fuelConsumption = item.getFuelVolume()
-                            .divide(distanceKm, 6, RoundingMode.HALF_UP)
-                            .multiply(HUNDRED)
-                            .setScale(2, RoundingMode.HALF_UP);
-                }
-            }
-            previousByVehicle.put(item.getVehicleName(), item);
-            derived.add(toRecordVO(item, distanceKm, fuelConsumption));
+            ConsumptionCycle cycle = cyclesByVehicle.computeIfAbsent(item.getVehicleName(), key -> new ConsumptionCycle());
+            derived.add(deriveRecord(item, cycle));
         }
 
         derived.sort(Comparator
@@ -248,9 +235,48 @@ public class FuelRecordService {
     }
 
     /**
+     * 首次加满只建立基准；两次加满之间累计补油量，漏记或里程回退会中断周期。
+     * 相邻里程差独立保留，周期里程仅挂在闭合记录上，避免累计统计重复计入。
+     */
+    private FuelRecordVO deriveRecord(FuelRecord item, ConsumptionCycle cycle) {
+        BigDecimal odometer = item.getOdometerKm();
+        boolean continuous = !Boolean.FALSE.equals(item.getLastRecordKnown())
+                && odometer != null && cycle.previousOdometer != null
+                && odometer.compareTo(cycle.previousOdometer) >= 0;
+        BigDecimal distance = continuous ? odometer.subtract(cycle.previousOdometer) : ZERO_ODOMETER;
+        if (!continuous) {
+            cycle.fullOdometer = null;
+            cycle.volume = BigDecimal.ZERO;
+        }
+        FuelRecordVO result = toRecordVO(item, distance);
+        if (cycle.fullOdometer != null) {
+            cycle.volume = cycle.volume.add(nullSafe(item.getFuelVolume()));
+            BigDecimal cycleDistance = odometer.subtract(cycle.fullOdometer);
+            if (FILL_TYPE_FULL.equals(item.getFillType()) && cycleDistance.signum() > 0) {
+                result.setConsumptionDistanceKm(scaleOdometer(cycleDistance));
+                result.setConsumptionFuelVolume(scaleVolume(cycle.volume));
+                result.setFuelConsumption(calculateConsumption(cycle.volume, cycleDistance));
+            }
+        }
+        if (FILL_TYPE_FULL.equals(item.getFillType())) {
+            cycle.fullOdometer = odometer;
+            cycle.volume = BigDecimal.ZERO;
+        }
+        cycle.previousOdometer = odometer;
+        return result;
+    }
+
+    /** 按有效周期累计油量和里程计算加权油耗，最后一步统一舍入。 */
+    private BigDecimal calculateConsumption(BigDecimal volume, BigDecimal distance) {
+        return distance.signum() > 0
+                ? volume.multiply(HUNDRED).divide(distance, MONEY_SCALE, RoundingMode.HALF_UP)
+                : ZERO_CONSUMPTION;
+    }
+
+    /**
      * 将数据库实体转换为视图对象，并统一金额与精度口径。
      */
-    private FuelRecordVO toRecordVO(FuelRecord item, BigDecimal distanceKm, BigDecimal fuelConsumption) {
+    private FuelRecordVO toRecordVO(FuelRecord item, BigDecimal distanceKm) {
         FuelRecordVO vo = new FuelRecordVO();
         vo.setId(item.getId());
         vo.setVehicleName(item.getVehicleName());
@@ -274,7 +300,6 @@ public class FuelRecordService {
         vo.setStationName(item.getStationName());
         vo.setNote(item.getNote());
         vo.setDistanceKm(scaleOdometer(distanceKm));
-        vo.setFuelConsumption(fuelConsumption == null ? null : fuelConsumption.setScale(2, RoundingMode.HALF_UP));
         vo.setCreatedAt(item.getCreatedAt());
         vo.setUpdatedAt(item.getUpdatedAt());
         vo.setAttachments(attachmentService.listBusinessAttachments(
@@ -315,18 +340,13 @@ public class FuelRecordService {
     }
 
     private BigDecimal calculateAverageConsumption(List<FuelRecordVO> records) {
-        BigDecimal sum = BigDecimal.ZERO;
-        int count = 0;
+        BigDecimal volume = BigDecimal.ZERO;
+        BigDecimal distance = BigDecimal.ZERO;
         for (FuelRecordVO item : records) {
-            if (item.getFuelConsumption() != null && item.getFuelConsumption().compareTo(BigDecimal.ZERO) > 0) {
-                sum = sum.add(item.getFuelConsumption());
-                count++;
-            }
+            volume = volume.add(nullSafe(item.getConsumptionFuelVolume()));
+            distance = distance.add(nullSafe(item.getConsumptionDistanceKm()));
         }
-        if (count == 0) {
-            return ZERO_CONSUMPTION;
-        }
-        return sum.divide(BigDecimal.valueOf(count), MONEY_SCALE, RoundingMode.HALF_UP);
+        return calculateConsumption(volume, distance);
     }
 
     private BigDecimal calculateCurrentMonthAmount(List<FuelRecordVO> records) {
@@ -352,7 +372,8 @@ public class FuelRecordService {
             accumulator.totalAmount = accumulator.totalAmount.add(nullSafe(item.getDiscountedAmount()));
             accumulator.totalDiscountAmount = accumulator.totalDiscountAmount.add(nullSafe(item.getDiscountAmount()));
             accumulator.totalFuelVolume = accumulator.totalFuelVolume.add(nullSafe(item.getFuelVolume()));
-            accumulator.totalDistance = accumulator.totalDistance.add(nullSafe(item.getDistanceKm()));
+            accumulator.consumptionDistance = accumulator.consumptionDistance.add(nullSafe(item.getConsumptionDistanceKm()));
+            accumulator.consumptionVolume = accumulator.consumptionVolume.add(nullSafe(item.getConsumptionFuelVolume()));
             accumulator.recordCount++;
         }
 
@@ -363,14 +384,7 @@ public class FuelRecordService {
             vo.setTotalAmount(item.totalAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
             vo.setTotalDiscountAmount(item.totalDiscountAmount.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
             vo.setTotalFuelVolume(item.totalFuelVolume.setScale(VOLUME_SCALE, RoundingMode.HALF_UP));
-            if (item.totalDistance.compareTo(BigDecimal.ZERO) > 0) {
-                vo.setAverageConsumption(item.totalFuelVolume
-                        .divide(item.totalDistance, 6, RoundingMode.HALF_UP)
-                        .multiply(HUNDRED)
-                        .setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-            } else {
-                vo.setAverageConsumption(ZERO_CONSUMPTION);
-            }
+            vo.setAverageConsumption(calculateConsumption(item.consumptionVolume, item.consumptionDistance));
             vo.setRecordCount(item.recordCount);
             result.add(vo);
         }
@@ -552,6 +566,13 @@ public class FuelRecordService {
                                         String note) {
     }
 
+    /** 单车加满周期状态，不包含周期起点那次加油量。 */
+    private static final class ConsumptionCycle {
+        private BigDecimal previousOdometer;
+        private BigDecimal fullOdometer;
+        private BigDecimal volume = BigDecimal.ZERO;
+    }
+
     /**
      * 车辆统计聚合中间对象。
      */
@@ -561,7 +582,8 @@ public class FuelRecordService {
         private BigDecimal totalAmount = BigDecimal.ZERO;
         private BigDecimal totalDiscountAmount = BigDecimal.ZERO;
         private BigDecimal totalFuelVolume = BigDecimal.ZERO;
-        private BigDecimal totalDistance = BigDecimal.ZERO;
+        private BigDecimal consumptionDistance = BigDecimal.ZERO;
+        private BigDecimal consumptionVolume = BigDecimal.ZERO;
         private long recordCount = 0;
     }
 }
