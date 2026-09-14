@@ -16,6 +16,17 @@ public class WowCharacterOverviewQueryRequest {
     @Size(max = 24, message = "className 长度不能超过 24")
     private String className;
 
+    /** 是否仅统计当前满级（90 级）角色，默认统计全部角色。 */
+    private Boolean maxLevelOnly = false;
+
+    public Boolean getMaxLevelOnly() {
+        return maxLevelOnly;
+    }
+
+    public void setMaxLevelOnly(Boolean maxLevelOnly) {
+        this.maxLevelOnly = maxLevelOnly;
+    }
+
     public String getKeyword() {
         return keyword;
     }

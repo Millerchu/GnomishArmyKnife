@@ -364,6 +364,35 @@ class WowCharacterServiceTest {
     }
 
     @Test
+    void overviewShouldOnlyAggregateLevelNinetyWhenRequested() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        WowCharacter maxLevel = buildCharacter(1L, "满级", "牧师", "ALLIANCE", "国王之谷", "650.00", "3000.00", true);
+        maxLevel.setLevel(90);
+        WowCharacter leveling = buildCharacter(2L, "练级", "猎人", "HORDE", "凤凰之神", "660.00", "3100.00", false);
+        leveling.setLevel(89);
+        WowCharacter unknownLevel = buildCharacter(3L, "未知", "猎人", "HORDE", "凤凰之神", "670.00", "3200.00", false);
+        unknownLevel.setLevel(null);
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(maxLevel, leveling, unknownLevel));
+        WowCharacterOverviewQueryRequest request = new WowCharacterOverviewQueryRequest();
+        request.setMaxLevelOnly(true);
+
+        WowCharacterOverviewVO result = wowCharacterService.overview(1L, request);
+
+        assertEquals(1, result.getTotalCharacters());
+        assertEquals(1, result.getTotalRealms());
+        assertEquals(new BigDecimal("650.00"), result.getAverageItemLevel());
+        assertEquals(new BigDecimal("3000.00"), result.getHighestMythicScore());
+        assertEquals(1, result.getClassStats().size());
+        assertEquals(1, result.getRealmStats().size());
+
+        request.setMaxLevelOnly(false);
+        assertEquals(3, wowCharacterService.overview(1L, request).getTotalCharacters());
+        when(wowCharacterMapper.selectList(any())).thenReturn(List.of(leveling, unknownLevel));
+        request.setMaxLevelOnly(true);
+        assertEquals(0, wowCharacterService.overview(1L, request).getTotalCharacters());
+    }
+
+    @Test
     void overviewShouldReturnFourFeaturedCharacters() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         when(wowCharacterMapper.selectList(any())).thenReturn(List.of(

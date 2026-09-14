@@ -531,11 +531,15 @@ public class WowCharacterService {
         wowCharacterMapper.deleteById(current.getId());
     }
 
+    /** 按统一角色范围聚合概览指标及分布，满级过滤在聚合前执行。 */
     public WowCharacterOverviewVO overview(Long currentUserId, WowCharacterOverviewQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
         List<WowCharacter> records = filterCharacters(
                 currentUserId, request.getKeyword(), request.getFaction(), request.getClassName(), null
         );
+        if (Boolean.TRUE.equals(request.getMaxLevelOnly())) {
+            records.removeIf(character -> !Integer.valueOf(MAX_CHARACTER_LEVEL).equals(character.getLevel()));
+        }
         records.sort(DEFAULT_ORDER);
         List<Long> characterIds = extractCharacterIds(records);
         Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(characterIds);
