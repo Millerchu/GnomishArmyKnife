@@ -159,22 +159,24 @@ public class WowCharacterService {
         vo.setVersionName(WowSeasonConstants.CURRENT_VERSION_NAME);
         vo.setSeasonCode(WowSeasonConstants.CURRENT_SEASON_CODE);
         vo.setSeasonName(WowSeasonConstants.CURRENT_SEASON_NAME);
-        vo.setHeadline("至暗之夜 S2 · 史诗钥石地下城轮换");
-        vo.setSummary("新赛季开启后，角色 M+ 评分从 0 重新计算，上一赛季成绩自动进入历史归档。");
-        vo.setHighlights(List.of("M+ 评分赛季重置", "8 个赛季地下城", "本周低保与附件记录"));
+        vo.setHeadline("乌拉特克的诅咒 · 烈毒之渊全面开放");
+        vo.setSummary("国服情报更新于 2026-09-15：第2赛季进行中，烈毒之渊随机团队第4区已于9月10日当周开放。挑战8个赛季地下城、丰裕地下堡与梦魇狩猎，积累宏伟宝库奖励。");
+        vo.setHighlights(List.of("烈毒之渊全区开放", "潮缚石窟世界首领", "神秘运势之风 9/10–9/24"));
         vo.setDungeons(dungeons);
         vo.setCrestLimits(List.of(
                 new WowSeasonCrestVO("勇士迷雾纹章", 100),
                 new WowSeasonCrestVO("英雄迷雾纹章", 100),
                 new WowSeasonCrestVO("神话迷雾纹章", 100)
         ));
-        vo.setWorldBoss("待维护");
-        vo.setHolidayThisWeek("待维护");
-        vo.setHolidayNextWeek("待维护");
-        vo.setCatalystLimit("套装转化：待维护");
-        vo.setSparkLimit("火花上限：待维护");
-        vo.setSpecialEvent("待维护");
-        vo.setSpecialEventDateRange("时间待维护");
+        vo.setWorldBoss("尼姆瑞莎·唤波者 · 潮缚石窟（盘卷蛇岛）");
+        // 周活动按国服周四划分；尚未核实的轮换不套用其他地区日历。
+        vo.setHolidayThisWeek("9/10–9/17：至暗之夜地下城（国服以游戏日历为准）");
+        vo.setHolidayNextWeek("9/17–9/24：轮换待国服日历确认");
+        // 持有上限与周期补充量并非当前角色剩余次数，不能展示为可用余额。
+        vo.setCatalystLimit("套装转化：最多持有8次，每2周补充1次；四件套后可额外掉落");
+        vo.setSparkLimit("潮汐火花：每周新增1枚，可追赶；多数装备需2枚，双手武器需4枚");
+        vo.setSpecialEvent("神秘运势之风：经验+20%、声望+50%（部分阵营除外）；累计登录5天可领500商贩标币");
+        vo.setSpecialEventDateRange("2026/9/10–9/24（每周服务器重启时开启和结束）");
         return vo;
     }
 
