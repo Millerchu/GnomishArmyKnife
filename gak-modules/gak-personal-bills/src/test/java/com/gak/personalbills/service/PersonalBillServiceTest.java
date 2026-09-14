@@ -133,7 +133,8 @@ class PersonalBillServiceTest {
         ));
         when(personalBudgetMapper.selectList(any())).thenReturn(List.of(
                 buildBudget(2001L, 2026, "餐饮", new BigDecimal("15000.00"), new BigDecimal("0.80")),
-                buildBudget(2002L, 2026, "交通", new BigDecimal("6000.00"), new BigDecimal("0.85"))
+                buildBudget(2002L, 2026, "交通", new BigDecimal("6000.00"), new BigDecimal("0.85")),
+                buildBudget(2003L, 2026, "餐饮", new BigDecimal("1000.00"), new BigDecimal("0.80"))
         ));
 
         PersonalBillSummaryQueryRequest request = new PersonalBillSummaryQueryRequest();
@@ -145,26 +146,22 @@ class PersonalBillServiceTest {
         assertEquals(new BigDecimal("124.00"), result.getCurrentMonthExpense());
         assertEquals(new BigDecimal("18000.00"), result.getCurrentMonthIncome());
         assertEquals(2, result.getBudgetProgressList().size());
+        assertEquals(new BigDecimal("22000.00"), result.getAnnualBudgetAmount());
+        assertEquals(new BigDecimal("124.00"), result.getAnnualBudgetUsed());
         assertEquals("餐饮", result.getCategoryDistribution().get(0).getCategoryName());
     }
 
     @Test
-    void createBudgetShouldRejectDuplicatedYearCategory() {
+    void createBudgetShouldAllowMultipleItemsInSameCategory() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
-        when(personalBudgetMapper.selectList(any())).thenReturn(List.of(
-                buildBudget(2001L, 2026, "餐饮", new BigDecimal("15000.00"), new BigDecimal("0.80"))
-        ));
-
         SaveAnnualBudgetRequest request = new SaveAnnualBudgetRequest();
         request.setYear(2026);
         request.setCategoryName("餐饮");
         request.setAnnualLimit(new BigDecimal("18000"));
         request.setAlertThreshold(new BigDecimal("0.80"));
 
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> personalBillService.createBudget(1L, request));
-        assertEquals("PERSONAL_BUDGET_DUPLICATED", exception.getCode());
-        verify(personalBudgetMapper, never()).insert(any(PersonalBudget.class));
+        personalBillService.createBudget(1L, request);
+        verify(personalBudgetMapper).insert(any(PersonalBudget.class));
     }
 
     @Test

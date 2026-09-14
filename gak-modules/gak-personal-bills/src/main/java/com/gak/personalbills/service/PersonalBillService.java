@@ -197,7 +197,6 @@ public class PersonalBillService {
     public AnnualBudgetVO createBudget(Long currentUserId, SaveAnnualBudgetRequest request) {
         ensureCurrentUserExists(currentUserId);
         NormalizedBudget normalized = normalizeBudgetRequest(request);
-        ensureBudgetNotDuplicated(currentUserId, normalized.year(), normalized.categoryName(), null);
         PersonalBudget budget = new PersonalBudget();
         budget.setOwnerUserId(currentUserId);
         applyNormalizedBudget(budget, normalized);
@@ -216,7 +215,6 @@ public class PersonalBillService {
         ensureCurrentUserExists(currentUserId);
         PersonalBudget current = getOwnedBudgetOrThrow(currentUserId, id);
         NormalizedBudget normalized = normalizeBudgetRequest(request);
-        ensureBudgetNotDuplicated(currentUserId, normalized.year(), normalized.categoryName(), id);
         applyNormalizedBudget(current, normalized);
         current.setUpdatedAt(LocalDateTime.now());
         personalBudgetMapper.updateById(current);
@@ -341,23 +339,12 @@ public class PersonalBillService {
         );
         return new NormalizedBudget(
                 request.getYear(),
+                StringUtils.hasText(request.getBudgetName()) ? request.getBudgetName().trim() : categoryName,
                 categoryName,
                 scaleMoney(request.getAnnualLimit()),
                 scaleRatio(request.getAlertThreshold()),
                 trimToNull(request.getNote())
         );
-    }
-
-    private void ensureBudgetNotDuplicated(Long currentUserId, Integer year, String categoryName, Long excludedId) {
-        QueryWrapper<PersonalBudget> wrapper = new QueryWrapper<>();
-        wrapper.eq("owner_user_id", currentUserId)
-                .eq("budget_year", year)
-                .eq("category_name", categoryName);
-        List<PersonalBudget> existed = personalBudgetMapper.selectList(wrapper);
-        boolean duplicated = existed.stream().anyMatch(item -> !Objects.equals(item.getId(), excludedId));
-        if (duplicated) {
-            throw new BusinessException("PERSONAL_BUDGET_DUPLICATED", "同一年份下该预算分类已存在");
-        }
     }
 
     private void applyNormalizedBill(PersonalBill bill, NormalizedBill normalized) {
@@ -372,6 +359,7 @@ public class PersonalBillService {
     }
 
     private void applyNormalizedBudget(PersonalBudget budget, NormalizedBudget normalized) {
+        budget.setBudgetName(normalized.budgetName());
         budget.setBudgetYear(normalized.year());
         budget.setCategoryName(normalized.categoryName());
         budget.setAnnualLimit(normalized.annualLimit());
@@ -424,13 +412,17 @@ public class PersonalBillService {
                                                                    int year) {
         List<PersonalBill> expenseBills = filterBillsByType(yearBills, "EXPENSE");
         List<PersonalBudgetProgressVO> result = new ArrayList<>();
-        for (PersonalBudget item : budgets) {
+        // 同类预算先合计，避免一笔消费在多条预算中重复计入已用额度。
+        Map<String, List<PersonalBudget>> grouped = new LinkedHashMap<>();
+        budgets.forEach(item -> grouped.computeIfAbsent(item.getCategoryName(), key -> new ArrayList<>()).add(item));
+        for (List<PersonalBudget> categoryBudgets : grouped.values()) {
+            PersonalBudget item = categoryBudgets.get(0);
             BigDecimal usedAmount = expenseBills.stream()
                     .filter(bill -> Objects.equals(bill.getCategoryName(), item.getCategoryName()))
                     .map(PersonalBill::getAmount)
                     .reduce(ZERO_MONEY, BigDecimal::add)
                     .setScale(2, RoundingMode.HALF_UP);
-            BigDecimal annualLimit = scaleMoney(item.getAnnualLimit());
+            BigDecimal annualLimit = sumBudgetLimit(categoryBudgets);
             BigDecimal usageRate = calculateRatio(usedAmount, annualLimit);
 
             PersonalBudgetProgressVO vo = new PersonalBudgetProgressVO();
@@ -438,7 +430,11 @@ public class PersonalBillService {
             vo.setYear(year);
             vo.setCategoryName(item.getCategoryName());
             vo.setAnnualLimit(annualLimit);
-            vo.setAlertThreshold(scaleRatio(item.getAlertThreshold()));
+            // 多个明细使用金额加权阈值，保持各项预警金额的总和。
+            BigDecimal alertAmount = categoryBudgets.stream()
+                    .map(budget -> budget.getAnnualLimit().multiply(scaleRatio(budget.getAlertThreshold())))
+                    .reduce(ZERO_MONEY, BigDecimal::add);
+            vo.setAlertThreshold(calculateRatio(alertAmount, annualLimit));
             vo.setNote(item.getNote());
             vo.setUsedAmount(usedAmount);
             vo.setRemainingAmount(annualLimit.subtract(usedAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
@@ -484,6 +480,7 @@ public class PersonalBillService {
     private AnnualBudgetVO toBudgetVO(PersonalBudget budget) {
         AnnualBudgetVO vo = new AnnualBudgetVO();
         vo.setId(budget.getId());
+        vo.setBudgetName(budget.getBudgetName());
         vo.setYear(budget.getBudgetYear());
         vo.setCategoryName(budget.getCategoryName());
         vo.setAnnualLimit(scaleMoney(budget.getAnnualLimit()));
@@ -545,6 +542,7 @@ public class PersonalBillService {
     }
 
     private record NormalizedBudget(Integer year,
+                                    String budgetName,
                                     String categoryName,
                                     BigDecimal annualLimit,
                                     BigDecimal alertThreshold,

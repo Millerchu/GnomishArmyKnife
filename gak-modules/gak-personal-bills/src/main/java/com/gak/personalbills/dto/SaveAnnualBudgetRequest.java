@@ -23,6 +23,9 @@ public class SaveAnnualBudgetRequest {
     @Size(max = 64, message = "categoryName 长度不能超过 64")
     private String categoryName;
 
+    @Size(max = 64, message = "预算项目名称不能超过 64 字")
+    private String budgetName;
+
     @NotNull(message = "annualLimit 不能为空")
     @DecimalMin(value = "0.01", message = "annualLimit 必须大于 0")
     private BigDecimal annualLimit;
@@ -42,6 +45,10 @@ public class SaveAnnualBudgetRequest {
     public void setYear(Integer year) {
         this.year = year;
     }
+
+    public String getBudgetName() { return budgetName; }
+
+    public void setBudgetName(String budgetName) { this.budgetName = budgetName; }
 
     public String getCategoryName() {
         return categoryName;

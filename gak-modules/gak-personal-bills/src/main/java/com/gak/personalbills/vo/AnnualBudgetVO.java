@@ -10,6 +10,8 @@ public class AnnualBudgetVO {
     private Long id;
     private Integer year;
     private String categoryName;
+
+    private String budgetName;
     private BigDecimal annualLimit;
     private BigDecimal alertThreshold;
     private String note;
@@ -29,6 +31,10 @@ public class AnnualBudgetVO {
     public void setYear(Integer year) {
         this.year = year;
     }
+
+    public String getBudgetName() { return budgetName; }
+
+    public void setBudgetName(String budgetName) { this.budgetName = budgetName; }
 
     public String getCategoryName() {
         return categoryName;

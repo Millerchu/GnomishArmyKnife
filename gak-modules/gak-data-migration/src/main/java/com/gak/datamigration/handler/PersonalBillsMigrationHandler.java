@@ -171,11 +171,8 @@ public class PersonalBillsMigrationHandler implements MigrationResourceHandler {
         if (byId != null) {
             return byId;
         }
-        QueryWrapper<PersonalBudget> wrapper = new QueryWrapper<>();
-        wrapper.eq("owner_user_id", targetUserId)
-                .eq("budget_year", source.getBudgetYear())
-                .eq("category_name", source.getCategoryName());
-        return personalBudgetMapper.selectOne(wrapper);
+        // 预算允许同类多项目，仅用稳定 ID 匹配，避免导入时吞掉同分类明细。
+        return null;
     }
 
     private Long resolveUserId(Long sourceUserId, ImportContext context, String resourceName) {

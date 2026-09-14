@@ -720,7 +720,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_wow_spec_guide_season_spec ON gak_wow_speci
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_date ON gak_personal_bill (owner_user_id, bill_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_bill_owner_type_date ON gak_personal_bill (owner_user_id, bill_type, bill_date DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_budget_owner_year ON gak_personal_budget (owner_user_id, budget_year, category_name);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_personal_budget_owner_year_category ON gak_personal_budget (owner_user_id, budget_year, category_name);
+-- 允许同年同分类拆分多个预算项目，保留普通查询索引。
+DROP INDEX IF EXISTS uk_personal_budget_owner_year_category;
 CREATE INDEX IF NOT EXISTS idx_health_record_owner_measure_date ON gak_health_record (owner_user_id, measure_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_health_visit_owner_visit_date ON gak_health_visit (owner_user_id, visit_date DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_health_report_owner_exam_date ON gak_health_report (owner_user_id, exam_date DESC, updated_at DESC);
@@ -2749,3 +2750,37 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_message_recipient_message_user ON gak_messa
 CREATE INDEX IF NOT EXISTS idx_message_recipient_user_received ON gak_message_recipient(user_id,received_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS idx_message_recipient_user_unread ON gak_message_recipient(user_id,received_at DESC,id DESC) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_permission_audit_notification_revision ON gak_permission_audit_log(target_user_id) WHERE action_type='REPLACE_APPS';
+
+-- 历史预算兼容：旧记录以分类作为项目名称。
+ALTER TABLE gak_personal_budget ADD COLUMN IF NOT EXISTS budget_name VARCHAR(64);
+UPDATE gak_personal_budget SET budget_name = category_name WHERE budget_name IS NULL;
+
+-- 一个账户代表一份独立授信，共享额度的信用卡合并录入。
+CREATE TABLE IF NOT EXISTS gak_personal_credit_account (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    account_name VARCHAR(64) NOT NULL,
+    institution VARCHAR(64) NOT NULL,
+    credit_limit NUMERIC(12, 2) NOT NULL CHECK (credit_limit > 0),
+    used_amount NUMERIC(12, 2) NOT NULL CHECK (used_amount >= 0),
+    billing_day INTEGER CHECK (billing_day BETWEEN 1 AND 31),
+    repayment_day INTEGER CHECK (repayment_day BETWEEN 1 AND 31),
+    note VARCHAR(160),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_personal_credit_account_owner ON gak_personal_credit_account (owner_user_id, updated_at, id);
+
+INSERT INTO gak_data_dictionary_item (id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status, is_default, description, created_at, updated_at, deleted)
+SELECT 5791, dictionary.id, dictionary.dict_code, 'childcare', '养娃', '养娃', 15, 'ENABLED', FALSE, '育儿、奶粉、托育与子女教育', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PERSONAL_BILLS_BILL_CATEGORY' AND dictionary.deleted = FALSE
+AND NOT EXISTS (SELECT 1 FROM gak_data_dictionary_item item WHERE item.dictionary_id = dictionary.id AND item.item_code = 'childcare' AND item.deleted = FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gak_data_dictionary_item (id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status, is_default, description, created_at, updated_at, deleted)
+SELECT 5792, dictionary.id, dictionary.dict_code, 'childcare', '养娃', '养娃', 15, 'ENABLED', FALSE, '育儿、奶粉、托育与子女教育', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
+FROM gak_data_dictionary dictionary
+WHERE dictionary.dict_code = 'PERSONAL_BILLS_BUDGET_CATEGORY' AND dictionary.deleted = FALSE
+AND NOT EXISTS (SELECT 1 FROM gak_data_dictionary_item item WHERE item.dictionary_id = dictionary.id AND item.item_code = 'childcare' AND item.deleted = FALSE)
+ON CONFLICT (id) DO NOTHING;

@@ -17,6 +17,8 @@ public class PersonalBudget {
     private Long ownerUserId;
     private Integer budgetYear;
     private String categoryName;
+
+    private String budgetName;
     private BigDecimal annualLimit;
     private BigDecimal alertThreshold;
     private String note;
@@ -46,6 +48,10 @@ public class PersonalBudget {
     public void setBudgetYear(Integer budgetYear) {
         this.budgetYear = budgetYear;
     }
+
+    public String getBudgetName() { return budgetName; }
+
+    public void setBudgetName(String budgetName) { this.budgetName = budgetName; }
 
     public String getCategoryName() {
         return categoryName;
