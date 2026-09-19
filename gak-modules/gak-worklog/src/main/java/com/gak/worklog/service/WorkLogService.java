@@ -368,6 +368,41 @@ public class WorkLogService {
         );
     }
 
+    /**
+     * 就地完成当前用户的日志条目，并同步日志汇总状态；不产生额外工时。
+     */
+    @Transactional
+    public void completeWorkItem(Long currentUserId, Long itemId) {
+        if (currentUserId == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "当前用户不能为空");
+        }
+        // 与日志新增、编辑共用用户锁，避免条目替换与状态更新交错。
+        workLogMapper.lockUserWorkLogs(currentUserId);
+        WorkLogItem item = workLogItemMapper.selectById(itemId);
+        if (item == null) {
+            throw new ResponseStatusException(NOT_FOUND, "工作内容不存在，请刷新后重试");
+        }
+        WorkLog workLog = getOwnedByIdOrThrow(currentUserId, item.getWorkLogId());
+        if (WorkLogStatus.COMPLETED.name().equals(item.getStatus())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        WorkLogItem completedItem = new WorkLogItem();
+        completedItem.setId(itemId);
+        completedItem.setStatus(WorkLogStatus.COMPLETED.name());
+        completedItem.setUpdatedAt(now);
+        workLogItemMapper.updateById(completedItem);
+        Long unfinishedCount = workLogItemMapper.selectCount(new QueryWrapper<WorkLogItem>()
+                .eq("work_log_id", workLog.getId())
+                .eq("status", WorkLogStatus.UNFINISHED.name()));
+        WorkLog updatedLog = new WorkLog();
+        updatedLog.setId(workLog.getId());
+        updatedLog.setWorkStatus(unfinishedCount > 0
+                ? WorkLogStatus.UNFINISHED.name() : WorkLogStatus.COMPLETED.name());
+        updatedLog.setUpdatedAt(now);
+        workLogMapper.updateById(updatedLog);
+    }
+
     private WorkLog getByIdOrThrow(Long id) {
         WorkLog workLog = workLogMapper.selectById(id);
         if (workLog == null) {

@@ -64,6 +64,54 @@ class WorkLogServiceTest {
     @InjectMocks
     private WorkLogService workLogService;
 
+    @Test
+    void completeWorkItemShouldCompleteLogWhenNoUnfinishedItemsRemain() {
+        assertCompletionStatus(0L, WorkLogStatus.COMPLETED);
+    }
+
+    @Test
+    void completeWorkItemShouldKeepLogUnfinishedWhenOtherItemsRemain() {
+        assertCompletionStatus(1L, WorkLogStatus.UNFINISHED);
+    }
+
+    private void assertCompletionStatus(long remainingCount, WorkLogStatus expectedStatus) {
+        WorkLogItem item = new WorkLogItem();
+        item.setId(11L);
+        item.setWorkLogId(21L);
+        item.setStatus(WorkLogStatus.UNFINISHED.name());
+        WorkLog log = new WorkLog();
+        log.setId(21L);
+        log.setUserId(1L);
+        when(workLogItemMapper.selectById(11L)).thenReturn(item);
+        when(workLogMapper.selectById(21L)).thenReturn(log);
+        when(workLogItemMapper.selectCount(any())).thenReturn(remainingCount);
+
+        workLogService.completeWorkItem(1L, 11L);
+
+        ArgumentCaptor<WorkLogItem> itemCaptor = ArgumentCaptor.forClass(WorkLogItem.class);
+        verify(workLogItemMapper).updateById(itemCaptor.capture());
+        assertEquals(WorkLogStatus.COMPLETED.name(), itemCaptor.getValue().getStatus());
+        ArgumentCaptor<WorkLog> logCaptor = ArgumentCaptor.forClass(WorkLog.class);
+        verify(workLogMapper).updateById(logCaptor.capture());
+        assertEquals(expectedStatus.name(), logCaptor.getValue().getWorkStatus());
+    }
+
+    @Test
+    void completeWorkItemShouldRejectAnotherUsersItem() {
+        WorkLogItem item = new WorkLogItem();
+        item.setWorkLogId(21L);
+        WorkLog log = new WorkLog();
+        log.setUserId(2L);
+        when(workLogItemMapper.selectById(11L)).thenReturn(item);
+        when(workLogMapper.selectById(21L)).thenReturn(log);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> workLogService.completeWorkItem(1L, 11L));
+
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatusCode());
+        verify(workLogItemMapper, times(0)).updateById(any(WorkLogItem.class));
+    }
+
     @BeforeEach
     void setUp() {
         lenient().when(dataDictionaryUsageSupport.normalizeMultiValueByUsage(

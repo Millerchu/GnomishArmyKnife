@@ -124,6 +124,17 @@ public class WorkLogController {
     }
 
     /**
+     * 手动完成当前用户的工作内容条目。
+     */
+    @PutMapping("/unfinished-items/{itemId}/complete")
+    public ApiResponse<Void> completeWorkItem(@PathVariable Long itemId,
+                                               HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        workLogService.completeWorkItem(currentUserId, itemId);
+        return ApiResponse.success();
+    }
+
+    /**
      * 查询新增日志时可快速带入的未完成工作内容。
      *
      * @param limit 返回条数，默认 20
