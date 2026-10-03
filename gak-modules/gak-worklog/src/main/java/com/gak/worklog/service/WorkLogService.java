@@ -100,7 +100,8 @@ public class WorkLogService {
                 request.getWorkItems(),
                 request.getWorkItem(),
                 request.getStatus(),
-                WorkLogStatus.COMPLETED.name()
+                WorkLogStatus.COMPLETED.name(),
+                typeCodes.contains(TYPE_CODE_LEAVE)
         );
         String workStatus = resolveAggregateStatus(workItems);
         String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
@@ -195,7 +196,8 @@ public class WorkLogService {
                 request.getWorkItems(),
                 request.getWorkItem(),
                 request.getStatus(),
-                current.getWorkStatus()
+                current.getWorkStatus(),
+                typeCodes.contains(TYPE_CODE_LEAVE)
         );
         String workStatus = resolveAggregateStatus(workItems);
         String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
@@ -489,7 +491,8 @@ public class WorkLogService {
     private List<NormalizedWorkItem> normalizeWorkItems(List<WorkLogItemRequest> requestedItems,
                                                         String legacyWorkItem,
                                                         String legacyStatus,
-                                                        String fallbackStatus) {
+                                                        String fallbackStatus,
+                                                        boolean allowEmpty) {
         List<NormalizedWorkItem> normalizedItems = new ArrayList<>();
         if (requestedItems != null && !requestedItems.isEmpty()) {
             for (WorkLogItemRequest requestedItem : requestedItems) {
@@ -513,7 +516,8 @@ public class WorkLogService {
                 }
             }
         }
-        if (normalizedItems.isEmpty()) {
+        // 请假可以只记录日期与人天，不生成虚构的工作内容条目。
+        if (normalizedItems.isEmpty() && !allowEmpty) {
             throw new ResponseStatusException(BAD_REQUEST, "工作内容不能为空");
         }
         if (serializeWorkItems(normalizedItems).length() > 4000) {

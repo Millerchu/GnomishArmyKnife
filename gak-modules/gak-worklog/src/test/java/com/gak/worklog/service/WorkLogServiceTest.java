@@ -205,6 +205,58 @@ class WorkLogServiceTest {
     }
 
     @Test
+    void createShouldAllowLeaveWithoutWorkContent() {
+        doAnswer(invocation -> {
+            WorkLog log = invocation.getArgument(0);
+            log.setId(1002L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 24));
+        request.setTypeCodes(List.of("LEAVE"));
+        request.setWorkItem("");
+        request.setWorkItems(List.of());
+
+        WorkLogResponse response = workLogService.create(1L, request);
+
+        assertEquals("", response.getWorkItem());
+        assertEquals(List.of(), response.getWorkItems());
+        assertEquals("LEAVE", response.getProjectCode());
+        verify(workLogItemMapper, times(0)).insert(any(WorkLogItem.class));
+    }
+
+    @Test
+    void updateShouldAllowLeaveWithoutWorkContentAndRemoveOldItems() {
+        when(workLogMapper.selectById(2001L)).thenReturn(buildWorkLog());
+        UpdateWorkLogRequest request = buildUpdateRequest(LocalDate.of(2026, 3, 23));
+        request.setTypeCodes(List.of("LEAVE"));
+        request.setWorkItem(null);
+        request.setWorkItems(List.of());
+
+        WorkLogResponse response = workLogService.update(1L, 2001L, request);
+
+        assertEquals("", response.getWorkItem());
+        assertEquals(List.of(), response.getWorkItems());
+        verify(workLogItemMapper).delete(any());
+        verify(workLogItemMapper, times(0)).insert(any(WorkLogItem.class));
+    }
+
+    @Test
+    void ordinaryLogsShouldStillRejectEmptyWorkContent() {
+        CreateWorkLogRequest create = buildBaseRequest(LocalDate.of(2026, 3, 23));
+        create.setWorkItem(" ");
+        create.setWorkItems(List.of());
+        assertEquals(BAD_REQUEST, assertThrows(ResponseStatusException.class,
+                () -> workLogService.create(1L, create)).getStatusCode());
+
+        when(workLogMapper.selectById(2001L)).thenReturn(buildWorkLog());
+        UpdateWorkLogRequest update = buildUpdateRequest(LocalDate.of(2026, 3, 23));
+        update.setWorkItem("");
+        update.setWorkItems(List.of());
+        assertEquals(BAD_REQUEST, assertThrows(ResponseStatusException.class,
+                () -> workLogService.update(1L, 2001L, update)).getStatusCode());
+    }
+
+    @Test
     void createShouldPersistNormalizedUnfinishedStatus() {
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
