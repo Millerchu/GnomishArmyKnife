@@ -140,6 +140,12 @@ public class HealthRecordController {
         return ApiResponse.success(healthRecordService.pageVisits(currentUserId, request));
     }
 
+    @GetMapping("/visits/{id}")
+    public ApiResponse<HealthVisitVO> getVisit(@PathVariable Long id, HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(healthRecordService.getVisit(currentUserId, id));
+    }
+
     @PostMapping("/visits")
     public ApiResponse<HealthVisitVO> createVisit(@Valid @RequestBody SaveHealthVisitRequest request,
                                                   HttpServletRequest httpServletRequest) {

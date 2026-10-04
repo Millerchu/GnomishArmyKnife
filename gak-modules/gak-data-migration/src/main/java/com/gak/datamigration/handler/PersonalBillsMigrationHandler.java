@@ -70,8 +70,8 @@ public class PersonalBillsMigrationHandler implements MigrationResourceHandler {
     @Override
     public MigrationResourceExportData exportData(ExportContext context) {
         QueryWrapper<PersonalBill> billWrapper = new QueryWrapper<>();
-        // 行程关联账单随行程整体迁移，避免分开导入造成悬空关联或重复记账。
-        billWrapper.and(query -> query.isNull("source_type").or().ne("source_type", "TRAVEL_RECORD"));
+        // 行程及就诊关联账单随各自来源整体迁移，避免悬空关联或重复记账。
+        billWrapper.and(query -> query.isNull("source_type").or().notIn("source_type", List.of("TRAVEL_RECORD", "HEALTH_VISIT")));
         billWrapper.notInSql("id", "SELECT detached_payment_bill_id FROM gak_travel_record "
                 + "WHERE detached_payment_bill_id IS NOT NULL UNION SELECT detached_refund_bill_id "
                 + "FROM gak_travel_record WHERE detached_refund_bill_id IS NOT NULL");
@@ -100,6 +100,9 @@ public class PersonalBillsMigrationHandler implements MigrationResourceHandler {
         for (PersonalBill source : bills) {
             if (source == null) {
                 continue;
+            }
+            if ("HEALTH_VISIT".equals(source.getSourceType())) {
+                throw new BusinessException("DATA_MIGRATION_HEALTH_RESOURCE_REQUIRED", "就诊关联账单需要通过健康资源恢复");
             }
             if ("TRAVEL_RECORD".equals(source.getSourceType())) {
                 throw new BusinessException("DATA_MIGRATION_TRAVEL_RESOURCE_REQUIRED",

@@ -1,6 +1,7 @@
 package com.gak.healthrecord.vo;
 
 import com.gak.attachment.vo.AttachmentVO;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -12,6 +13,8 @@ public class HealthVisitVO {
 
     private Long id;
     private LocalDate visitDate;
+
+    private BigDecimal amount;
     private String hospitalName;
     private String departmentName;
     private String doctorName;
@@ -35,6 +38,10 @@ public class HealthVisitVO {
     public void setId(Long id) {
         this.id = id;
     }
+
+    public BigDecimal getAmount() { return amount; }
+
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
 
     public LocalDate getVisitDate() {
         return visitDate;

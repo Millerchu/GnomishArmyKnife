@@ -513,7 +513,11 @@ public class PersonalBillService {
 
     private void ensureBillIsEditable(PersonalBill bill) {
         if (bill.getSourceType() != null || bill.getSourceId() != null) {
-            String sourceName = "FUEL_RECORD".equals(bill.getSourceType()) ? "油耗统计" : "个人行程记录";
+            String sourceName = switch (bill.getSourceType() == null ? "" : bill.getSourceType()) {
+                case "HEALTH_VISIT" -> "健康就诊记录";
+                case "FUEL_RECORD" -> "油耗统计";
+                default -> "个人行程记录";
+            };
             throw new BusinessException("PERSONAL_BILL_SOURCE_LINKED", "该账单由" + sourceName + "管理，请前往来源记录修改或删除");
         }
     }

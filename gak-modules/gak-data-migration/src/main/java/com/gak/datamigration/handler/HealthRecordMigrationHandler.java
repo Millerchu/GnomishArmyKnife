@@ -13,6 +13,8 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.healthrecord.domain.HealthRecord;
 import com.gak.healthrecord.domain.HealthReport;
 import com.gak.healthrecord.domain.HealthVisit;
+import com.gak.personalbills.domain.PersonalBill;
+import com.gak.datamigration.service.HealthVisitBillMigrationSupport;
 import com.gak.healthrecord.mapper.HealthRecordMapper;
 import com.gak.healthrecord.mapper.HealthReportMapper;
 import com.gak.healthrecord.mapper.HealthVisitMapper;
@@ -48,6 +50,7 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
     private final Path localStorageDir;
     private final String publicUrlPrefix;
     private final AttachmentMigrationSupport attachmentMigrationSupport;
+    private final HealthVisitBillMigrationSupport billMigrationSupport;
 
     public HealthRecordMigrationHandler(HealthRecordMapper healthRecordMapper,
                                         HealthVisitMapper healthVisitMapper,
@@ -55,6 +58,7 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
                                         UserMapper userMapper,
                                         DataMigrationArchiveService archiveService,
                                         AttachmentMigrationSupport attachmentMigrationSupport,
+                                        HealthVisitBillMigrationSupport billMigrationSupport,
                                         @Value("${gak.health.file.local-dir:./data/health-records}") String localDir,
                                         @Value("${gak.health.file.public-url-prefix:/api/health-records/report-files/}") String publicUrlPrefix) {
         this.healthRecordMapper = healthRecordMapper;
@@ -63,6 +67,7 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         this.userMapper = userMapper;
         this.archiveService = archiveService;
         this.attachmentMigrationSupport = attachmentMigrationSupport;
+        this.billMigrationSupport = billMigrationSupport;
         this.localStorageDir = Paths.get(localDir == null ? "./data/health-records" : localDir).toAbsolutePath().normalize();
         this.publicUrlPrefix = publicUrlPrefix != null && publicUrlPrefix.endsWith("/") ? publicUrlPrefix : publicUrlPrefix + "/";
     }
@@ -121,9 +126,10 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
                 : new ExportBundle(List.of(), List.of());
         List<MigrationAttachment> attachments = new ArrayList<>(visitBundle.files());
         attachments.addAll(reportBundle.files());
-        long recordCount = (long) records.size() + visits.size() + reports.size();
+        List<PersonalBill> bills = billMigrationSupport.exportBills();
+        long recordCount = (long) records.size() + visits.size() + reports.size() + bills.size();
         return new MigrationResourceExportData(resourceCode(), entryPath(),
-                new Payload(records, visits, reports, visitBundle.items(), reportBundle.items()),
+                new Payload(records, visits, reports, visitBundle.items(), reportBundle.items(), bills),
                 recordCount, attachments.size(), attachments);
     }
 
@@ -137,6 +143,10 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         importedCount += importVisits(context, DataMigrationQuerySupport.emptyIfNull(payload.getVisits()), visitIdMappings);
         importedCount += importReports(context, DataMigrationQuerySupport.emptyIfNull(payload.getReports()),
                 visitIdMappings, reportIdMappings);
+        List<PersonalBill> bills = DataMigrationQuerySupport.emptyIfNull(payload.getBills());
+        billMigrationSupport.restore(bills, visitIdMappings,
+                sourceUserId -> resolveUserId(sourceUserId, context, "健康账单"));
+        importedCount += bills.size();
         long attachmentCount = attachmentMigrationSupport.restore(context,
                 AttachmentConstants.BUSINESS_HEALTH_VISIT,
                 DataMigrationQuerySupport.emptyIfNull(payload.getVisitAttachments()), visitIdMappings,
@@ -319,6 +329,9 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
     private HealthVisit findExistingVisit(HealthVisit source, Long targetUserId) {
         HealthVisit byId = source.getId() == null ? null : healthVisitMapper.selectById(source.getId());
         if (byId != null) {
+            if (!targetUserId.equals(byId.getOwnerUserId())) {
+                throw new BusinessException("DATA_MIGRATION_HEALTH_VISIT_OWNER_CONFLICT", "就诊 ID 与其他用户记录冲突");
+            }
             return byId;
         }
         QueryWrapper<HealthVisit> wrapper = new QueryWrapper<>();
@@ -388,6 +401,7 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
 
         private List<HealthRecord> records;
         private List<HealthVisit> visits;
+        private List<PersonalBill> bills;
         private List<HealthReport> reports;
         private List<TransferItem> visitAttachments;
         private List<TransferItem> reportAttachments;
@@ -399,12 +413,14 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
                        List<HealthVisit> visits,
                        List<HealthReport> reports,
                        List<TransferItem> visitAttachments,
-                       List<TransferItem> reportAttachments) {
+                       List<TransferItem> reportAttachments,
+                       List<PersonalBill> bills) {
             this.records = records;
             this.visits = visits;
             this.reports = reports;
             this.visitAttachments = visitAttachments;
             this.reportAttachments = reportAttachments;
+            this.bills = bills;
         }
 
         public List<HealthRecord> getRecords() {
@@ -414,6 +430,10 @@ public class HealthRecordMigrationHandler implements MigrationResourceHandler {
         public void setRecords(List<HealthRecord> records) {
             this.records = records;
         }
+
+        public List<PersonalBill> getBills() { return bills; }
+
+        public void setBills(List<PersonalBill> bills) { this.bills = bills; }
 
         public List<HealthVisit> getVisits() {
             return visits;

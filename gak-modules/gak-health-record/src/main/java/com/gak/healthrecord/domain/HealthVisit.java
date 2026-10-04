@@ -1,8 +1,11 @@
 package com.gak.healthrecord.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -16,6 +19,9 @@ public class HealthVisit {
     private Long id;
     private Long ownerUserId;
     private LocalDate visitDate;
+
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private BigDecimal amount;
     private String hospitalName;
     private String departmentName;
     private String doctorName;
@@ -45,6 +51,10 @@ public class HealthVisit {
     public void setOwnerUserId(Long ownerUserId) {
         this.ownerUserId = ownerUserId;
     }
+
+    public BigDecimal getAmount() { return amount; }
+
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
 
     public LocalDate getVisitDate() {
         return visitDate;

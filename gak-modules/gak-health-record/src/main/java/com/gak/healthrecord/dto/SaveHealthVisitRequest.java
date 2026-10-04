@@ -1,9 +1,12 @@
 package com.gak.healthrecord.dto;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.util.StringUtils;
@@ -15,6 +18,10 @@ public class SaveHealthVisitRequest {
 
     @NotNull(message = "visitDate 不能为空")
     private LocalDate visitDate;
+
+    @DecimalMin(value = "0", message = "实际自付金额不能为负数")
+    @Digits(integer = 10, fraction = 2, message = "实际自付金额最多十位整数和两位小数")
+    private BigDecimal amount;
 
     @NotBlank(message = "hospitalName 不能为空")
     @Size(max = 64, message = "hospitalName 长度不能超过 64")
@@ -66,6 +73,10 @@ public class SaveHealthVisitRequest {
         boolean hasUrl = StringUtils.hasText(caseRecordUrl);
         return hasFileName == hasUrl;
     }
+
+    public BigDecimal getAmount() { return amount; }
+
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
 
     public LocalDate getVisitDate() {
         return visitDate;

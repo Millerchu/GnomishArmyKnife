@@ -1,6 +1,7 @@
 package com.gak.healthrecord.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.gak.attachment.constant.AttachmentConstants;
 import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.exception.BusinessException;
@@ -62,6 +63,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class HealthRecordService {
 
+    private static final int MONEY_SCALE = 2;
+    private static final BigDecimal MAX_VISIT_AMOUNT = new BigDecimal("9999999999.99");
     private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final long MAX_FILE_SIZE = 10L * 1024L * 1024L;
     private static final Map<String, String> CONTENT_TYPE_EXTENSION_MAP = Map.of(
@@ -76,6 +79,7 @@ public class HealthRecordService {
 
     private final HealthRecordMapper healthRecordMapper;
     private final HealthVisitMapper healthVisitMapper;
+    private final HealthVisitBillSyncService visitBillSyncService;
     private final HealthReportMapper healthReportMapper;
     private final UserMapper userMapper;
     private final AttachmentService attachmentService;
@@ -87,6 +91,7 @@ public class HealthRecordService {
                                HealthReportMapper healthReportMapper,
                                UserMapper userMapper,
                                AttachmentService attachmentService,
+                               HealthVisitBillSyncService visitBillSyncService,
                                @Value("${gak.health.file.local-dir:./data/health-records}") String localDir,
                                @Value("${gak.health.file.public-url-prefix:/api/health-records/report-files/}") String publicUrlPrefix) {
         this.healthRecordMapper = healthRecordMapper;
@@ -94,6 +99,7 @@ public class HealthRecordService {
         this.healthReportMapper = healthReportMapper;
         this.userMapper = userMapper;
         this.attachmentService = attachmentService;
+        this.visitBillSyncService = visitBillSyncService;
         this.localStorageDir = Paths.get(localDir).toAbsolutePath().normalize();
         this.publicUrlPrefix = publicUrlPrefix.endsWith("/") ? publicUrlPrefix : publicUrlPrefix + "/";
     }
@@ -230,6 +236,12 @@ public class HealthRecordService {
         return buildPageResult(filteredVisits, request.getPageNo(), request.getPageSize(), item -> toVisitVO(item, reportCountMap));
     }
 
+    /** 账单来源定位单次就诊，避免分页限制，并校验当前用户归属。 */
+    public HealthVisitVO getVisit(Long currentUserId, Long id) {
+        ensureCurrentUserExists(currentUserId);
+        return toVisitVO(getOwnedVisitOrThrow(currentUserId, id), countReportsByVisit(currentUserId));
+    }
+
     @Transactional
     public HealthVisitVO createVisit(Long currentUserId, SaveHealthVisitRequest request) {
         ensureCurrentUserExists(currentUserId);
@@ -240,6 +252,7 @@ public class HealthRecordService {
         visit.setCreatedAt(now);
         visit.setUpdatedAt(now);
         healthVisitMapper.insert(visit);
+        visitBillSyncService.sync(visit);
         attachmentService.syncBusinessAttachments(currentUserId,
                 AttachmentConstants.BUSINESS_HEALTH_VISIT, visit.getId(), AttachmentConstants.USAGE_ATTACHMENT,
                 request.getAttachmentIds(), 10);
@@ -249,10 +262,11 @@ public class HealthRecordService {
     @Transactional
     public HealthVisitVO updateVisit(Long currentUserId, Long id, SaveHealthVisitRequest request) {
         ensureCurrentUserExists(currentUserId);
-        HealthVisit current = getOwnedVisitOrThrow(currentUserId, id);
+        HealthVisit current = getOwnedVisitForUpdate(currentUserId, id);
         applyVisitRequest(current, request);
         current.setUpdatedAt(LocalDateTime.now());
         healthVisitMapper.updateById(current);
+        visitBillSyncService.sync(current);
         attachmentService.syncBusinessAttachments(currentUserId,
                 AttachmentConstants.BUSINESS_HEALTH_VISIT, current.getId(), AttachmentConstants.USAGE_ATTACHMENT,
                 request.getAttachmentIds(), 10);
@@ -262,8 +276,11 @@ public class HealthRecordService {
     @Transactional
     public void deleteVisit(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
-        HealthVisit current = getOwnedVisitOrThrow(currentUserId, id);
+        HealthVisit current = getOwnedVisitForUpdate(currentUserId, id);
         attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_HEALTH_VISIT, current.getId());
+        visitBillSyncService.delete(currentUserId, current.getId());
+        healthReportMapper.update(null, new UpdateWrapper<HealthReport>()
+                .eq("owner_user_id", currentUserId).eq("visit_id", current.getId()).set("visit_id", null));
         healthVisitMapper.deleteById(current.getId());
     }
 
@@ -358,6 +375,12 @@ public class HealthRecordService {
 
     private void applyVisitRequest(HealthVisit visit, SaveHealthVisitRequest request) {
         visit.setVisitDate(request.getVisitDate());
+        BigDecimal amount = request.getAmount();
+        if (amount != null && (amount.signum() < 0 || amount.compareTo(MAX_VISIT_AMOUNT) > 0
+                || amount.stripTrailingZeros().scale() > MONEY_SCALE)) {
+            throw new BusinessException("HEALTH_VISIT_AMOUNT_INVALID", "实际自付金额须在 0 至 9999999999.99 元之间，最多两位小数");
+        }
+        visit.setAmount(amount == null ? null : amount.setScale(MONEY_SCALE, RoundingMode.UNNECESSARY));
         visit.setHospitalName(request.getHospitalName().trim());
         visit.setDepartmentName(trimToNull(request.getDepartmentName()));
         visit.setDoctorName(trimToNull(request.getDoctorName()));
@@ -426,6 +449,16 @@ public class HealthRecordService {
         return current;
     }
 
+    /** 串行化同次就诊的修改和删除，防止账单与最终金额不一致。 */
+    private HealthVisit getOwnedVisitForUpdate(Long currentUserId, Long id) {
+        HealthVisit current = healthVisitMapper.selectOne(new QueryWrapper<HealthVisit>()
+                .eq("id", id).eq("owner_user_id", currentUserId).last("FOR UPDATE"));
+        if (current == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "医院就诊记录不存在");
+        }
+        return current;
+    }
+
     private HealthVisit getOwnedVisitOrThrow(Long currentUserId, Long id) {
         HealthVisit current = healthVisitMapper.selectById(id);
         if (current == null || !currentUserId.equals(current.getOwnerUserId())) {
@@ -471,6 +504,7 @@ public class HealthRecordService {
         HealthVisitVO vo = new HealthVisitVO();
         vo.setId(visit.getId());
         vo.setVisitDate(visit.getVisitDate());
+        vo.setAmount(visit.getAmount());
         vo.setHospitalName(visit.getHospitalName());
         vo.setDepartmentName(visit.getDepartmentName());
         vo.setDoctorName(visit.getDoctorName());

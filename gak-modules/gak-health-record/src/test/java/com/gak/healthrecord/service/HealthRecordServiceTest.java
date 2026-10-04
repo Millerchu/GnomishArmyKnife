@@ -49,6 +49,9 @@ class HealthRecordServiceTest {
     @Mock
     private AttachmentService attachmentService;
 
+    @Mock
+    private HealthVisitBillSyncService visitBillSyncService;
+
     private HealthRecordService healthRecordService;
 
     @BeforeEach
@@ -59,6 +62,7 @@ class HealthRecordServiceTest {
                 healthReportMapper,
                 userMapper,
                 attachmentService,
+                visitBillSyncService,
                 "./target/health-records-test",
                 "/api/health-records/report-files/"
         );
