@@ -46,6 +46,7 @@ public class FuelRecordService {
     private static final int VOLUME_SCALE = 2;
     private static final int ODOMETER_SCALE = 1;
     private static final int UNIT_PRICE_SCALE = 3;
+    private static final int COST_PER_KM_SCALE = 3;
     private static final int RECENT_RECORD_LIMIT = 4;
     private static final int MONTH_REPORT_SIZE = 12;
     private static final String DEFAULT_VEHICLE_NAME = "未命名车辆";
@@ -62,13 +63,16 @@ public class FuelRecordService {
     private final FuelRecordMapper fuelRecordMapper;
     private final UserMapper userMapper;
     private final AttachmentService attachmentService;
+    private final FuelBillSyncService fuelBillSyncService;
 
     public FuelRecordService(FuelRecordMapper fuelRecordMapper,
                              UserMapper userMapper,
-                             AttachmentService attachmentService) {
+                             AttachmentService attachmentService,
+                             FuelBillSyncService fuelBillSyncService) {
         this.fuelRecordMapper = fuelRecordMapper;
         this.userMapper = userMapper;
         this.attachmentService = attachmentService;
+        this.fuelBillSyncService = fuelBillSyncService;
     }
 
     /**
@@ -103,6 +107,7 @@ public class FuelRecordService {
         record.setCreatedAt(now);
         record.setUpdatedAt(now);
         fuelRecordMapper.insert(record);
+        fuelBillSyncService.sync(record, true);
         attachmentService.syncBusinessAttachments(currentUserId,
                 AttachmentConstants.BUSINESS_FUEL_RECORD, record.getId(), AttachmentConstants.USAGE_IMAGE,
                 request.getAttachmentIds(), 3);
@@ -121,6 +126,7 @@ public class FuelRecordService {
         applyNormalized(current, normalized);
         current.setUpdatedAt(LocalDateTime.now());
         fuelRecordMapper.updateById(current);
+        fuelBillSyncService.sync(current, false);
         attachmentService.syncBusinessAttachments(currentUserId,
                 AttachmentConstants.BUSINESS_FUEL_RECORD, current.getId(), AttachmentConstants.USAGE_IMAGE,
                 request.getAttachmentIds(), 3);
@@ -135,6 +141,7 @@ public class FuelRecordService {
         ensureCurrentUserExists(currentUserId);
         FuelRecord current = getOwnedRecordOrThrow(currentUserId, id);
         attachmentService.deleteByBusiness(AttachmentConstants.BUSINESS_FUEL_RECORD, current.getId());
+        fuelBillSyncService.delete(currentUserId, current.getId());
         fuelRecordMapper.deleteById(current.getId());
     }
 
@@ -188,11 +195,17 @@ public class FuelRecordService {
     }
 
     private FuelRecord getOwnedRecordOrThrow(Long currentUserId, Long id) {
-        FuelRecord record = fuelRecordMapper.selectById(id);
+        FuelRecord record = fuelRecordMapper.selectOwnedForUpdate(id, currentUserId);
         if (record == null || !Objects.equals(record.getOwnerUserId(), currentUserId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "加油记录不存在");
         }
         return record;
+    }
+
+    /** 来源账单跳转单条记录，不依赖列表分页位置。 */
+    public FuelRecordVO getById(Long currentUserId, Long id) {
+        ensureCurrentUserExists(currentUserId);
+        return findRecordVOById(currentUserId, id);
     }
 
     private FuelRecordVO findRecordVOById(Long currentUserId, Long id) {
@@ -247,20 +260,25 @@ public class FuelRecordService {
         if (!continuous) {
             cycle.fullOdometer = null;
             cycle.volume = BigDecimal.ZERO;
+            cycle.paidAmount = BigDecimal.ZERO;
         }
         FuelRecordVO result = toRecordVO(item, distance);
         if (cycle.fullOdometer != null) {
             cycle.volume = cycle.volume.add(nullSafe(item.getFuelVolume()));
+            cycle.paidAmount = cycle.paidAmount.add(nullSafe(item.getDiscountedAmount()));
             BigDecimal cycleDistance = odometer.subtract(cycle.fullOdometer);
             if (FILL_TYPE_FULL.equals(item.getFillType()) && cycleDistance.signum() > 0) {
                 result.setConsumptionDistanceKm(scaleOdometer(cycleDistance));
                 result.setConsumptionFuelVolume(scaleVolume(cycle.volume));
                 result.setFuelConsumption(calculateConsumption(cycle.volume, cycleDistance));
+                result.setConsumptionAmount(scaleMoney(cycle.paidAmount));
+                result.setCostPerKm(cycle.paidAmount.divide(cycleDistance, COST_PER_KM_SCALE, RoundingMode.HALF_UP));
             }
         }
         if (FILL_TYPE_FULL.equals(item.getFillType())) {
             cycle.fullOdometer = odometer;
             cycle.volume = BigDecimal.ZERO;
+            cycle.paidAmount = BigDecimal.ZERO;
         }
         cycle.previousOdometer = odometer;
         return result;
@@ -571,6 +589,7 @@ public class FuelRecordService {
         private BigDecimal previousOdometer;
         private BigDecimal fullOdometer;
         private BigDecimal volume = BigDecimal.ZERO;
+        private BigDecimal paidAmount = BigDecimal.ZERO;
     }
 
     /**

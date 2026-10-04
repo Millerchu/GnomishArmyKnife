@@ -25,7 +25,7 @@ class FuelRecordServiceTest {
         UserMapper users = mock(UserMapper.class);
         when(users.selectById(1L)).thenReturn(new User());
         when(mapper.selectList(any())).thenReturn(List.of(records));
-        return new FuelRecordService(mapper, users, mock(AttachmentService.class)).getSummary(1L);
+        return new FuelRecordService(mapper, users, mock(AttachmentService.class), mock(FuelBillSyncService.class)).getSummary(1L);
     }
 
     private FuelRecord record(int day, String mileage, String volume, String fill) {
@@ -40,6 +40,34 @@ class FuelRecordServiceTest {
         record.setTotalAmount(BigDecimal.ZERO);
         record.setDiscountedAmount(BigDecimal.ZERO);
         return record;
+    }
+
+    @Test
+    void shouldCalculateCostFromCompletedCyclePaidAmounts() {
+        FuelRecord baseline = record(0, "1000", "50", "FULL");
+        baseline.setDiscountedAmount(new BigDecimal("999"));
+        FuelRecord partial = record(1, "1200", "10", "PARTIAL");
+        partial.setDiscountedAmount(new BigDecimal("75.50"));
+        FuelRecord full = record(2, "1500", "35", "FULL");
+        full.setDiscountedAmount(new BigDecimal("249.50"));
+        var result = summary(baseline, partial, full);
+        assertEquals(new BigDecimal("325.00"), result.getRecentRecords().get(0).getConsumptionAmount());
+        assertEquals(new BigDecimal("0.650"), result.getRecentRecords().get(0).getCostPerKm());
+        assertNull(result.getRecentRecords().get(1).getCostPerKm());
+        assertNull(result.getRecentRecords().get(2).getCostPerKm());
+    }
+
+    @Test
+    void shouldResetCycleMoneyAfterMissingRecordAndKeepValidZeroCost() {
+        FuelRecord partial = record(1, "1100", "10", "PARTIAL");
+        partial.setDiscountedAmount(new BigDecimal("100"));
+        FuelRecord missing = record(2, "1200", "10", "FULL");
+        missing.setLastRecordKnown(false);
+        missing.setDiscountedAmount(new BigDecimal("200"));
+        var result = summary(record(0, "1000", "50", "FULL"), partial, missing,
+                record(3, "1500", "30", "FULL"));
+        assertEquals(new BigDecimal("0.000"), result.getRecentRecords().get(0).getCostPerKm());
+        assertNull(result.getRecentRecords().get(1).getCostPerKm());
     }
 
     @Test

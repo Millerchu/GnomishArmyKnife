@@ -33,12 +33,32 @@ public class FuelRecordVO {
     /** 已闭合加满周期的里程和油量；未闭合或记录不连续时为空。 */
     private BigDecimal consumptionDistanceKm;
     private BigDecimal consumptionFuelVolume;
+    /** 完整加满周期内实付金额，不含起点加满费用。 */
+    private BigDecimal consumptionAmount;
+    /** 周期实付金额 / 周期里程，单位元/km；无完整周期时为空。 */
+    private BigDecimal costPerKm;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<AttachmentVO> attachments;
 
     public Long getId() {
         return id;
+    }
+
+    public BigDecimal getConsumptionAmount() {
+        return consumptionAmount;
+    }
+
+    public void setConsumptionAmount(BigDecimal consumptionAmount) {
+        this.consumptionAmount = consumptionAmount;
+    }
+
+    public BigDecimal getCostPerKm() {
+        return costPerKm;
+    }
+
+    public void setCostPerKm(BigDecimal costPerKm) {
+        this.costPerKm = costPerKm;
     }
 
     public void setId(Long id) {

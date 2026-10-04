@@ -1,6 +1,8 @@
 package com.gak.fuelstats.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
@@ -30,7 +32,10 @@ public class FuelRecord {
     private String fillType;
     private Boolean fuelWarningLight;
     private Boolean lastRecordKnown;
+    // 清空可选字段也必须落库，保证详情和来源账单展示一致。
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String stationName;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String note;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

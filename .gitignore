@@ -11,8 +11,14 @@
 
 # Logs
 *.log
+/logs/
+
+# Local service lifecycle state
+/scripts/*.pid
 
 # Docker/NAS local deployment data
 /deploy/nas/data/
 /deploy/nas/dist/
 /data/db-migrations/
+gak-start/src/main/resources/application.properties
+gak-start/src/main/resources/application.properties

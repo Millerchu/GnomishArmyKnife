@@ -20,6 +20,11 @@
     <dependencies>
         <dependency>
             <groupId>com.gak</groupId>
+            <artifactId>gak-personal-bills</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.gak</groupId>
             <artifactId>gak-framework</artifactId>
             <version>${project.version}</version>
         </dependency>

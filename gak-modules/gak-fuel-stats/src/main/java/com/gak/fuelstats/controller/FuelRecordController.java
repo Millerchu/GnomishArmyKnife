@@ -62,6 +62,13 @@ public class FuelRecordController {
         return ApiResponse.success(fuelRecordService.create(currentUserId, request));
     }
 
+    /** 查询当前用户单条记录，供来源账单跳转详情。 */
+    @GetMapping("/{id}")
+    public ApiResponse<FuelRecordVO> getById(@PathVariable Long id, HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(fuelRecordService.getById(currentUserId, id));
+    }
+
     /**
      * 修改加油记录。
      */
