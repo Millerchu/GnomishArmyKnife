@@ -4,6 +4,7 @@ package com.gak.attachment.constant;
  * 附件模块公共业务常量。
  */
 public final class AttachmentConstants {
+    public static final String BUSINESS_TRAVEL_RECORD = "TRAVEL_RECORD";
 
     public static final String BUSINESS_HEALTH_REPORT = "HEALTH_REPORT";
     public static final String BUSINESS_HEALTH_VISIT = "HEALTH_VISIT";

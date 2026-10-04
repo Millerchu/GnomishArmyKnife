@@ -23,7 +23,9 @@ class LocalNasAttachmentStorageTest {
         storage.store("attachments/1/2026/07/file.txt", content);
 
         assertTrue(storage.exists("attachments/1/2026/07/file.txt"));
-        assertArrayEquals(content, storage.load("attachments/1/2026/07/file.txt").getInputStream().readAllBytes());
+        try (var input = storage.load("attachments/1/2026/07/file.txt").getInputStream()) {
+            assertArrayEquals(content, input.readAllBytes());
+        }
         storage.delete("attachments/1/2026/07/file.txt");
         assertFalse(storage.exists("attachments/1/2026/07/file.txt"));
     }

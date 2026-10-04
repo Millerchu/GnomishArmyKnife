@@ -182,11 +182,115 @@ class PersonalBillServiceTest {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
         PersonalBill foreignBill = buildBill(1001L, "EXPENSE", "餐饮", new BigDecimal("88.00"), LocalDate.of(2026, 5, 10));
         foreignBill.setOwnerUserId(2L);
-        when(personalBillMapper.selectById(1001L)).thenReturn(foreignBill);
+        when(personalBillMapper.selectOwnedForUpdate(1001L, 1L)).thenReturn(foreignBill);
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> personalBillService.update(1L, 1001L, buildBillRequest()));
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+    }
+
+    @Test
+    void linkedBillsRejectDirectUpdateAndDelete() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        PersonalBill linked = buildBill(1001L, "EXPENSE", "交通", new BigDecimal("100.00"), LocalDate.of(2026, 5, 10));
+        linked.setSourceType("TRAVEL_RECORD");
+        linked.setSourceId(2001L);
+        when(personalBillMapper.selectOwnedForUpdate(1001L, 1L)).thenReturn(linked);
+        assertThrows(BusinessException.class, () -> personalBillService.update(1L, 1001L, buildBillRequest()));
+        assertThrows(BusinessException.class, () -> personalBillService.delete(1L, 1001L));
+        verify(personalBillMapper, never()).updateById(any(PersonalBill.class));
+        verify(personalBillMapper, never()).deleteById(any(java.io.Serializable.class));
+    }
+
+    @Test
+    void refundsReduceExpenseInsteadOfIncreasingIncome() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        PersonalBill payment = buildBill(1001L, "EXPENSE", "交通", new BigDecimal("500.00"), LocalDate.of(2026, 5, 10));
+        PersonalBill refund = buildBill(1002L, "EXPENSE", "交通", new BigDecimal("-450.00"), LocalDate.of(2026, 5, 11));
+        refund.setSourceType("TRAVEL_RECORD");
+        refund.setSourceEntry("REFUND");
+        when(personalBillMapper.selectList(any())).thenReturn(List.of(payment, refund));
+        when(personalBudgetMapper.selectList(any())).thenReturn(List.of());
+        PersonalBillSummaryQueryRequest request = new PersonalBillSummaryQueryRequest();
+        request.setMonth("2026-05");
+        PersonalBillSummaryVO summary = personalBillService.getSummary(1L, request);
+        assertEquals(new BigDecimal("50.00"), summary.getCurrentMonthExpense());
+        assertEquals(new BigDecimal("0.00"), summary.getCurrentMonthIncome());
+        assertEquals(new BigDecimal("-50.00"), summary.getCurrentMonthBalance());
+        assertEquals(new BigDecimal("50.00"), summary.getCategoryDistribution().get(0).getAmount());
+    }
+
+    @Test
+    void foreignCurrencySummaryFiltersCurrencyAndExcludesCnyBudgets() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(personalBillMapper.selectList(any())).thenAnswer(invocation -> {
+            com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<?> wrapper = invocation.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertTrue(wrapper.getSqlSegment().contains("currency ="));
+            org.junit.jupiter.api.Assertions.assertTrue(wrapper.getParamNameValuePairs().containsValue("USD"));
+            PersonalBill usd = buildBill(1001L, "EXPENSE", "交通", new BigDecimal("20.00"), LocalDate.of(2026, 5, 10));
+            usd.setCurrency("USD");
+            return List.of(usd);
+        });
+        PersonalBillSummaryQueryRequest request = new PersonalBillSummaryQueryRequest();
+        request.setMonth("2026-05");
+        request.setCurrency("usd");
+        PersonalBillSummaryVO summary = personalBillService.getSummary(1L, request);
+        assertEquals(new BigDecimal("20.00"), summary.getCurrentMonthExpense());
+        assertEquals(new BigDecimal("0.00"), summary.getAnnualBudgetAmount());
+        assertEquals(0, summary.getBudgetProgressList().size());
+        verify(personalBudgetMapper, never()).selectList(any());
+    }
+
+    @Test
+    void linkedListFiltersOwnerCurrencyAndSource() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(personalBillMapper.selectList(any())).thenAnswer(invocation -> {
+            com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<?> wrapper = invocation.getArgument(0);
+            String sql = wrapper.getSqlSegment();
+            for (String column : List.of("owner_user_id", "currency", "source_type", "source_id")) {
+                org.junit.jupiter.api.Assertions.assertTrue(sql.contains(column + " ="));
+            }
+            org.junit.jupiter.api.Assertions.assertTrue(wrapper.getParamNameValuePairs().containsValue("CNY"));
+            org.junit.jupiter.api.Assertions.assertTrue(wrapper.getParamNameValuePairs().containsValue("TRAVEL_RECORD"));
+            org.junit.jupiter.api.Assertions.assertTrue(wrapper.getParamNameValuePairs().containsValue(2001L));
+            return List.of();
+        });
+        PersonalBillQueryRequest request = new PersonalBillQueryRequest();
+        request.setTravelRecordId(2001L);
+        personalBillService.page(1L, request);
+    }
+
+    @Test
+    void detachedRefundCanBeEditedWithoutLosingExpenseDirection() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        PersonalBill refund = buildBill(1001L, "EXPENSE", "交通", new BigDecimal("-450.00"), LocalDate.of(2026, 5, 11));
+        when(personalBillMapper.selectOwnedForUpdate(1001L, 1L)).thenReturn(refund);
+        SavePersonalBillRequest request = buildBillRequest();
+        request.setRefund(true);
+        request.setAmount(new BigDecimal("440.00"));
+        PersonalBillVO result = personalBillService.update(1L, 1001L, request);
+        assertEquals("EXPENSE", result.getBillType());
+        assertEquals(new BigDecimal("-440.00"), result.getAmount());
+        verify(personalBillMapper).updateById(refund);
+    }
+
+    @Test
+    void refundModeCannotCreateIncome() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        SavePersonalBillRequest request = buildBillRequest();
+        request.setRefund(true);
+        request.setBillType("INCOME");
+        assertThrows(BusinessException.class, () -> personalBillService.create(1L, request));
+        verify(personalBillMapper, never()).insert(any(PersonalBill.class));
+    }
+
+    @Test
+    void invalidCurrencyCannotBeSaved() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        SavePersonalBillRequest request = buildBillRequest();
+        request.setCurrency("NOT_A_CURRENCY");
+        assertThrows(BusinessException.class, () -> personalBillService.create(1L, request));
+        verify(personalBillMapper, never()).insert(any(PersonalBill.class));
     }
 
     private SavePersonalBillRequest buildBillRequest() {

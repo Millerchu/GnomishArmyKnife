@@ -76,4 +76,16 @@ public class PersonalBillQueryRequest {
     public void setKeyword(String keyword) {
         this.keyword = keyword;
     }
+    private String currency = "CNY";
+
+    public String getCurrency() { return currency; }
+
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    private Long travelRecordId;
+
+    public Long getTravelRecordId() { return travelRecordId; }
+
+    public void setTravelRecordId(Long travelRecordId) { this.travelRecordId = travelRecordId; }
+
 }

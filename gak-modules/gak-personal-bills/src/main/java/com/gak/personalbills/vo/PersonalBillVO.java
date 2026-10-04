@@ -99,4 +99,28 @@ public class PersonalBillVO {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+    private String currency = "CNY";
+
+    public String getCurrency() { return currency; }
+
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    private String sourceType;
+
+    public String getSourceType() { return sourceType; }
+
+    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+
+    private Long sourceId;
+
+    public Long getSourceId() { return sourceId; }
+
+    public void setSourceId(Long sourceId) { this.sourceId = sourceId; }
+
+    private String sourceEntry;
+
+    public String getSourceEntry() { return sourceEntry; }
+
+    public void setSourceEntry(String sourceEntry) { this.sourceEntry = sourceEntry; }
+
 }

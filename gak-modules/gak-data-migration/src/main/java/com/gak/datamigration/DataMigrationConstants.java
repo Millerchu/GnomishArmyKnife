@@ -38,6 +38,7 @@ public final class DataMigrationConstants {
     public static final String APP_FUEL_STATS = "APP_FUEL_STATS";
     public static final String APP_WOW_CHARACTER = "APP_WOW_CHARACTER";
     public static final String APP_PERSONAL_BILLS = "APP_PERSONAL_BILLS";
+    public static final String APP_TRAVEL_RECORD = "APP_TRAVEL_RECORD";
     public static final String APP_KNOWLEDGE_BASE = "APP_KNOWLEDGE_BASE";
     public static final String APP_HEALTH_RECORD = "APP_HEALTH_RECORD";
 

@@ -104,4 +104,16 @@ public class SavePersonalBillRequest {
     public void setNote(String note) {
         this.note = note;
     }
+    private String currency = "CNY";
+
+    public String getCurrency() { return currency; }
+
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    /** Refunds are stored as negative expenses and never counted as income. */
+    private boolean refund;
+
+    public boolean isRefund() { return refund; }
+
+    public void setRefund(boolean refund) { this.refund = refund; }
 }

@@ -8,8 +8,8 @@ import jakarta.validation.constraints.Min;
  */
 public class AnnualBudgetQueryRequest {
 
-    @Min(value = 2020, message = "year 不能早于 2020")
-    @Max(value = 2099, message = "year 不能晚于 2099")
+    @Min(value = 1, message = "year 必须大于零")
+    @Max(value = 9999, message = "year 不能晚于 9999")
     private Integer year;
 
     public Integer getYear() {

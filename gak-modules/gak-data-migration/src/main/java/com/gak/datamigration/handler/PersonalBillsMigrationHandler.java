@@ -70,6 +70,11 @@ public class PersonalBillsMigrationHandler implements MigrationResourceHandler {
     @Override
     public MigrationResourceExportData exportData(ExportContext context) {
         QueryWrapper<PersonalBill> billWrapper = new QueryWrapper<>();
+        // 行程关联账单随行程整体迁移，避免分开导入造成悬空关联或重复记账。
+        billWrapper.and(query -> query.isNull("source_type").or().ne("source_type", "TRAVEL_RECORD"));
+        billWrapper.notInSql("id", "SELECT detached_payment_bill_id FROM gak_travel_record "
+                + "WHERE detached_payment_bill_id IS NOT NULL UNION SELECT detached_refund_bill_id "
+                + "FROM gak_travel_record WHERE detached_refund_bill_id IS NOT NULL");
         billWrapper.orderByAsc("owner_user_id").orderByAsc("bill_date").orderByAsc("id");
         List<PersonalBill> bills = personalBillMapper.selectList(billWrapper);
 
@@ -95,6 +100,10 @@ public class PersonalBillsMigrationHandler implements MigrationResourceHandler {
         for (PersonalBill source : bills) {
             if (source == null) {
                 continue;
+            }
+            if ("TRAVEL_RECORD".equals(source.getSourceType())) {
+                throw new BusinessException("DATA_MIGRATION_TRAVEL_RESOURCE_REQUIRED",
+                        "行程关联账单需要通过个人行程记录资源恢复");
             }
             Long targetUserId = resolveUserId(source.getOwnerUserId(), context, "个人账单");
             PersonalBill existing = findExistingBill(source, targetUserId);
@@ -153,13 +162,22 @@ public class PersonalBillsMigrationHandler implements MigrationResourceHandler {
     private PersonalBill findExistingBill(PersonalBill source, Long targetUserId) {
         PersonalBill byId = source.getId() == null ? null : personalBillMapper.selectById(source.getId());
         if (byId != null) {
+            if (!java.util.Objects.equals(byId.getOwnerUserId(), targetUserId) || byId.getSourceType() != null) {
+                throw new BusinessException("DATA_MIGRATION_PERSONAL_BILL_SOURCE_CONFLICT",
+                        "账单 ID 与其他用户或行程来源账单冲突，请通过行程资源恢复");
+            }
             return byId;
         }
         QueryWrapper<PersonalBill> wrapper = new QueryWrapper<>();
         wrapper.eq("owner_user_id", targetUserId)
+                .isNull("source_type")
+                .eq("currency", source.getCurrency() == null ? "CNY" : source.getCurrency())
                 .eq("bill_date", source.getBillDate())
                 .eq("bill_type", source.getBillType())
                 .eq("amount", source.getAmount());
+        wrapper.notInSql("id", "SELECT detached_payment_bill_id FROM gak_travel_record "
+                + "WHERE detached_payment_bill_id IS NOT NULL UNION SELECT detached_refund_bill_id "
+                + "FROM gak_travel_record WHERE detached_refund_bill_id IS NOT NULL");
         DataMigrationQuerySupport.eqNullable(wrapper, "category_name", source.getCategoryName());
         DataMigrationQuerySupport.eqNullable(wrapper, "account_name", source.getAccountName());
         DataMigrationQuerySupport.eqNullable(wrapper, "merchant_name", source.getMerchantName());

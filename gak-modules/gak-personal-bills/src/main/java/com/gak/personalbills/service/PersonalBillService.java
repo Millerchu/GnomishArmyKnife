@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -103,6 +104,7 @@ public class PersonalBillService {
         PersonalBill bill = new PersonalBill();
         bill.setOwnerUserId(currentUserId);
         applyNormalizedBill(bill, normalized);
+        bill.setCurrency(normalizeCurrency(request.getCurrency()));
         LocalDateTime now = LocalDateTime.now();
         bill.setCreatedAt(now);
         bill.setUpdatedAt(now);
@@ -117,8 +119,10 @@ public class PersonalBillService {
     public PersonalBillVO update(Long currentUserId, Long id, SavePersonalBillRequest request) {
         ensureCurrentUserExists(currentUserId);
         PersonalBill current = getOwnedBillOrThrow(currentUserId, id);
+        ensureBillIsEditable(current);
         NormalizedBill normalized = normalizeBillRequest(request);
         applyNormalizedBill(current, normalized);
+        current.setCurrency(normalizeCurrency(request.getCurrency()));
         current.setUpdatedAt(LocalDateTime.now());
         personalBillMapper.updateById(current);
         return toBillVO(current);
@@ -131,6 +135,7 @@ public class PersonalBillService {
     public void delete(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         PersonalBill current = getOwnedBillOrThrow(currentUserId, id);
+        ensureBillIsEditable(current);
         personalBillMapper.deleteById(current.getId());
     }
 
@@ -142,8 +147,10 @@ public class PersonalBillService {
         YearMonth targetMonth = resolveTargetMonth(request.getMonth());
         int targetYear = request.getYear() != null ? request.getYear() : targetMonth.getYear();
 
-        List<PersonalBill> allBills = loadAllBills(currentUserId);
-        List<PersonalBudget> yearBudgets = loadBudgetsByYear(currentUserId, targetYear);
+        String currency = normalizeCurrency(request.getCurrency());
+        List<PersonalBill> allBills = loadAllBills(currentUserId, currency);
+        List<PersonalBudget> yearBudgets = "CNY".equals(currency)
+                ? loadBudgetsByYear(currentUserId, targetYear) : List.of();
 
         LocalDate monthStart = targetMonth.atDay(1);
         LocalDate monthEndExclusive = targetMonth.plusMonths(1).atDay(1);
@@ -232,6 +239,10 @@ public class PersonalBillService {
     }
 
     private void applyBillFilters(QueryWrapper<PersonalBill> wrapper, PersonalBillQueryRequest request) {
+        wrapper.eq("currency", normalizeCurrency(request.getCurrency()));
+        if (request.getTravelRecordId() != null) {
+            wrapper.eq("source_type", "TRAVEL_RECORD").eq("source_id", request.getTravelRecordId());
+        }
         if (StringUtils.hasText(request.getMonth())) {
             YearMonth yearMonth = resolveTargetMonth(request.getMonth());
             wrapper.ge("bill_date", yearMonth.atDay(1))
@@ -260,9 +271,10 @@ public class PersonalBillService {
         }
     }
 
-    private List<PersonalBill> loadAllBills(Long currentUserId) {
+    private List<PersonalBill> loadAllBills(Long currentUserId, String currency) {
         QueryWrapper<PersonalBill> wrapper = new QueryWrapper<>();
         wrapper.eq("owner_user_id", currentUserId)
+                .eq("currency", currency)
                 .orderByDesc("bill_date")
                 .orderByDesc("updated_at")
                 .orderByDesc("id");
@@ -286,7 +298,7 @@ public class PersonalBillService {
     }
 
     private PersonalBill getOwnedBillOrThrow(Long currentUserId, Long id) {
-        PersonalBill bill = personalBillMapper.selectById(id);
+        PersonalBill bill = personalBillMapper.selectOwnedForUpdate(id, currentUserId);
         if (bill == null || !Objects.equals(bill.getOwnerUserId(), currentUserId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "账单记录不存在");
         }
@@ -303,6 +315,12 @@ public class PersonalBillService {
 
     private NormalizedBill normalizeBillRequest(SavePersonalBillRequest request) {
         String billType = normalizeBillType(request.getBillType());
+        if (request.isRefund() && !"EXPENSE".equals(billType)) {
+            throw new BusinessException("PERSONAL_BILL_REFUND_TYPE_INVALID", "退款冲减必须使用支出类型");
+        }
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("PERSONAL_BILL_AMOUNT_INVALID", "请输入大于零的付款或退款金额");
+        }
         String categoryName = dataDictionaryUsageSupport.normalizeValueByUsage(
                 APP_CODE,
                 MODULE_CODE,
@@ -320,7 +338,7 @@ public class PersonalBillService {
         return new NormalizedBill(
                 billType,
                 categoryName,
-                scaleMoney(request.getAmount()),
+                request.isRefund() ? scaleMoney(request.getAmount()).negate() : scaleMoney(request.getAmount()),
                 trimToNull(request.getAccountName()),
                 paymentMethod,
                 trimToNull(request.getMerchantName()),
@@ -465,6 +483,10 @@ public class PersonalBillService {
     private PersonalBillVO toBillVO(PersonalBill bill) {
         PersonalBillVO vo = new PersonalBillVO();
         vo.setId(bill.getId());
+        vo.setCurrency(bill.getCurrency());
+        vo.setSourceType(bill.getSourceType());
+        vo.setSourceId(bill.getSourceId());
+        vo.setSourceEntry(bill.getSourceEntry());
         vo.setBillType(bill.getBillType());
         vo.setCategoryName(bill.getCategoryName());
         vo.setAmount(scaleMoney(bill.getAmount()));
@@ -487,6 +509,22 @@ public class PersonalBillService {
         vo.setAlertThreshold(scaleRatio(budget.getAlertThreshold()));
         vo.setNote(budget.getNote());
         return vo;
+    }
+
+    private void ensureBillIsEditable(PersonalBill bill) {
+        if (bill.getSourceType() != null || bill.getSourceId() != null) {
+            throw new BusinessException("PERSONAL_BILL_SOURCE_LINKED", "该账单由个人行程记录管理，请前往对应行程修改或删除");
+        }
+    }
+
+    private String normalizeCurrency(String value) {
+        String code = StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : "CNY";
+        try {
+            Currency.getInstance(code);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("PERSONAL_BILL_CURRENCY_INVALID", "请输入有效的 ISO 币种代码");
+        }
+        return code;
     }
 
     private String normalizeBillType(String value) {

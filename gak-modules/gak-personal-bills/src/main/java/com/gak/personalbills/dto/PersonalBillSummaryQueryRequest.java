@@ -12,8 +12,8 @@ public class PersonalBillSummaryQueryRequest {
     @Pattern(regexp = "^\\d{4}-\\d{2}$", message = "month 格式必须为 yyyy-MM")
     private String month;
 
-    @Min(value = 2020, message = "year 不能早于 2020")
-    @Max(value = 2099, message = "year 不能晚于 2099")
+    @Min(value = 1, message = "year 必须大于零")
+    @Max(value = 9999, message = "year 不能晚于 9999")
     private Integer year;
 
     public String getMonth() {
@@ -31,4 +31,10 @@ public class PersonalBillSummaryQueryRequest {
     public void setYear(Integer year) {
         this.year = year;
     }
+    private String currency = "CNY";
+
+    public String getCurrency() { return currency; }
+
+    public void setCurrency(String currency) { this.currency = currency; }
+
 }
