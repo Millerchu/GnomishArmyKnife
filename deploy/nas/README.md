@@ -1,5 +1,9 @@
 # GAK 绿联 NAS Docker Compose 部署手册
 
+2026-10-15 按当前 Compose、前端 Nginx 和附件配置补充。以下为部署操作说明，不代表本次已操作或验收 NAS。
+
+完整 GAK 工作区的目录名为 `repos/backend`、`repos/frontend`，不同于下文独立克隆示例。使用构建/上传脚本时应按脚本要求设置 `FRONTEND_ROOT` 为实际前端路径。脚本为 Bash，Windows 需具备相应 Bash、Docker、SSH 环境。
+
 本文面向不熟悉 Docker 部署的使用场景，目标是在绿联 NAS 上同时部署：
 
 - 前端：`gak-web`，Nginx 托管 Vue 静态文件，并把 `/api` 转发给后端。
@@ -195,6 +199,10 @@ REDIS_PASSWORD=change_me_redis_password
 - `GAK_FUEL_PRICE_JUHE_API_KEY` 用于调用聚合数据“今日国内油价”接口。未配置或第三方暂时不可用时，油价页面会明确降级为本地快照。
 - `GAK_FUEL_PRICE_CACHE_MINUTES` 控制在线油价的内存缓存时间，默认 30 分钟，避免频繁消耗第三方接口调用额度。
 
+当前 Compose 还固定设置 `GAK_ATTACHMENT_STORAGE_ROOT=/app/data`，并把 `./data/app` 挂载至该目录。统一附件应随整个应用数据目录持久化，不能只备份旧的图标和健康文件子目录。
+
+前端 Nginx 已为 `/api/messages/stream` 单独关闭缓冲与缓存，读取超时 90 秒。如果 NAS 外层还有代理，应保留流式转发并使超时长于 20 秒心跳。当前后端 Token 和 SSE 为单实例内存机制，应用重启后需重新登录；启用 Redis profile 不会自动改造这两项能力。
+
 ## 七、常用运维命令
 
 进入 NAS 部署目录：
@@ -293,14 +301,20 @@ data/
   redis/             # Redis 数据，启用后出现
 ```
 
-建议定期备份整个目录：
+以下是停机文件备份示例。不能对运行中的 PostgreSQL 数据目录直接打包并假定得到一致备份；先停止应用和数据库，再备份整个目录：
 
 ```bash
+cd /volume1/Projects/GAK-App
+./scripts/down.sh
 cd /volume1/Projects
 tar -czf gak-backup-$(date +%Y%m%d_%H%M%S).tar.gz GAK-App/.env GAK-App/data
+cd GAK-App
+./scripts/up.sh
 ```
 
 恢复时：
+
+备份包含数据库凭据与业务文件，应限制读取权限。恢复数据库文件时保持兼容的 PostgreSQL 主版本；上线前在隔离环境验证。业务菜单中的迁移 ZIP 只覆盖已注册资源，不能替代此类完整备份。
 
 1. 停止容器：`./scripts/down.sh`
 2. 解压备份覆盖 `.env` 和 `data`
