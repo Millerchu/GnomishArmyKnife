@@ -4,6 +4,7 @@
 
 ## 文档入口
 
+- [用户看板需求记录](docs/user-board-requirements.md)：供 AI 编程查阅的需求 / Bug 记录、开发分析和验收模板，内容同步方式待定。
 - [架构与模块](docs/architecture.md)：18 个业务模块、接口入口、认证、附件和消息边界。
 - [开发与配置](docs/development.md)：环境、启动、数据库与测试。
 - [文档索引](docs/README.md)：现行说明与历史资料。
