@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
+import java.math.BigDecimal;
+
 /**
  * 工作日志内容条目实体，每条内容独立维护完成状态。
  */
@@ -14,6 +16,7 @@ public class WorkLogItem {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private Long workLogId;
+    private BigDecimal personDay;
     private String content;
     private String status;
     private String zentaoNo;
@@ -35,6 +38,14 @@ public class WorkLogItem {
 
     public void setWorkLogId(Long workLogId) {
         this.workLogId = workLogId;
+    }
+
+    public BigDecimal getPersonDay() {
+        return personDay;
+    }
+
+    public void setPersonDay(BigDecimal personDay) {
+        this.personDay = personDay;
     }
 
     public String getContent() {

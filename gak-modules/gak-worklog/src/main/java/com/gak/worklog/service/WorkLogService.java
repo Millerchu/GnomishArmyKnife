@@ -103,11 +103,15 @@ public class WorkLogService {
                 WorkLogStatus.COMPLETED.name(),
                 typeCodes.contains(TYPE_CODE_LEAVE)
         );
+        BigDecimal personDay = resolvePersonDay(workItems, request.getPersonDay());
         String workStatus = resolveAggregateStatus(workItems);
         String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
         workLogMapper.lockUserWorkLogs(currentUserId);
-        validateDuplicateProject(currentUserId, request.getLogDate(), affiliation.projectCode(), null);
-        validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), null);
+        WorkLog existing = findProjectLog(currentUserId, request.getLogDate(), affiliation.projectCode());
+        if (existing != null) {
+            return appendToProject(currentUserId, existing, request, workItems, personDay);
+        }
+        validateDailyPersonDay(currentUserId, request.getLogDate(), personDay, null);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
                 request.getOffWorkTime(),
@@ -128,7 +132,7 @@ public class WorkLogService {
         workLog.setContent(serializeWorkItems(workItems));
         workLog.setWorkStatus(workStatus);
         workLog.setZentaoNo(zentaoNo);
-        workLog.setPersonDay(request.getPersonDay());
+        workLog.setPersonDay(personDay);
         workLog.setOvertimeHours(overtimeHours);
         workLog.setOffWorkTime(request.getOffWorkTime());
         workLog.setBusinessTripAllowanceScene(businessTripAllowance.scene());
@@ -138,6 +142,7 @@ public class WorkLogService {
         workLog.setCreatedAt(now);
         workLog.setUpdatedAt(now);
         workLogMapper.insert(workLog);
+        synchronizeDayBasics(workLog, typeCodes);
 
         saveTypeRelations(workLog.getId(), typeCodes, now);
         List<WorkLogItem> savedWorkItems = saveWorkItems(workLog.getId(), workItems, now);
@@ -187,6 +192,7 @@ public class WorkLogService {
      */
     @Transactional
     public WorkLogResponse update(Long currentUserId, Long id, UpdateWorkLogRequest request) {
+        workLogMapper.lockUserWorkLogs(currentUserId);
         WorkLog current = getOwnedByIdOrThrow(currentUserId, id);
         List<String> typeCodes = normalizeAndValidateTypeCodes(request.getTypeCodes());
         String projectCode = normalizeRequiredProjectCode(request.getProjectCode());
@@ -199,11 +205,11 @@ public class WorkLogService {
                 current.getWorkStatus(),
                 typeCodes.contains(TYPE_CODE_LEAVE)
         );
+        BigDecimal personDay = resolvePersonDay(workItems, request.getPersonDay());
         String workStatus = resolveAggregateStatus(workItems);
         String zentaoNo = resolveAggregateZentaoNo(workItems, request.getWorkItems(), request.getZentaoNo());
-        workLogMapper.lockUserWorkLogs(currentUserId);
         validateDuplicateProject(currentUserId, request.getLogDate(), affiliation.projectCode(), id);
-        validateDailyPersonDay(currentUserId, request.getLogDate(), request.getPersonDay(), id);
+        validateDailyPersonDay(currentUserId, request.getLogDate(), personDay, id);
         BigDecimal overtimeHours = resolveOvertimeHours(
                 request.getLogDate(),
                 request.getOffWorkTime(),
@@ -221,7 +227,7 @@ public class WorkLogService {
         current.setContent(serializeWorkItems(workItems));
         current.setWorkStatus(workStatus);
         current.setZentaoNo(zentaoNo);
-        current.setPersonDay(request.getPersonDay());
+        current.setPersonDay(personDay);
         current.setOvertimeHours(overtimeHours);
         current.setOffWorkTime(request.getOffWorkTime());
         current.setBusinessTripAllowanceScene(businessTripAllowance.scene());
@@ -230,6 +236,7 @@ public class WorkLogService {
         current.setRemark(request.getRemark());
         current.setUpdatedAt(LocalDateTime.now());
         workLogMapper.updateById(current);
+        synchronizeDayBasics(current, typeCodes);
 
         QueryWrapper<WorkLogType> deleteWrapper = new QueryWrapper<>();
         deleteWrapper.eq("work_log_id", id);
@@ -503,7 +510,8 @@ public class WorkLogService {
                 normalizedItems.add(new NormalizedWorkItem(
                         requestedItem.getContent().trim(),
                         normalizeWorkStatus(requestedItem.getStatus(), WorkLogStatus.COMPLETED.name()),
-                        normalizeOptionalZentaoNo(requestedItem.getZentaoNo())
+                        normalizeOptionalZentaoNo(requestedItem.getZentaoNo()),
+                        requestedItem.getPersonDay()
                 ));
             }
         } else {
@@ -511,7 +519,7 @@ public class WorkLogService {
             if (legacyWorkItem != null) {
                 for (String line : legacyWorkItem.split("\\r?\\n")) {
                     if (!line.isBlank()) {
-                        normalizedItems.add(new NormalizedWorkItem(line.trim(), normalizedLegacyStatus, null));
+                        normalizedItems.add(new NormalizedWorkItem(line.trim(), normalizedLegacyStatus, null, null));
                     }
                 }
             }
@@ -581,6 +589,11 @@ public class WorkLogService {
     private List<WorkLogItem> saveWorkItems(Long workLogId,
                                             List<NormalizedWorkItem> workItems,
                                             LocalDateTime now) {
+        return saveWorkItems(workLogId, workItems, now, 0);
+    }
+
+    private List<WorkLogItem> saveWorkItems(Long workLogId, List<NormalizedWorkItem> workItems,
+                                           LocalDateTime now, int sortOffset) {
         List<WorkLogItem> savedItems = new ArrayList<>();
         for (int index = 0; index < workItems.size(); index++) {
             NormalizedWorkItem normalizedItem = workItems.get(index);
@@ -589,7 +602,8 @@ public class WorkLogService {
             workLogItem.setContent(normalizedItem.content());
             workLogItem.setStatus(normalizedItem.status());
             workLogItem.setZentaoNo(normalizedItem.zentaoNo());
-            workLogItem.setSortNo(index + 1);
+            workLogItem.setPersonDay(normalizedItem.personDay());
+            workLogItem.setSortNo(sortOffset + index + 1);
             workLogItem.setCreatedAt(now);
             workLogItem.setUpdatedAt(now);
             workLogItemMapper.insert(workLogItem);
@@ -611,6 +625,119 @@ public class WorkLogService {
             type.setTypeCode(typeCode);
             type.setCreatedAt(now);
             workLogTypeMapper.insert(type);
+        }
+    }
+
+    /** 条目投入全部提供时以条目为准；旧客户端保持原来的日志级投入。 */
+    private BigDecimal resolvePersonDay(List<NormalizedWorkItem> items, BigDecimal legacyPersonDay) {
+        long assignedCount = items.stream().filter(item -> item.personDay() != null).count();
+        if (assignedCount == 0) {
+            return validatePersonDay(legacyPersonDay);
+        }
+        if (assignedCount != items.size()) {
+            throw new ResponseStatusException(BAD_REQUEST, "请为每条工作内容填写人天");
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (NormalizedWorkItem item : items) {
+            total = total.add(validatePersonDay(item.personDay()));
+        }
+        return validatePersonDay(total);
+    }
+
+    private BigDecimal validatePersonDay(BigDecimal personDay) {
+        if (personDay == null || personDay.signum() < 0 || personDay.compareTo(MAX_DAILY_PERSON_DAY) > 0
+                || personDay.stripTrailingZeros().scale() > 1) {
+            throw new ResponseStatusException(BAD_REQUEST, "人天须为 0 到 1 之间且最多一位小数");
+        }
+        return personDay.setScale(1, RoundingMode.UNNECESSARY);
+    }
+
+    private WorkLog findProjectLog(Long userId, LocalDate logDate, String projectCode) {
+        QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
+        wrapper.eq("user_id", userId).eq("log_date", logDate).eq("project_code", projectCode);
+        wrapper.orderByAsc("id");
+        return workLogMapper.selectList(wrapper).stream().findFirst().orElse(null);
+    }
+
+    /** 持有用户事务锁后追加，保留原内容条目的 ID 和状态。 */
+    private WorkLogResponse appendToProject(Long userId, WorkLog existing, CreateWorkLogRequest request,
+                                            List<NormalizedWorkItem> addedItems, BigDecimal addedPersonDay) {
+        validateDailyPersonDay(userId, request.getLogDate(), addedPersonDay, null);
+        List<WorkLogItem> storedItems = new ArrayList<>(getWorkItemsByLogId(existing.getId()));
+        List<NormalizedWorkItem> combined = new ArrayList<>();
+        for (WorkLogItemResponse item : buildWorkItemResponses(existing, storedItems)) {
+            combined.add(new NormalizedWorkItem(item.getContent(), item.getStatus(), item.getZentaoNo(), item.getPersonDay()));
+        }
+        combined.addAll(addedItems);
+        if (combined.size() > 100 || serializeWorkItems(combined).length() > 4000) {
+            throw new ResponseStatusException(BAD_REQUEST, "合并后工作内容不能超过 100 条或 4000 个字符");
+        }
+        existing.setContent(serializeWorkItems(combined));
+        existing.setWorkStatus(resolveAggregateStatus(combined));
+        // 按合并内容汇总编号，同时兼容旧客户端的日志级编号。
+        String legacyNumbers = String.join(",", List.of(
+                Objects.toString(existing.getZentaoNo(), ""), Objects.toString(request.getZentaoNo(), "")));
+        LinkedHashSet<String> numbers = new LinkedHashSet<>();
+        for (String value : (legacyNumbers + "," + combined.stream()
+                .map(item -> Objects.toString(item.zentaoNo(), "")).collect(java.util.stream.Collectors.joining(","))).split("[,，]")) {
+            if (!value.isBlank()) {
+                numbers.add(value.trim());
+            }
+        }
+        existing.setZentaoNo(normalizeOptionalZentaoNo(String.join(",", numbers)));
+        existing.setPersonDay(existing.getPersonDay().add(addedPersonDay));
+        existing.setLocation(LEAVE_PROJECT_CODE.equals(existing.getProjectCode())
+                ? LEAVE_LOCATION : normalizeOptionalLocation(request.getLocation()));
+        existing.setOffWorkTime(request.getOffWorkTime());
+        existing.setOvertimeHours(resolveOvertimeHours(request.getLogDate(), request.getOffWorkTime(), request.getOvertimeHours()));
+        String mergedRemark = java.util.stream.Stream.of(existing.getRemark(), request.getRemark())
+                .filter(value -> value != null && !value.isBlank()).distinct()
+                .collect(java.util.stream.Collectors.joining("\n"));
+        if (mergedRemark.length() > 500) {
+            throw new ResponseStatusException(BAD_REQUEST, "合并后的备注不能超过 500 个字符");
+        }
+        existing.setRemark(mergedRemark);
+        existing.setUpdatedAt(LocalDateTime.now());
+        // 历史纯文本日志补存条目后再追加，避免后续响应遗漏旧内容。
+        if (storedItems.isEmpty()) {
+            storedItems = saveWorkItems(existing.getId(), combined, existing.getUpdatedAt());
+        } else {
+            List<WorkLogItem> added = saveWorkItems(existing.getId(), addedItems, existing.getUpdatedAt(), storedItems.size());
+            storedItems.addAll(added);
+        }
+        LinkedHashSet<String> types = new LinkedHashSet<>(getTypeCodesByWorkLogId(existing.getId()));
+        List<String> newTypes = normalizeAndValidateTypeCodes(request.getTypeCodes()).stream().filter(type -> !types.contains(type)).toList();
+        saveTypeRelations(existing.getId(), newTypes, existing.getUpdatedAt());
+        types.addAll(newTypes);
+        List<String> mergedTypes = normalizeAndValidateTypeCodes(new ArrayList<>(types));
+        BusinessTripAllowance allowance = resolveBusinessTripAllowance(mergedTypes,
+                request.getBusinessTripAllowanceScene() == null ? existing.getBusinessTripAllowanceScene() : request.getBusinessTripAllowanceScene(),
+                Boolean.TRUE.equals(existing.getBusinessTripReimbursed()) || Boolean.TRUE.equals(request.getBusinessTripReimbursed()));
+        existing.setBusinessTripAllowanceScene(allowance.scene());
+        existing.setBusinessTripAllowanceAmount(allowance.amount());
+        existing.setBusinessTripReimbursed(allowance.reimbursed());
+        workLogMapper.updateById(existing);
+        synchronizeDayBasics(existing, mergedTypes);
+        return buildResponse(existing, mergedTypes, storedItems);
+    }
+
+    /** 日期下的地点和下班信息共用；请假的居家归属不被普通日志覆盖。 */
+    private void synchronizeDayBasics(WorkLog source, List<String> typeCodes) {
+        if (typeCodes.contains(TYPE_CODE_LEAVE)) {
+            return;
+        }
+        QueryWrapper<WorkLog> wrapper = new QueryWrapper<>();
+        wrapper.eq("user_id", source.getUserId()).eq("log_date", source.getLogDate()).ne("id", source.getId());
+        wrapper.orderByAsc("id");
+        for (WorkLog sibling : workLogMapper.selectList(wrapper)) {
+            if (Objects.equals(source.getId(), sibling.getId()) || LEAVE_PROJECT_CODE.equals(sibling.getProjectCode())) {
+                continue;
+            }
+            sibling.setLocation(source.getLocation());
+            sibling.setOffWorkTime(source.getOffWorkTime());
+            sibling.setOvertimeHours(source.getOvertimeHours());
+            sibling.setUpdatedAt(source.getUpdatedAt());
+            workLogMapper.updateById(sibling);
         }
     }
 
@@ -838,6 +965,7 @@ public class WorkLogService {
                 response.setContent(storedItem.getContent());
                 response.setStatus(resolveStoredWorkStatus(storedItem.getStatus()));
                 response.setZentaoNo(storedItem.getZentaoNo());
+                response.setPersonDay(storedItem.getPersonDay());
                 response.setSortNo(storedItem.getSortNo());
                 responses.add(response);
             }
@@ -867,9 +995,6 @@ public class WorkLogService {
     }
 
     private record WorkLogAffiliation(String projectCode, String location) {
-    }
-
-    private record NormalizedWorkItem(String content, String status, String zentaoNo) {
     }
 
     private String extractBrief(String workItem) {

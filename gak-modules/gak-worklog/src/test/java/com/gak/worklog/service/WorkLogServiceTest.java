@@ -511,8 +511,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldAllowAnotherProjectWhenDailyPersonDayDoesNotExceedOne() {
-        when(workLogMapper.countByUserDateAndProject(1L, LocalDate.of(2026, 4, 3), "CLIENT", null))
-                .thenReturn(0L);
         when(workLogMapper.sumPersonDayByUserAndDate(1L, LocalDate.of(2026, 4, 3), null))
                 .thenReturn(decimal("0.4"));
         doAnswer(invocation -> {
@@ -533,23 +531,89 @@ class WorkLogServiceTest {
     }
 
     @Test
-    void createShouldRejectDuplicateProjectOnSameDate() {
-        LocalDate logDate = LocalDate.of(2026, 4, 4);
-        when(workLogMapper.countByUserDateAndProject(1L, logDate, "GAK", null)).thenReturn(1L);
+    void createShouldMergeSameProjectAndPreserveExistingItemIdentity() {
+        LocalDate date = LocalDate.of(2026, 4, 4);
+        WorkLog existing = buildWorkLog();
+        existing.setId(42L);
+        existing.setLogDate(date);
+        existing.setPersonDay(decimal("0.4"));
+        WorkLogItem original = new WorkLogItem();
+        original.setId(51L);
+        original.setWorkLogId(42L);
+        original.setContent("原工作");
+        original.setStatus("UNFINISHED");
+        original.setSortNo(1);
+        when(workLogMapper.selectList(any())).thenReturn(List.of(existing));
+        when(workLogItemMapper.selectList(any())).thenReturn(List.of(original));
+        when(workLogMapper.sumPersonDayByUserAndDate(1L, date, null)).thenReturn(decimal("0.4"));
+        CreateWorkLogRequest request = buildBaseRequest(date);
+        request.setWorkItem("新增工作");
+        request.setPersonDay(decimal("0.3"));
+        WorkLogResponse response = workLogService.create(1L, request);
+        assertEquals(42L, response.getId());
+        assertEquals(decimal("0.7"), response.getPersonDay());
+        assertEquals("原工作\n新增工作", response.getWorkItem());
+        assertEquals(51L, response.getWorkItems().get(0).getId());
+        assertEquals("UNFINISHED", response.getWorkItems().get(0).getStatus());
+        assertEquals(2, response.getWorkItems().get(1).getSortNo());
+        verify(workLogMapper).updateById(existing);
+    }
 
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class,
-                () -> workLogService.create(1L, buildBaseRequest(logDate))
-        );
+    @Test
+    void createShouldCalculatePersonDayFromItems() {
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 4));
+        WorkLogItemRequest first = new WorkLogItemRequest();
+        first.setContent("开发");
+        first.setPersonDay(decimal("0.2"));
+        WorkLogItemRequest second = new WorkLogItemRequest();
+        second.setContent("测试");
+        second.setPersonDay(decimal("0.3"));
+        request.setWorkItems(List.of(first, second));
+        WorkLogResponse response = workLogService.create(1L, request);
+        assertEquals(decimal("0.5"), response.getPersonDay());
+        assertEquals(decimal("0.2"), response.getWorkItems().get(0).getPersonDay());
+    }
 
-        assertEquals(BAD_REQUEST, exception.getStatusCode());
-        assertEquals("该用户在当前日期和项目下已存在工作日志", exception.getReason());
+    @Test
+    void createShouldRejectInvalidOrPartialItemEffort() {
+        for (String invalid : List.of("-0.1", "1.1", "0.25")) {
+            CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 4));
+            WorkLogItemRequest item = buildWorkItemRequest("开发", "COMPLETED");
+            item.setPersonDay(decimal(invalid));
+            request.setWorkItems(List.of(item));
+            assertThrows(ResponseStatusException.class, () -> workLogService.create(1L, request));
+        }
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 4, 4));
+        WorkLogItemRequest assigned = buildWorkItemRequest("开发", "COMPLETED");
+        assigned.setPersonDay(decimal("0.2"));
+        request.setWorkItems(List.of(assigned, buildWorkItemRequest("测试", "COMPLETED")));
+        assertThrows(ResponseStatusException.class, () -> workLogService.create(1L, request));
+    }
+
+    @Test
+    void createShouldShareDayBasicsWithoutChangingSiblingEffort() {
+        WorkLog sibling = buildWorkLog();
+        sibling.setPersonDay(decimal("0.2"));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(), List.of(sibling));
+        doAnswer(invocation -> {
+            WorkLog inserted = invocation.getArgument(0);
+            inserted.setId(99L);
+            return 1;
+        }).when(workLogMapper).insert(any(WorkLog.class));
+        CreateWorkLogRequest request = buildBaseRequest(LocalDate.of(2026, 3, 23));
+        request.setLocation("客户现场");
+        request.setPersonDay(decimal("0.3"));
+        request.setOffWorkTime(LocalTime.of(19, 0));
+        WorkLogResponse response = workLogService.create(1L, request);
+        assertEquals(response.getLocation(), sibling.getLocation());
+        assertEquals(response.getOffWorkTime(), sibling.getOffWorkTime());
+        assertEquals(response.getOvertimeHours(), sibling.getOvertimeHours());
+        assertEquals(decimal("0.2"), sibling.getPersonDay());
     }
 
     @Test
     void createShouldRejectWhenDailyPersonDayExceedsOne() {
         LocalDate logDate = LocalDate.of(2026, 4, 5);
-        when(workLogMapper.countByUserDateAndProject(1L, logDate, "GAK", null)).thenReturn(0L);
         when(workLogMapper.sumPersonDayByUserAndDate(1L, logDate, null)).thenReturn(decimal("0.6"));
         CreateWorkLogRequest request = buildBaseRequest(logDate);
         request.setPersonDay(decimal("0.5"));
@@ -612,8 +676,6 @@ class WorkLogServiceTest {
 
     @Test
     void createShouldAcceptOvertimeAsIndependentType() {
-        when(workLogMapper.countByUserDateAndProject(1L, LocalDate.of(2026, 4, 6), "GAK", null))
-                .thenReturn(0L);
         doAnswer(invocation -> {
             WorkLog workLog = invocation.getArgument(0);
             workLog.setId(1011L);

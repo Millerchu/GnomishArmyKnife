@@ -1,11 +1,14 @@
 package com.gak.worklog.dto;
 
+import java.math.BigDecimal;
+
 /**
  * 工作日志内容条目响应。
  */
 public class WorkLogItemResponse {
 
     private Long id;
+    private BigDecimal personDay;
     private String content;
     private String status;
     private String zentaoNo;
@@ -17,6 +20,14 @@ public class WorkLogItemResponse {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public BigDecimal getPersonDay() {
+        return personDay;
+    }
+
+    public void setPersonDay(BigDecimal personDay) {
+        this.personDay = personDay;
     }
 
     public String getContent() {

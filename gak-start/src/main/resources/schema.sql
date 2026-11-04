@@ -2916,3 +2916,6 @@ VALUES (2021,'APP_GROWTH_RECORD','芽记','/growth-record','个人生活','REAL'
     'CONFIDENTIAL','NONE',TRUE,140,'管理宝宝档案、生长测量、接种记录和成长里程碑。',
     CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
 ON CONFLICT (app_code) DO NOTHING;
+
+-- 历史投入无法准确拆分，保留 NULL；新客户端提交每项人天并汇总到日志主表。
+ALTER TABLE gak_work_log_item ADD COLUMN IF NOT EXISTS person_day NUMERIC(4, 1);
