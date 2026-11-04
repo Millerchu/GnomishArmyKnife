@@ -13,12 +13,13 @@ import java.math.BigDecimal;
  */
 public class WorkLogItemRequest {
 
-    @NotBlank
-    @Size(max = 4000)
     @DecimalMin("0.0")
     @DecimalMax("1.0")
     @Digits(integer = 1, fraction = 1)
     private BigDecimal personDay;
+
+    @NotBlank
+    @Size(max = 4000)
     private String content;
 
     @Size(max = 16)
