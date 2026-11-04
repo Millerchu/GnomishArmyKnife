@@ -4,7 +4,7 @@
 
 | 文档 | 定位 |
 | --- | --- |
-| [用户看板需求记录](user-board-requirements.md) | 各应用需求 / Bug 的原始内容、后端分析和验收记录；当前仅建立模板，内容同步方式待定 |
+| [用户看板需求记录](user-board-requirements.md) | 各应用需求 / Bug 的原始内容、后端分析和验收记录；已整理 2026-11-04 全部 39 条，长期同步方式待定 |
 | [NAS 部署](../deploy/nas/README.md) | 镜像、Compose、升级、备份 |
 | [站内消息](../gak-modules/gak-message/README.md) | 消息、事务、SSE 和专项测试 |
 | [行程备份](../gak-modules/gak-data-migration/docs/travel-record-backup.md) | 行程、关联账单与附件恢复 |
