@@ -4,6 +4,10 @@ set -euo pipefail
 ########################
 # Base Config
 ########################
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --check ) ]]; then
+  echo "Usage: $0 [--check]" >&2
+  exit 1
+fi
 NAS_USER="${NAS_USER:-millerchu}"
 NAS_HOST="${NAS_HOST:-greennas}"
 
@@ -28,21 +32,13 @@ BACKEND_ROOT="$(cd "${DEPLOY_DIR}/../.." && pwd)"
 WORKSPACE_ROOT="$(cd "${BACKEND_ROOT}/.." && pwd)"
 FRONTEND_ROOT="${FRONTEND_ROOT:-${WORKSPACE_ROOT}/GnomishArmyKnife-Web}"
 
-resolve_remote_docker_cmd() {
-  if [[ -n "${REMOTE_DOCKER_CMD}" ]]; then
-    return
-  fi
+SSH_TARGET="${NAS_USER}@${NAS_HOST}"
+source "${SCRIPT_DIR}/deploy-common.sh"
+configure_deploy_connection
 
-  echo "[0/7] Detect remote docker command ..."
-  if ssh -p "${SSH_PORT}" "${NAS_USER}@${NAS_HOST}" "docker version >/dev/null 2>&1"; then
-    REMOTE_DOCKER_CMD="docker"
-  else
-    REMOTE_DOCKER_CMD="sudo docker"
-    echo "Remote docker requires elevated permission; sudo password may be requested on NAS."
-  fi
-}
-
-resolve_remote_docker_cmd
+check_remote_deployment
+check_local_build
+if [[ "${1:-}" == --check ]]; then exit 0; fi
 
 ########################
 # Banner
@@ -98,9 +94,9 @@ tar --no-xattrs -C "${DEPLOY_DIR}" -zcf "${BUNDLE_TGZ}" docker-compose.yml .env.
 # 4. Upload
 ########################
 echo "[4/7] Upload package to NAS..."
-ssh -p "${SSH_PORT}" "${NAS_USER}@${NAS_HOST}" "mkdir -p '${NAS_SSH_DIR}'"
-scp -P "${SSH_PORT}" "${IMAGE_TAR}" "${NAS_USER}@${NAS_HOST}:${NAS_SCP_DIR}/"
-scp -P "${SSH_PORT}" "${BUNDLE_TGZ}" "${NAS_USER}@${NAS_HOST}:${NAS_SCP_DIR}/"
+ssh "${SSH_OPTIONS[@]}" -p "${SSH_PORT}" "${NAS_USER}@${NAS_HOST}" "mkdir -p '${NAS_SSH_DIR}'"
+scp "${SSH_OPTIONS[@]}" -P "${SSH_PORT}" "${IMAGE_TAR}" "${NAS_USER}@${NAS_HOST}:${NAS_SCP_DIR}/"
+scp "${SSH_OPTIONS[@]}" -P "${SSH_PORT}" "${BUNDLE_TGZ}" "${NAS_USER}@${NAS_HOST}:${NAS_SCP_DIR}/"
 
 ########################
 # 5. Generate remote deploy script
@@ -133,6 +129,13 @@ fi
 
 chmod +x scripts/*.sh
 
+# Keep subsequent Compose runs on the version built by this deployment.
+if grep -q '^IMAGE_TAG=' .env; then
+  sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=${IMAGE_TAG}/' .env
+else
+  printf '\nIMAGE_TAG=%s\n' '${IMAGE_TAG}' >> .env
+fi
+
 echo "Start services..."
 DOCKER_CMD="${REMOTE_DOCKER_CMD}" ./scripts/up.sh
 
@@ -148,10 +151,10 @@ chmod +x "${REMOTE_SCRIPT}"
 # 6. Execute remote deploy
 ########################
 echo "[5/7] Upload remote deploy script..."
-scp -P "${SSH_PORT}" "${REMOTE_SCRIPT}" "${NAS_USER}@${NAS_HOST}:${NAS_SCP_DIR}/"
+scp "${SSH_OPTIONS[@]}" -P "${SSH_PORT}" "${REMOTE_SCRIPT}" "${NAS_USER}@${NAS_HOST}:${NAS_SCP_DIR}/"
 
 echo "[6/7] Execute deploy on NAS..."
-ssh -tt -p "${SSH_PORT}" "${NAS_USER}@${NAS_HOST}" "cd '${NAS_SSH_DIR}' && chmod +x '${REMOTE_SCRIPT}' && ./'${REMOTE_SCRIPT}' && rm -f '${REMOTE_SCRIPT}'"
+ssh "${SSH_OPTIONS[@]}" -T -p "${SSH_PORT}" "${NAS_USER}@${NAS_HOST}" "cd '${NAS_SSH_DIR}' && chmod +x '${REMOTE_SCRIPT}' && ./'${REMOTE_SCRIPT}' && rm -f '${REMOTE_SCRIPT}'"
 
 ########################
 # 7. Clean local temp files

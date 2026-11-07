@@ -31,22 +31,13 @@ IMAGE_TAG="${IMAGE_TAG:-1.0.0}"
 TARGET_PLATFORM="${TARGET_PLATFORM:-linux/amd64}"
 REMOTE_DOCKER_CMD="${REMOTE_DOCKER_CMD:-}"
 
-resolve_remote_docker_cmd() {
-  if [[ -n "${REMOTE_DOCKER_CMD}" ]]; then
-    return
-  fi
-
-  echo "[0/6] Detect remote docker command ..."
-  if ssh -p "${SSH_PORT}" "${NAS_HOST}" "docker version >/dev/null 2>&1"; then
-    REMOTE_DOCKER_CMD="docker"
-  else
-    REMOTE_DOCKER_CMD="sudo docker"
-    echo "Remote docker requires elevated permission; sudo password may be requested on NAS."
-  fi
-}
+SSH_TARGET="${NAS_HOST}"
+source "${SCRIPT_DIR}/deploy-common.sh"
+configure_deploy_connection
 
 mkdir -p "${DIST_DIR}"
-resolve_remote_docker_cmd
+check_remote_deployment
+check_local_build
 
 echo ""
 echo "======================================"
@@ -87,12 +78,12 @@ echo "[3/6] Pack deploy files ..."
 tar --no-xattrs -C "${DEPLOY_DIR}" -czf "${DIST_DIR}/deploy-nas.tar.gz" docker-compose.yml .env.example scripts
 
 echo "[4/6] Upload to NAS ..."
-ssh -p "${SSH_PORT}" "${NAS_HOST}" "mkdir -p '${NAS_SSH_DIR}'"
-scp -P "${SSH_PORT}" "${DIST_DIR}/gak-images-${IMAGE_TAG}.tar" "${NAS_HOST}:${NAS_SCP_DIR}/"
-scp -P "${SSH_PORT}" "${DIST_DIR}/deploy-nas.tar.gz" "${NAS_HOST}:${NAS_SCP_DIR}/"
+ssh "${SSH_OPTIONS[@]}" -p "${SSH_PORT}" "${NAS_HOST}" "mkdir -p '${NAS_SSH_DIR}'"
+scp "${SSH_OPTIONS[@]}" -P "${SSH_PORT}" "${DIST_DIR}/gak-images-${IMAGE_TAG}.tar" "${NAS_HOST}:${NAS_SCP_DIR}/"
+scp "${SSH_OPTIONS[@]}" -P "${SSH_PORT}" "${DIST_DIR}/deploy-nas.tar.gz" "${NAS_HOST}:${NAS_SCP_DIR}/"
 
 echo "[5/6] Load image and extract files on NAS ..."
-ssh -tt -p "${SSH_PORT}" "${NAS_HOST}" "cd '${NAS_SSH_DIR}' && ${REMOTE_DOCKER_CMD} load -i 'gak-images-${IMAGE_TAG}.tar' && tar -xzf deploy-nas.tar.gz && chmod +x scripts/*.sh"
+ssh "${SSH_OPTIONS[@]}" -T -p "${SSH_PORT}" "${NAS_HOST}" "cd '${NAS_SSH_DIR}' && ${REMOTE_DOCKER_CMD} load -i 'gak-images-${IMAGE_TAG}.tar' && tar -xzf deploy-nas.tar.gz && chmod +x scripts/*.sh"
 
 echo "[6/6] Done. On NAS run:"
 echo "cd ${NAS_SSH_DIR}"

@@ -86,10 +86,10 @@ cd /Users/millerchu/workspace/gak/GnomishArmyKnife
 ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
 ```
 
-脚本会自动探测远端 Docker 权限：普通 `docker` 可用时直接使用；如果 SSH 用户不在 NAS 的 `docker` 用户组里，会自动改用 `sudo docker`，并在远端执行时提示输入 NAS 用户密码。也可以手动指定：
+脚本使用 SSH BatchMode，所有 SSH/SCP 调用都不弹出密码提示。远端优先使用 `docker`，否则仅尝试 `sudo -n docker`；无免交互权限时在构建前失败。可用 `SSH_IDENTITY_FILE`、`SSH_KNOWN_HOSTS_FILE` 指定本机私钥和已核验的主机指纹文件，也可手动指定 Docker 命令：
 
 ```bash
-REMOTE_DOCKER_CMD="sudo docker" ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
+REMOTE_DOCKER_CMD="sudo -n docker" ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
 ```
 
 参数含义：
@@ -258,12 +258,26 @@ cd /Users/millerchu/workspace/gak/GnomishArmyKnife
 
 这个脚本会使用当前绿联 NAS 的默认配置：
 
-- `REMOTE_DOCKER_CMD="sudo docker"`
+- `REMOTE_DOCKER_CMD="docker"`（当前账号已加入 NAS 的 docker 组）
 - `NAS_USER=millerchu`
 - `NAS_HOST=greennas`
 - `NAS_SCP_DIR=/Projects/GAK-App`
 - `NAS_SSH_DIR=/volume1/Projects/GAK-App`
 - `SSH_PORT=22`
+
+当前 Mac 的一键入口默认使用 `~/.ssh/id_ed25519_gak_nas` 专用私钥，以及工作区 `.local/nas_known_hosts` 中已核验的 NAS 指纹；可通过 `SSH_IDENTITY_FILE`、`SSH_KNOWN_HOSTS_FILE` 覆盖。密钥和主机指纹文件保留在本机，不提交仓库。
+
+先运行只读预检查（不构建、不上传、不重启）：
+
+```bash
+bash deploy-greennas.sh --check
+```
+
+预检查要求 NAS 密钥登录、Docker 和 Compose 可用；本机 Docker 引擎已启动，并安装 Node.js/npm。脚本可自动找到这台 Mac 的 Docker Desktop CLI 和 Homebrew Node 22，但不会自动启动 Docker Desktop。检查成功后执行 `bash deploy-greennas.sh` 进行完整前后端升级；该入口会重新构建并重启服务，并非只更新前端。
+
+私钥或主机指纹缺失、权限不足或引擎未启动时，脚本直接报错退出。首次连接或 NAS 更换后的指纹须在部署前核验，脚本不会自动接受未知主机。
+
+完整部署会备份已有 `.env`，并把本次 `IMAGE_TAG` 写入 `.env` 后启动，保证 Compose 使用本次构建的版本。数据库等其他环境配置保留。
 
 如需临时覆盖镜像版本或 NAS 参数，可以在命令前加环境变量：
 
@@ -398,7 +412,7 @@ permission denied while trying to connect to the Docker daemon socket
 短期处理方式是在命令前加 `sudo`：
 
 ```bash
-REMOTE_DOCKER_CMD="sudo docker" ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
+REMOTE_DOCKER_CMD="sudo -n docker" ./deploy/nas/scripts/package-and-upload.sh admin@NAS_IP /Projects/GAK-App /volume1/Projects/GAK-App 22
 DOCKER_CMD="sudo docker" ./scripts/up.sh
 ```
 
