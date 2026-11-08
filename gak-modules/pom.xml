@@ -36,6 +36,7 @@
         <module>gak-knowledge-base</module>
         <module>gak-instrument-practice</module>
         <module>gak-requirement-board</module>
+        <module>gak-system-log</module>
     </modules>
 
 </project>

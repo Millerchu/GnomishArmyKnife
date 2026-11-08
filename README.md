@@ -5,7 +5,7 @@
 ## 文档入口
 
 - [用户看板需求记录](docs/user-board-requirements.md)：供 AI 编程查阅；已整理 2026-11-04 NAS 看板全部 39 条需求 / Bug、进度及开发分析，长期同步方式待定。
-- [架构与模块](docs/architecture.md)：18 个业务模块、接口入口、认证、附件和消息边界。
+- [架构与模块](docs/architecture.md)：19 个业务模块、接口入口、认证、附件和消息边界。
 - [开发与配置](docs/development.md)：环境、启动、数据库与测试。
 - [文档索引](docs/README.md)：现行说明与历史资料。
 - [NAS 部署](deploy/nas/README.md)、[站内消息](gak-modules/gak-message/README.md)、[行程备份](gak-modules/gak-data-migration/docs/travel-record-backup.md)。
@@ -21,7 +21,7 @@
 | `gak-start` | 入口、配置、schema.sql、可执行 JAR |
 | `gak-framework` | 响应、异常、Long 序列化、字典和消息契约 |
 | `gak-common` | 预留公共模块，当前没有 src 实现目录 |
-| `gak-modules` | 18 个业务模块 |
+| `gak-modules` | 19 个业务模块 |
 
 ## 快速启动
 

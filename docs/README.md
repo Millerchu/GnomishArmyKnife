@@ -9,6 +9,7 @@
 | [站内消息](../gak-modules/gak-message/README.md) | 消息、事务、SSE 和专项测试 |
 | [行程备份](../gak-modules/gak-data-migration/docs/travel-record-backup.md) | 行程、关联账单与附件恢复 |
 | sql/ | 增量 SQL，执行前核对目标库与适用范围 |
+| [系统日志后端契约](frontend/system-log-backend-contract.md) | 未处理异常的查询契约、权限和采集边界；示例为合成数据 |
 | frontend/、change-password-frontend-prompt.md | 历史跨端需求/提示词 |
 | superpowers/specs/、superpowers/plans/ | 历史设计与实施计划 |
 | ../doc/ | 早期专项设计、赛季资料，按日期阅读 |

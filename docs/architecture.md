@@ -4,7 +4,7 @@
 
 ## 运行结构
 
-`gak-start` 直接依赖全部 18 个业务模块，入口为 `com.gak.gakstart.GnomishArmyKnifeApplication`，在一个 Spring Boot 进程内共享 PostgreSQL 和本地存储。当前不是独立部署的微服务。
+`gak-start` 直接依赖全部 19 个业务模块，入口为 `com.gak.gakstart.GnomishArmyKnifeApplication`，在一个 Spring Boot 进程内共享 PostgreSQL 和本地存储。当前不是独立部署的微服务。
 
 典型链路为 Controller → Service → Mapper → PostgreSQL。Controller 接收参数和当前用户，Service 处理业务规则、权限及事务；DTO/VO 表达入参与出参，Domain 映射持久化字段。具体事务范围以服务方法为准。
 
@@ -34,8 +34,11 @@
 | `gak-knowledge-base` | 经验条目、审核、公开精选 | `/knowledge-base` |
 | `gak-instrument-practice` | 演奏作品存储 | `/instrument-practice/takes` |
 | `gak-requirement-board` | 桌面需求看板与进度 | `/requirement-items` |
+| `gak-system-log` | 未处理异常的脱敏记录与管理员查询 | `/system/logs` |
 
 计算器、星空交互没有对应独立业务模块。软件仓库已有前端与 `/software-packages` 请求封装，但当前后端没有对应 Controller，不能记为已完成的前后端闭环。
+
+`gak-system-log` 只持久化未处理异常，不记录访问日志。查询契约、权限和采集边界见 [系统日志后端契约](frontend/system-log-backend-contract.md)。当前版本不按保留天数删除历史。
 
 ## 接口与认证
 

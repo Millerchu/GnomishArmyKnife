@@ -26,6 +26,9 @@
 | `GAK_HEALTH_FILE_LOCAL_DIR` | 默认 ./data/health-records |
 | `GAK_FUEL_PRICE_JUHE_API_KEY` | 在线油价接口凭据 |
 | `GAK_FUEL_PRICE_CACHE_MINUTES` | 油价缓存，默认 30 分钟 |
+| `GAK_SYSTEM_LOG_MAX_ROWS` | 系统异常日志入库上限，默认 20000；达到后停止新写入，不删除历史 |
+| `GAK_SYSTEM_LOG_RETENTION_DAYS` | 团队暂定保留天数，默认 30；按天清理未实现，不执行删除 |
+| `TZ` 或 `-Duser.timezone` | 系统异常日志的 `occurredAt` 取 JVM 默认时区。按上海时间查询时，进程需要 `Asia/Shanghai`。仓库不设置该值 |
 
 上传配置当前为单文件/单请求各 200MB，还需考虑代理和业务限制。图标、归档、健康文件公开路径前缀默认带 `/api`，网关路径改变时核对相应 `GAK_*_PUBLIC_URL_PREFIX`。
 
