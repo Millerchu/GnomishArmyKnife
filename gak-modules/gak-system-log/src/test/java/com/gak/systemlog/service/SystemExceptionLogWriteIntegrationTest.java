@@ -43,6 +43,8 @@ import org.springframework.web.servlet.HandlerMapping;
 @EnabledIfSystemProperty(named = "gak.system-log.write-it", matches = "true")
 class SystemExceptionLogWriteIntegrationTest {
 
+    private String responseTraceId;
+
     private static final String APPLICATION_ROLE = "sl_test_application";
     private static final String SYNTHETIC_MESSAGE = "synthetic-exception-message";
     private static final String SYNTHETIC_CAUSE = "synthetic-cause-message";
@@ -142,7 +144,10 @@ class SystemExceptionLogWriteIntegrationTest {
                 assertNotNull(response.getBody());
                 assertEquals("500", response.getBody().code());
                 assertEquals("服务器内部错误", response.getBody().message());
-                assertFalse(response.getHeaders().containsKey("X-Trace-Id"));
+                responseTraceId = response.getHeaders().getFirst("X-Trace-Id");
+                assertNotNull(responseTraceId);
+                assertTrue(responseTraceId.matches("[0-9a-f]{32}"));
+                assertNotEquals("caller-supplied-trace", responseTraceId);
                 status.setRollbackOnly();
             });
         } finally {
@@ -187,11 +192,14 @@ class SystemExceptionLogWriteIntegrationTest {
         assertEquals("GET", stored.get("http_method"));
         assertEquals(REQUEST_TEMPLATE, stored.get("request_path"));
         assertTrue(((String) stored.get("trace_id")).matches("[0-9a-f]{32}"));
+        assertEquals(responseTraceId, stored.get("trace_id"));
+        assertNotEquals("caller-supplied-trace", stored.get("trace_id"));
+        assertFalse(stored.get("summary").toString().contains("caller-supplied-trace"));
     }
 
     @Configuration(proxyBeanMethods = false)
     @EnableTransactionManagement(proxyTargetClass = true)
-    @Import({GlobalExceptionHandler.class, PersistentSystemExceptionCapture.class, SystemExceptionLogWriter.class})
+    @Import({com.gak.systemlog.config.SystemLogClockConfiguration.class, GlobalExceptionHandler.class, PersistentSystemExceptionCapture.class, SystemExceptionLogWriter.class})
     static class CaptureConfiguration {
 
         @Bean

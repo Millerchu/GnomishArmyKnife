@@ -131,9 +131,11 @@
 }
 ```
 
-失败的业务接口本身仍返回原来的错误 JSON，不增加 `traceId` 字段，也不设置 `X-Trace-Id` 响应头。追踪编号只出现在系统日志里，由服务端生成 32 位小写十六进制，不使用调用方传入的值。因此失败请求目前无法靠响应关联到日志。响应头方案留待后续，这次不实现。
+失败的业务接口仍返回原来的错误 JSON，不增加 `traceId` 字段。仅在实际进入系统异常采集的失败响应上返回 `X-Trace-Id`（未处理异常及 HTTP status >= 500 的 `ResponseStatusException` 等）；编号由服务端生成，为 32 位小写十六进制，不读取或采信请求头。业务/校验类 4xx、成功响应和跳过采集的错误不加该头。SSE 等响应已提交时无法补头，沿用现有处理行为。异步/定时任务只在表中保留编号。
 
-`occurredAt`、`occurredFrom`、`occurredTo` 都是没有偏移的本地时间，格式 `yyyy-MM-dd'T'HH:mm:ss`。业务上按 Asia/Shanghai 的墙上时间理解和填写。实现使用 `LocalDateTime.now()`，取的是进程 JVM 的默认时区，仓库和 `application.properties` 都没有把时区设成 Asia/Shanghai。数据库列是 `TIMESTAMP WITHOUT TIME ZONE`，查询按字面比较，不会按会话时区再换算。要让入库数字和上海时间一致，启动后端进程时需要外部配置 `TZ=Asia/Shanghai` 或 `-Duser.timezone=Asia/Shanghai`。本云端 VM 实测为 UTC，且 `TZ` 未设置；本任务没有改共享云电脑的时区，不能把它当成已经配好。
+**有头不保证当时已入库或最终写入成功**：写入失败、队列满或等待超时仍交回已生成编号；可在日志页按 `traceId` 精确查询。
+
+`occurredAt`、`occurredFrom`、`occurredTo` 都是没有偏移的本地时间，格式 `yyyy-MM-dd'T'HH:mm:ss`，按 Asia/Shanghai 墙上时间理解和填写。`occurredAt` / `createdAt` 写入与清理共用显式 `Clock.system(ZoneId.of("Asia/Shanghai"))` Bean，不再依赖 JVM 默认时区。数据库列为 `TIMESTAMP WITHOUT TIME ZONE`，查询按字面比较，不按会话时区换算。
 
 ## 采集与脱敏
 
@@ -151,8 +153,16 @@
 
 写入放在单独线程上，调用方用 `Future.get` 最多等待 2 秒。超时只停止等待，不取消已提交或正在执行的任务，所以不保证数据库写入在两秒内结束；超时之后记录仍可能入库，数据库锁也可能继续等待。队列最多 32 条，写满时新记录直接放弃。原请求仍按原来的错误返回。达到 `GAK_SYSTEM_LOG_MAX_ROWS`（默认 20000）后停止新写入，不删除旧记录。
 
-`SystemExceptionLogWriter.insert` 上标了 `@Transactional(propagation = REQUIRES_NEW, timeout = 2)`，意图是不和业务事务同一次提交，并给出 2 秒事务超时。这只在 Spring 代理调用时生效。现有测试通过 `new` 和 mock 调用写入器，不能证明独立事务、回滚隔离或锁等待。真实 PostgreSQL 事务和锁等待验证交给 Vera，本次没有执行。
+`SystemExceptionLogWriter.insert` 上标了 `@Transactional(propagation = REQUIRES_NEW, timeout = 2)`，意图是不和业务事务同一次提交，并给出 2 秒事务超时。这只在 Spring 代理调用时生效。直接 `new` 和 mock 的单测不能证明独立事务、回滚隔离或锁等待。临时 PG16 写入/清理集成测试通过显式系统属性开启，执行结果见 [本轮验证记录](../verification/sl-tr-be1.md)。
 
-## 保留期限（未实现）
+## 保留期限
 
-`GAK_SYSTEM_LOG_RETENTION_DAYS` 默认 30，只保存团队暂定假设。按天数清理历史日志 **未实现**。当前没有清理任务，达到条数上限时也不删除旧记录。本次不增加自动删除。
+`GAK_SYSTEM_LOG_RETENTION_DAYS` 默认 30，开启清理时必须 >=30。清理默认关闭：需表属主或超级用户按 [清理函数脚本](../sql/20261111-system-exception-log-retention.sql) 创建函数并授权 EXECUTE，再显式设置 `GAK_SYSTEM_LOG_CLEANUP_ENABLED=true`。应用角色保持 SELECT/INSERT，无表级 DELETE/UPDATE。函数和授权不进入启动 `schema.sql`。
+
+SECURITY DEFINER 清理函数固定 `search_path = pg_catalog, pg_temp`，不搜索可能被有 CREATE 权限的角色写入的 public；pg_temp 显式放最后，防止临时 schema 抢先解析。表引用限定为 `public.gak_system_exception_log`，时钟函数使用 `pg_catalog.now()`。
+
+安装默认模式 A 由表属主持有函数；推荐增加 `-v cleanup_owner=gak_log_cleaner` 使用模式 B，由独立非超级用户 NOLOGIN 角色持有函数，仅授予 public USAGE 和日志表 SELECT/DELETE。两种模式都固化安装时的表属主角色 OID；函数第一条语句锁表后核验普通表、固定属主、无触发器（包括外键内部 RI）、规则、RLS/强制 RLS 和继承子表；A 另要求表属主与 definer 相同，失败报 `42501`。这是为了防止数据库 owner 经 `pg_database_owner` 删除 public 内的表并挂触发器提权；日志表也不允许被外键引用。
+
+安装者必须是表属主或超级用户；B 还需角色创建/授权/函数属主转移权限。应用角色不能是表属主、cleanup_owner 或它们的成员；cleanup_owner 不能是表属主且不得有超级用户、登录、BYPASSRLS、CREATEROLE、CREATEDB 属性。同签名函数属主异常时拒绝替换，前置检查失败非零退出并回滚。A -> B 与同模式重跑幂等；B -> A 先显式恢复函数 OWNER 为表属主。执行后核查函数属主、prosecdef、proconfig、EXECUTE 授权、cleanup_owner 仅 SELECT/DELETE + USAGE 和应用无表级 DELETE。两种命令、详细快照要求和 DROP FUNCTION / B 另 REVOKE 与 DROP ROLE 的回滚步骤见脚本头部及 [模块说明](../../gak-modules/gak-system-log/README.md)。守卫拒绝仅记 WARN、不外抛、不采集，前端无需区分数据库消息。
+
+开启后默认每天 04:10 Asia/Shanghai，按 `occurred_at < 上海当前时间 - retention-days` 分批清理，等于 cutoff 的行保留；函数再强制至少保留 30 天。每批 500、每轮最多 40 批、批间 100ms，可配置。每批独立事务，删除语句的锁等待固定 2s，由函数 SET lock_timeout 控制；外层事务的 statement-timeout 默认 10s，可配置。未获 advisory 锁则跳过；函数缺失、无权限、锁/语句超时等只记应用日志，不递归采集或影响业务。达到行数上限仍停止新写入，时间清理释放容量后可恢复；30 天内行不会因容量上限被删。

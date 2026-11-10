@@ -63,6 +63,18 @@ public final class TemporaryPostgres16 implements AutoCloseable {
         return "jdbc:postgresql://127.0.0.1:" + port + "/postgres?connectTimeout=3&socketTimeout=5";
     }
 
+    /** 用真实 psql 安装脚本，保证 psql 变量、事务和前置检查均参与 JDBC 集成验证。 */
+    public void executeScript(Path script, String... variables) throws Exception {
+        List<String> arguments = new ArrayList<>(List.of("-X", "-h", "127.0.0.1", "-p",
+                Integer.toString(port), "-U", OWNER_ROLE, "-d", "postgres", "-v", "ON_ERROR_STOP=1"));
+        for (String variable : variables) {
+            arguments.add("-v");
+            arguments.add(variable);
+        }
+        arguments.addAll(List.of("-f", script.toAbsolutePath().toString()));
+        command("psql", arguments.toArray(String[]::new));
+    }
+
     private static int availablePort() throws IOException {
         int candidate;
         do {

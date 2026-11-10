@@ -95,8 +95,12 @@ public class SystemExceptionSanitizer {
     private boolean appendLine(StringBuilder builder, String line) {
         String cleaned = stripControls(line);
         int extra = builder.length() == 0 ? cleaned.length() : cleaned.length() + 1;
-        int markerRoom = TRUNCATION_MARKER.length() + 1;
-        if (builder.length() + extra + markerRoom > STACK_MAX) {
+        if (builder.length() + extra > STACK_MAX) {
+            if (builder.isEmpty()) {
+                // 首行本身超长时没有完整行可保留，留出换行和标记并避开代理对中间。
+                int retained = STACK_MAX - TRUNCATION_MARKER.length() - 1;
+                builder.append(cleaned, 0, safeEnd(cleaned, retained));
+            }
             return false;
         }
         if (builder.length() > 0) {
@@ -107,10 +111,25 @@ public class SystemExceptionSanitizer {
     }
 
     private void appendMarker(StringBuilder builder) {
+        // 只在确实截断时预留标记空间，恰好 4000 字符的完整堆栈不应误报截断。
+        int retained = STACK_MAX - TRUNCATION_MARKER.length() - 1;
+        if (builder.length() > retained) {
+            // 标记挤占最后一行时整行舍弃；仅首行都放不下时才截短该行。
+            int lineEnd = builder.lastIndexOf("\n", retained);
+            builder.setLength(lineEnd >= 0 ? lineEnd : safeEnd(builder, retained));
+        }
         if (builder.length() > 0) {
             builder.append('\n');
         }
         builder.append(TRUNCATION_MARKER);
+    }
+
+    private int safeEnd(CharSequence text, int end) {
+        if (end > 0 && end < text.length()
+                && Character.isHighSurrogate(text.charAt(end - 1)) && Character.isLowSurrogate(text.charAt(end))) {
+            return end - 1;
+        }
+        return end;
     }
 
     private String location(Throwable exception) {

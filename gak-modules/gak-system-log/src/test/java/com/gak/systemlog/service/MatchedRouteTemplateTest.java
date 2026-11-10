@@ -26,6 +26,14 @@ class MatchedRouteTemplateTest {
     }
 
     @Test
+    void rejectsOverlongTemplateBeforeSanitizer() {
+        String exact = "/" + "a".repeat(254);
+        assertEquals(exact, read(exact, exact, Map.of()));
+        String overlong = exact + "a";
+        assertNull(read(overlong, overlong, Map.of()));
+    }
+
+    @Test
     void dropsUnresolvedOrConcretePaths() {
         MockHttpServletRequest bare = org.mockito.Mockito.spy(new MockHttpServletRequest("GET", "/reset/ab"));
         assertNull(MatchedRouteTemplate.read(bare));

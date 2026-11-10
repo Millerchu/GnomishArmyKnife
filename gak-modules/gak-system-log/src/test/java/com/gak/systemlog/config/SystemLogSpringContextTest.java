@@ -35,6 +35,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 class SystemLogSpringContextTest {
 
     @Autowired
+    private org.springframework.context.ApplicationContext context;
+
+    @Autowired
     private SystemExceptionCapture capture;
 
     @Autowired
@@ -46,6 +49,11 @@ class SystemLogSpringContextTest {
     @Test
     void wiresCaptureAndTaskCustomizers() {
         assertNotNull(capture);
+        org.junit.jupiter.api.Assertions.assertTrue(context.getBeansOfType(
+                com.gak.systemlog.service.SystemExceptionLogRetentionJob.class).isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(context.getBeansOfType(
+                com.gak.systemlog.service.SystemExceptionLogPurger.class).isEmpty());
+        assertEqualsShanghaiClock();
         assertNotNull(systemExceptionTaskExecutorCustomizer);
         assertNotNull(systemExceptionTaskSchedulerCustomizer);
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -54,8 +62,15 @@ class SystemLogSpringContextTest {
         assertDoesNotThrow(() -> systemExceptionTaskSchedulerCustomizer.customize(scheduler));
     }
 
+    private void assertEqualsShanghaiClock() {
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.ZoneId.of("Asia/Shanghai"),
+                context.getBean("systemLogClock", java.time.Clock.class).getZone());
+    }
+
     @Configuration
     @Import({
+            SystemLogClockConfiguration.class,
+            SystemLogRetentionConfiguration.class,
             SystemExceptionTaskBoundaryConfiguration.class,
             PersistentSystemExceptionCapture.class,
             SystemExceptionLogWriter.class

@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 声明 REQUIRES_NEW，避免和业务事务绑在同一次提交里。timeout = 2 只是事务注解上的秒数。
  * 这两项只有经过 Spring 代理调用才生效；测试里直接 new 本类不会启动事务，也不能证明锁等待行为。
- * retentionDays 只校验并保留团队暂定值，本类不删除任何历史行。
+ * 本类只负责写入保护；按时间清理由独立任务执行。
  */
 @Service
 public class SystemExceptionLogWriter {
@@ -46,11 +46,13 @@ public class SystemExceptionLogWriter {
         long stored = existing == null ? 0L : existing;
         if (stored >= maxRows) {
             if (capacityWarned.compareAndSet(false, true)) {
-                LOG.warn("系统异常日志已达 {} 条上限，新的异常不再入库。retention-days={} 仅作暂定配置，不删除历史记录",
+                LOG.warn("系统异常日志已达 {} 条上限，新的异常不再入库。retention-days={}，恢复容量后可重新写入；清理是否启用取决于 cleanup.enabled",
                         maxRows, retentionDays);
             }
             return;
         }
-        mapper.insert(log);
+        if (mapper.insert(log) > 0) {
+            capacityWarned.set(false);
+        }
     }
 }

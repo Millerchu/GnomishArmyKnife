@@ -59,9 +59,12 @@ class SystemExceptionCaptureAndQueryTest {
         HttpServletRequest request = spyRequest();
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
-        capture.capture(secretFailure(), SystemExceptionCapture.SOURCE_HTTP);
+        String traceId = capture.capture(secretFailure(), SystemExceptionCapture.SOURCE_HTTP);
 
         SystemExceptionLog stored = captured(writer);
+        assertEquals(traceId, stored.getTraceId());
+        assertEquals(LocalDateTime.of(2026, 11, 11, 7, 30), stored.getOccurredAt());
+        assertEquals(stored.getOccurredAt(), stored.getCreatedAt());
         assertEquals("HTTP", stored.getSource());
         assertTrue(stored.getTraceId().matches("[0-9a-f]{32}"));
         assertEquals("GET", stored.getHttpMethod());
@@ -159,7 +162,7 @@ class SystemExceptionCaptureAndQueryTest {
         SystemExceptionLogWriter writer = mock(SystemExceptionLogWriter.class);
         capture = newCapture(writer);
         doThrow(new IllegalStateException("database unavailable")).when(writer).insert(any());
-        assertDoesNotThrow(() -> capture.capture(secretFailure(), SystemExceptionCapture.SOURCE_HTTP));
+        assertTrue(capture.capture(secretFailure(), SystemExceptionCapture.SOURCE_HTTP).matches("[0-9a-f]{32}"));
 
         AtomicInteger inserts = new AtomicInteger();
         doAnswer(invocation -> {
@@ -170,6 +173,23 @@ class SystemExceptionCaptureAndQueryTest {
         }).when(writer).insert(any());
         assertDoesNotThrow(() -> capture.capture(secretFailure(), SystemExceptionCapture.SOURCE_HTTP));
         assertEquals(1, inserts.get());
+    }
+
+    @Test
+    void timeoutStillReturnsTheAttemptedTraceId() throws Exception {
+        SystemExceptionLogWriter writer = mock(SystemExceptionLogWriter.class);
+        ExecutorService executor = mock(ExecutorService.class);
+        java.util.concurrent.Future<?> pending = mock(java.util.concurrent.Future.class);
+        org.mockito.Mockito.doReturn(pending).when(executor).submit(any(Runnable.class));
+        when(pending.get(2, TimeUnit.SECONDS)).thenThrow(new java.util.concurrent.TimeoutException());
+        capture = new PersistentSystemExceptionCapture(new SystemExceptionSanitizer(), writer, executor, fixedClock());
+        String traceId = capture.capture(secretFailure(), SystemExceptionCapture.SOURCE_HTTP);
+        assertTrue(traceId.matches("[0-9a-f]{32}"));
+        ArgumentCaptor<Runnable> submitted = ArgumentCaptor.forClass(Runnable.class);
+        verify(executor).submit(submitted.capture());
+        submitted.getValue().run();
+        assertEquals(traceId, captured(writer).getTraceId());
+        verify(pending, never()).cancel(org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -186,8 +206,13 @@ class SystemExceptionCaptureAndQueryTest {
 
         when(mapper.selectCount(any())).thenReturn(19L);
         SystemExceptionLog row = new SystemExceptionLog();
+        when(mapper.insert(row)).thenReturn(1);
         writer.insert(row);
         verify(mapper).insert(row);
+        assertFalse(((java.util.concurrent.atomic.AtomicBoolean) org.springframework.test.util.ReflectionTestUtils.getField(writer, "capacityWarned")).get());
+        when(mapper.selectCount(any())).thenReturn(20L);
+        writer.insert(new SystemExceptionLog());
+        assertTrue(((java.util.concurrent.atomic.AtomicBoolean) org.springframework.test.util.ReflectionTestUtils.getField(writer, "capacityWarned")).get());
     }
 
     @Test
@@ -245,8 +270,13 @@ class SystemExceptionCaptureAndQueryTest {
         assertFalse(detail.stackTrace().contains("memo-secret"));
     }
 
+    private java.time.Clock fixedClock() {
+        return java.time.Clock.fixed(java.time.Instant.parse("2026-11-10T23:30:00Z"),
+                java.time.ZoneId.of("Asia/Shanghai"));
+    }
+
     private PersistentSystemExceptionCapture newCapture(SystemExceptionLogWriter writer) {
-        return new PersistentSystemExceptionCapture(new SystemExceptionSanitizer(), writer, inlineExecutor());
+        return new PersistentSystemExceptionCapture(new SystemExceptionSanitizer(), writer, inlineExecutor(), fixedClock());
     }
 
     private SystemExceptionLog captured(SystemExceptionLogWriter writer) {

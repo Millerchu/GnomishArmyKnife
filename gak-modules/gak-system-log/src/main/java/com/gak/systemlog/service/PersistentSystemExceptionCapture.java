@@ -4,6 +4,7 @@ import com.gak.framework.exception.SystemExceptionCapture;
 import com.gak.systemlog.domain.SystemExceptionLog;
 import com.gak.systemlog.enums.SystemExceptionSource;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -35,6 +37,7 @@ public class PersistentSystemExceptionCapture implements SystemExceptionCapture 
     private final SystemExceptionSanitizer sanitizer;
     private final SystemExceptionLogWriter writer;
     private final ExecutorService writerExecutor;
+    private final Clock clock;
     private final ThreadLocal<Boolean> recording = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     /**
@@ -42,27 +45,31 @@ public class PersistentSystemExceptionCapture implements SystemExceptionCapture 
      * 未标注时会去找无参构造并在启动期失败。
      */
     @Autowired
-    public PersistentSystemExceptionCapture(SystemExceptionLogWriter writer) {
-        this(new SystemExceptionSanitizer(), writer, newWriterExecutor());
+    public PersistentSystemExceptionCapture(SystemExceptionLogWriter writer,
+            @Qualifier("systemLogClock") Clock clock) {
+        this(new SystemExceptionSanitizer(), writer, newWriterExecutor(), clock);
     }
 
     PersistentSystemExceptionCapture(SystemExceptionSanitizer sanitizer,
                                      SystemExceptionLogWriter writer,
-                                     ExecutorService writerExecutor) {
+                                     ExecutorService writerExecutor, Clock clock) {
         this.sanitizer = sanitizer;
         this.writer = writer;
         this.writerExecutor = writerExecutor;
+        this.clock = clock;
     }
 
     @Override
-    public void capture(Throwable exception, String source) {
+    public String capture(Throwable exception, String source) {
         if (exception == null || recording.get()) {
-            return;
+            return null;
         }
         if (!SystemExceptionSource.contains(source)) {
             LOG.warn("忽略未知系统异常来源，未入库");
-            return;
+            return null;
         }
+        // 在任何准备或写入动作前生成，写入失败、超时仍可向调用方交回编号。
+        String traceId = UUID.randomUUID().toString().replace("-", "");
         recording.set(Boolean.TRUE);
         try {
             String httpMethod = null;
@@ -75,12 +82,13 @@ public class PersistentSystemExceptionCapture implements SystemExceptionCapture 
                 }
             }
             SanitizedSystemException sanitized = sanitizer.sanitize(exception, httpMethod, requestPath);
-            persist(toLog(sanitized, source));
+            persist(toLog(sanitized, source, traceId));
         } catch (Throwable failure) {
             LOG.warn("系统异常日志准备失败，原异常继续按原路径返回。失败类型={}", failure.getClass().getName());
         } finally {
             recording.remove();
         }
+        return traceId;
     }
 
     /**
@@ -93,13 +101,13 @@ public class PersistentSystemExceptionCapture implements SystemExceptionCapture 
         return attributes.getRequest();
     }
 
-    private SystemExceptionLog toLog(SanitizedSystemException sanitized, String source) {
-        // 无偏移的本地时间，取 JVM 默认时区。应用没有把时区固定为 Asia/Shanghai。
-        LocalDateTime now = LocalDateTime.now();
+    private SystemExceptionLog toLog(SanitizedSystemException sanitized, String source, String traceId) {
+        // TIMESTAMP WITHOUT TIME ZONE 统一存上海墙上时间。
+        LocalDateTime now = LocalDateTime.now(clock);
         SystemExceptionLog log = new SystemExceptionLog();
         log.setOccurredAt(now);
         log.setCreatedAt(now);
-        log.setTraceId(UUID.randomUUID().toString().replace("-", ""));
+        log.setTraceId(traceId);
         log.setSource(source);
         log.setExceptionType(sanitized.exceptionType());
         log.setSummary(sanitized.summary());

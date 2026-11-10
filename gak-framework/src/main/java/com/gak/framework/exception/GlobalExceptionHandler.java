@@ -19,6 +19,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 /**
@@ -27,6 +29,8 @@ import org.springframework.web.servlet.NoHandlerFoundException;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final String TRACE_HEADER = "X-Trace-Id";
 
     private final ObjectProvider<SystemExceptionCapture> captures;
 
@@ -60,12 +64,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiResponse<Void>> handleResponseStatus(ResponseStatusException ex) {
         int status = ex.getStatusCode().value();
-        if (status >= HttpStatus.INTERNAL_SERVER_ERROR.value()) {
-            captureIfUnhandled(ex);
-        }
+        String traceId = status >= HttpStatus.INTERNAL_SERVER_ERROR.value() ? captureIfUnhandled(ex) : null;
         String message = ex.getReason() != null ? ex.getReason() : "请求处理失败";
-        return ResponseEntity
-                .status(ex.getStatusCode())
+        return withTrace(ResponseEntity.status(ex.getStatusCode()), traceId)
                 .body(ApiResponse.failure(String.valueOf(status), message));
     }
 
@@ -78,11 +79,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleOther(Exception ex) {
-        if (!isExpectedClientException(ex)) {
-            captureIfUnhandled(ex);
-        }
-        return ResponseEntity
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+        String traceId = !isExpectedClientException(ex) ? captureIfUnhandled(ex) : null;
+        return withTrace(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR), traceId)
                 .body(ApiResponse.failure(String.valueOf(HttpStatus.INTERNAL_SERVER_ERROR.value()), "服务器内部错误"));
     }
 
@@ -112,15 +110,28 @@ public class GlobalExceptionHandler {
         return "ClientAbortException".equals(name) || "AsyncRequestNotUsableException".equals(name);
     }
 
-    private void captureIfUnhandled(Throwable exception) {
+    /** SSE 等响应提交后无法再接头，只保留原处理行为。 */
+    private ResponseEntity.BodyBuilder withTrace(ResponseEntity.BodyBuilder response, String traceId) {
+        if (traceId == null) {
+            return response;
+        }
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && attributes.getResponse() != null && attributes.getResponse().isCommitted()) {
+            return response;
+        }
+        return response.header(TRACE_HEADER, traceId);
+    }
+
+    private String captureIfUnhandled(Throwable exception) {
         SystemExceptionCapture capture = captures.getIfAvailable();
         if (capture == null) {
-            return;
+            return null;
         }
         try {
-            capture.capture(exception, SystemExceptionCapture.SOURCE_HTTP);
+            return capture.capture(exception, SystemExceptionCapture.SOURCE_HTTP);
         } catch (Throwable ignored) {
             // 采集器若违反约定抛错，也不能替换已经决定的响应。
+            return null;
         }
     }
 }
