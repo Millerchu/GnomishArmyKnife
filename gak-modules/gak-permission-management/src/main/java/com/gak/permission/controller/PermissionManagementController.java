@@ -13,6 +13,7 @@ import com.gak.user.service.user.TokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/system/permissions")
 public class PermissionManagementController {
+
+    // 审计表 trace_id 列长为 64，避免请求头超长导致审计失败及权限事务回滚。
+    private static final int MAX_TRACE_ID_LENGTH = 64;
+    // 仅接受可见 ASCII 字符，排除空白、控制字符和非 ASCII 内容。
+    private static final Pattern TRACE_ID_PATTERN = Pattern.compile("[\\x21-\\x7E]+");
 
     private final PermissionManagementService permissionManagementService;
     private final TokenService tokenService;
@@ -85,7 +91,14 @@ public class PermissionManagementController {
 
     private String resolveTraceId(HttpServletRequest request) {
         String traceId = request.getHeader("X-Trace-Id");
-        return StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
+        if (StringUtils.hasText(traceId)) {
+            String trimmedTraceId = traceId.trim();
+            if (trimmedTraceId.length() <= MAX_TRACE_ID_LENGTH
+                    && TRACE_ID_PATTERN.matcher(trimmedTraceId).matches()) {
+                return trimmedTraceId;
+            }
+        }
+        return UUID.randomUUID().toString();
     }
 
     private String resolveClientIp(HttpServletRequest request) {
