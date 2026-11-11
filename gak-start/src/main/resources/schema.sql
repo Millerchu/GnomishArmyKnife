@@ -2973,3 +2973,22 @@ WHERE app.app_code = 'APP_SYSTEM_LOG'
       WHERE permission.user_id = admin_user.id
         AND permission.app_code = app.app_code
   );
+
+-- 用户偏好（工作台布局等）。可重复执行，不包含业务示例数据。
+-- 全新库初始化用；已有库请执行 docs/sql/20261111-user-preference*.sql
+CREATE TABLE IF NOT EXISTS gak_user_preference (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES gak_user (id) ON DELETE CASCADE,
+    pref_key VARCHAR(64) NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    version BIGINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT uk_user_preference_user_key UNIQUE (user_id, pref_key),
+    CONSTRAINT ck_user_preference_key CHECK (length(trim(pref_key)) > 0),
+    CONSTRAINT ck_user_preference_schema_version CHECK (schema_version >= 1),
+    CONSTRAINT ck_user_preference_version CHECK (version >= 1)
+);
+
+-- 唯一约束已建立 (user_id, pref_key) B-tree，也覆盖 user_id 前缀查询；不再建冗余索引。
