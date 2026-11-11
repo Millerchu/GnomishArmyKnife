@@ -110,7 +110,7 @@ public class PasswordMemoService {
     public PasswordMemoDetailVO create(Long currentUserId, SavePasswordMemoRequest request) {
         ensureCurrentUserExists(currentUserId);
 
-        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword().trim());
+        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword());
         LocalDateTime now = LocalDateTime.now();
 
         PasswordMemo passwordMemo = new PasswordMemo();
@@ -156,7 +156,7 @@ public class PasswordMemoService {
     public PasswordMemoDetailVO updatePassword(Long currentUserId, Long id, UpdateMemoPasswordRequest request) {
         ensureCurrentUserExists(currentUserId);
         PasswordMemo current = getOwnedMemoOrThrow(currentUserId, id);
-        String newPassword = request.getNewPassword().trim();
+        String newPassword = request.getNewPassword();
         String currentPassword = passwordMemoCryptoService.decrypt(
                 current.getPasswordCiphertext(), current.getPasswordNonce());
         if (currentPassword.equals(newPassword)) {
@@ -184,7 +184,7 @@ public class PasswordMemoService {
         ensureCurrentUserExists(currentUserId);
         PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, memoId);
         validateUsagePeriod(request.getUsageStartedAt(), request.getUsageEndedAt());
-        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword().trim());
+        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword());
 
         PasswordMemoHistory history = new PasswordMemoHistory();
         history.setMemoId(memoId);
@@ -210,8 +210,10 @@ public class PasswordMemoService {
         PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, memoId);
         PasswordMemoHistory history = getOwnedHistoryOrThrow(currentUserId, memoId, historyId);
         validateUsagePeriod(request.getUsageStartedAt(), request.getUsageEndedAt());
-        if (StringUtils.hasText(request.getPassword())) {
-            EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword().trim());
+        // 编辑历史记录时，未传密码或传空字符串仍表示仅调整使用周期。
+        String password = request.getPassword();
+        if (password != null && !password.isEmpty()) {
+            EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(password);
             history.setPasswordCiphertext(encryptedPayload.ciphertext());
             history.setPasswordNonce(encryptedPayload.nonce());
         }
@@ -372,6 +374,9 @@ public class PasswordMemoService {
     }
 
     private String maskFirstCharacter(String password) {
+        if (password.isEmpty()) {
+            return "未设置";
+        }
         if (!StringUtils.hasText(password)) {
             return MASKED_PASSWORD;
         }

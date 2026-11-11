@@ -3,6 +3,7 @@ package com.gak.passwordmemo.dto;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.util.StringUtils;
 
@@ -26,7 +27,7 @@ public class SavePasswordMemoRequest {
     @Size(max = 100, message = "username 长度不能超过 100")
     private String username;
 
-    @NotBlank(message = "password 不能为空")
+    @NotNull(message = "password 字段不能缺失或为 null")
     @Size(max = 128, message = "password 长度不能超过 128")
     private String password;
 

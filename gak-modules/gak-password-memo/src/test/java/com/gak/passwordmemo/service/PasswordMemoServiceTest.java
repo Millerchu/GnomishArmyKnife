@@ -16,6 +16,8 @@ import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -55,12 +57,13 @@ class PasswordMemoServiceTest {
     @InjectMocks
     private PasswordMemoService passwordMemoService;
 
-    @Test
-    void createShouldEncryptPasswordAndBindCurrentOwner() {
+    @ParameterizedTest
+    @ValueSource(strings = {"MemoPassword123", "", "   ", " password "})
+    void createShouldEncryptExactPasswordAndBindCurrentOwner(String password) {
         User user = new User();
         user.setId(1L);
         when(userMapper.selectById(1L)).thenReturn(user);
-        when(passwordMemoCryptoService.encrypt("MemoPassword123"))
+        when(passwordMemoCryptoService.encrypt(password))
                 .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("ciphertext", "nonce"));
         when(dataDictionaryUsageSupport.normalizeValueByUsage(
                 "APP_PASSWORD_MEMO", "PASSWORD_MEMO", "category", "工作", true))
@@ -75,7 +78,7 @@ class PasswordMemoServiceTest {
         request.setSiteName("GitHub");
         request.setSiteUrl("https://github.com");
         request.setUsername("octocat");
-        request.setPassword("MemoPassword123");
+        request.setPassword(password);
         request.setCategory("工作");
 
         PasswordMemoDetailVO result = passwordMemoService.create(1L, request);
@@ -138,8 +141,9 @@ class PasswordMemoServiceTest {
         assertEquals("LOGIN_PASSWORD_INVALID", exception.getCode());
     }
 
-    @Test
-    void updatePasswordShouldArchiveCurrentPasswordBeforeReplacingIt() {
+    @ParameterizedTest
+    @ValueSource(strings = {"new-password", "", "   "})
+    void updatePasswordShouldArchiveCurrentPasswordBeforeReplacingIt(String password) {
         User user = new User();
         user.setId(1L);
         when(userMapper.selectById(1L)).thenReturn(user);
@@ -152,11 +156,11 @@ class PasswordMemoServiceTest {
         memo.setPasswordStartedAt(java.time.LocalDateTime.of(2026, 1, 1, 8, 0));
         when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
         when(passwordMemoCryptoService.decrypt("old-ciphertext", "old-nonce")).thenReturn("old-password");
-        when(passwordMemoCryptoService.encrypt("new-password"))
+        when(passwordMemoCryptoService.encrypt(password))
                 .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("new-ciphertext", "new-nonce"));
 
         UpdateMemoPasswordRequest request = new UpdateMemoPasswordRequest();
-        request.setNewPassword("new-password");
+        request.setNewPassword(password);
         passwordMemoService.updatePassword(1L, 12L, request);
 
         ArgumentCaptor<PasswordMemoHistory> historyCaptor = ArgumentCaptor.forClass(PasswordMemoHistory.class);
@@ -168,8 +172,9 @@ class PasswordMemoServiceTest {
         verify(passwordMemoMapper).updateById(memo);
     }
 
-    @Test
-    void createPasswordHistoryShouldEncryptPasswordAndKeepCurrentPasswordUntouched() {
+    @ParameterizedTest
+    @ValueSource(strings = {"old-password", "", "   "})
+    void createPasswordHistoryShouldEncryptPasswordAndKeepCurrentPasswordUntouched(String password) {
         User user = new User();
         user.setId(1L);
         when(userMapper.selectById(1L)).thenReturn(user);
@@ -179,11 +184,11 @@ class PasswordMemoServiceTest {
         memo.setOwnerUserId(1L);
         memo.setPasswordCiphertext("current-ciphertext");
         when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
-        when(passwordMemoCryptoService.encrypt("old-password"))
+        when(passwordMemoCryptoService.encrypt(password))
                 .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("history-ciphertext", "history-nonce"));
 
         CreatePasswordHistoryRequest request = new CreatePasswordHistoryRequest();
-        request.setPassword("old-password");
+        request.setPassword(password);
         request.setUsageStartedAt(LocalDateTime.of(2025, 1, 1, 8, 0));
         request.setUsageEndedAt(LocalDateTime.of(2025, 6, 1, 8, 0));
         passwordMemoService.createPasswordHistory(1L, 12L, request);

@@ -1,6 +1,6 @@
 package com.gak.passwordmemo.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
  */
 public class UpdateMemoPasswordRequest {
 
-    @NotBlank(message = "newPassword 不能为空")
+    @NotNull(message = "newPassword 字段不能缺失或为 null")
     @Size(max = 128, message = "newPassword 长度不能超过 128")
     private String newPassword;
 
