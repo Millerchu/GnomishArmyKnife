@@ -129,6 +129,7 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency><groupId>com.gak</groupId><artifactId>gak-ai-subscription</artifactId><version>${project.version}</version></dependency>
     </dependencies>
 
     <build>

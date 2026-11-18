@@ -2992,3 +2992,113 @@ CREATE TABLE IF NOT EXISTS gak_user_preference (
 );
 
 -- 唯一约束已建立 (user_id, pref_key) B-tree，也覆盖 user_id 前缀查询；不再建冗余索引。
+
+-- 智订应用框架：重复执行保留已有应用配置及显式授权/撤权。
+INSERT INTO gak_system_app(id, app_code, app_name, route_path, category, data_source_mode,
+    icon_type, icon_text, icon_url, icon_storage_type, icon_file_name, security_level,
+    encryption_mode, enabled, sort_no, description, created_at, updated_at)
+VALUES (2023, 'APP_AI_SUBSCRIPTION', '智订', '/ai-subscriptions', '效率工具', 'REAL',
+    'URL', '智订', '/app-icons/app-ai-subscription.png', 'PUBLIC_ASSET', 'app-ai-subscription.png',
+    'CONFIDENTIAL', 'NONE', TRUE, 160, 'AI 订阅、用量与费用管理（应用框架，业务功能建设中）。',
+    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (app_code) DO NOTHING;
+INSERT INTO gak_user_app_permission (
+    id, user_id, app_id, app_code, granted, granted_by, granted_at, remark, created_at, updated_at)
+SELECT 400000000000000000 + app.id, admin_user.id, app.id, app.app_code,
+    TRUE, admin_user.id, CURRENT_TIMESTAMP, 'ai subscription framework init', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM gak_system_app app
+JOIN gak_user admin_user ON admin_user.username = 'admin'
+WHERE app.app_code = 'APP_AI_SUBSCRIPTION'
+  AND NOT EXISTS (
+    SELECT 1 FROM gak_user_app_permission permission
+    WHERE permission.user_id = admin_user.id AND permission.app_code = app.app_code
+  );
+
+-- 智订手动业务；先执行 framework 脚本，所有业务金额原币保存。
+CREATE TABLE IF NOT EXISTS gak_ai_account (
+ id BIGINT PRIMARY KEY, owner_user_id BIGINT NOT NULL REFERENCES gak_user(id),
+ tool_code VARCHAR(32) NOT NULL, alias VARCHAR(100) NOT NULL, note VARCHAR(1000),
+ password_memo_id BIGINT, archived BOOLEAN NOT NULL DEFAULT FALSE, recorded_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_account_owner ON gak_ai_account(owner_user_id, recorded_at DESC);
+CREATE TABLE IF NOT EXISTS gak_ai_subscription (
+ id BIGINT PRIMARY KEY, owner_user_id BIGINT NOT NULL REFERENCES gak_user(id), account_id BIGINT NOT NULL REFERENCES gak_ai_account(id),
+ plan_name VARCHAR(100) NOT NULL, start_date DATE NOT NULL, end_date DATE NOT NULL, next_billing_date DATE,
+ cycle_months INTEGER NOT NULL CHECK(cycle_months BETWEEN 0 AND 120), amount NUMERIC(18,6) NOT NULL CHECK(amount>=0), currency VARCHAR(3) NOT NULL,
+ auto_renew BOOLEAN NOT NULL, trial_end_date DATE, reminder_days INTEGER NOT NULL DEFAULT 3,
+ terminated BOOLEAN NOT NULL DEFAULT FALSE, recorded_at TIMESTAMP NOT NULL, CHECK(end_date>start_date)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_subscription_owner ON gak_ai_subscription(owner_user_id,next_billing_date,id);
+CREATE TABLE IF NOT EXISTS gak_ai_usage_record (
+ id BIGINT PRIMARY KEY, owner_user_id BIGINT NOT NULL REFERENCES gak_user(id), account_id BIGINT NOT NULL REFERENCES gak_ai_account(id),
+ kind VARCHAR(16) NOT NULL CHECK(kind IN ('PACKAGE','API')), mode VARCHAR(16) NOT NULL CHECK(mode IN ('INCREMENT','CUMULATIVE')),
+ period_key VARCHAR(200) NOT NULL, zone_id VARCHAR(64) NOT NULL, start_date DATE NOT NULL, end_date DATE NOT NULL,
+ metric VARCHAR(64) NOT NULL, unit VARCHAR(32) NOT NULL, dimension VARCHAR(128) NOT NULL DEFAULT '',
+ quantity NUMERIC(24,6) NOT NULL CHECK(quantity>=0), cost NUMERIC(18,6) CHECK(cost>=0), currency VARCHAR(3) NOT NULL,
+ resolution VARCHAR(16) NOT NULL DEFAULT 'NORMAL', source VARCHAR(16) NOT NULL, external_key VARCHAR(200), status VARCHAR(20) NOT NULL, reason VARCHAR(255), recorded_at TIMESTAMP NOT NULL,
+ CHECK(end_date>start_date)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_owner_period ON gak_ai_usage_record(owner_user_id,start_date,end_date,recorded_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_usage_official_key ON gak_ai_usage_record(owner_user_id,account_id,source,external_key) WHERE external_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS gak_ai_payment (
+ id BIGINT PRIMARY KEY, owner_user_id BIGINT NOT NULL REFERENCES gak_user(id), account_id BIGINT NOT NULL REFERENCES gak_ai_account(id),
+ subscription_id BIGINT REFERENCES gak_ai_subscription(id), type VARCHAR(20) NOT NULL CHECK(type IN ('SUBSCRIPTION','TOPUP','SETTLEMENT','REFUND')),
+ amount NUMERIC(18,6) NOT NULL CHECK(amount>0), currency VARCHAR(3) NOT NULL, payment_date DATE NOT NULL,
+ coverage_start DATE, coverage_end DATE, original_payment_id BIGINT REFERENCES gak_ai_payment(id),
+ request_key VARCHAR(64) NOT NULL, note VARCHAR(1000), recorded_at TIMESTAMP NOT NULL,
+ CHECK((coverage_start IS NULL AND coverage_end IS NULL) OR (coverage_start IS NOT NULL AND coverage_end>coverage_start)),
+ UNIQUE(owner_user_id,request_key)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_payment_owner_date ON gak_ai_payment(owner_user_id,payment_date DESC,id);
+CREATE INDEX IF NOT EXISTS idx_ai_payment_refund ON gak_ai_payment(original_payment_id) WHERE original_payment_id IS NOT NULL;
+-- 官方组织 API 同步。只在用户触发后执行任务，不后台主动创建每日任务。
+CREATE TABLE IF NOT EXISTS gak_ai_sync_connection (
+    account_id BIGINT PRIMARY KEY REFERENCES gak_ai_account(id),
+    owner_user_id BIGINT NOT NULL,
+    encrypted_key TEXT,
+    zone_id VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai',
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    version BIGINT NOT NULL DEFAULT 1,
+    last_success_at TIMESTAMPTZ,
+    CHECK (NOT enabled OR encrypted_key IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_sync_connection_owner ON gak_ai_sync_connection(owner_user_id, enabled);
+ALTER TABLE gak_ai_sync_connection ADD COLUMN IF NOT EXISTS provider_team_id VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_sync_provider_team ON gak_ai_sync_connection(owner_user_id, provider_team_id)
+    WHERE provider_team_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS gak_ai_sync_job (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    account_id BIGINT NOT NULL REFERENCES gak_ai_account(id),
+    local_date DATE NOT NULL,
+    trigger_type VARCHAR(16) NOT NULL CHECK (trigger_type IN ('DAILY','MANUAL')),
+    status VARCHAR(16) NOT NULL CHECK (status IN ('QUEUED','RUNNING','RETRY','SUCCEEDED','FAILED','CANCELLED')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    lease_token VARCHAR(64),
+    lease_until TIMESTAMPTZ,
+    connection_version BIGINT NOT NULL,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    error_code VARCHAR(64),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_sync_daily ON gak_ai_sync_job(owner_user_id, account_id, local_date, trigger_type) WHERE trigger_type = 'DAILY';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_sync_inflight ON gak_ai_sync_job(account_id) WHERE status IN ('QUEUED','RUNNING','RETRY');
+CREATE INDEX IF NOT EXISTS idx_ai_sync_claim ON gak_ai_sync_job(status, next_attempt_at, lease_until);
+CREATE INDEX IF NOT EXISTS idx_ai_sync_owner_jobs ON gak_ai_sync_job(owner_user_id, created_at DESC);
+-- 智订预算与显式账单关联；先执行 business.sql。可重复执行。
+CREATE TABLE IF NOT EXISTS gak_ai_budget (
+    owner_user_id BIGINT NOT NULL REFERENCES gak_user(id),
+    budget_month VARCHAR(7) NOT NULL,
+    currency VARCHAR(3) NOT NULL,
+    amount NUMERIC(14,2) NOT NULL CHECK(amount > 0),
+    threshold NUMERIC(3,2) NOT NULL CHECK(threshold > 0 AND threshold <= 1),
+    PRIMARY KEY(owner_user_id,budget_month,currency)
+);
+CREATE TABLE IF NOT EXISTS gak_ai_bill_link (
+    owner_user_id BIGINT NOT NULL REFERENCES gak_user(id),
+    payment_id BIGINT PRIMARY KEY REFERENCES gak_ai_payment(id),
+    bill_id BIGINT NOT NULL UNIQUE,
+    generated BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_ai_bill_link_owner ON gak_ai_bill_link(owner_user_id,payment_id);

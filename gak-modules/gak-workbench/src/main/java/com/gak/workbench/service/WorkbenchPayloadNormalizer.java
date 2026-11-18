@@ -21,7 +21,7 @@ public class WorkbenchPayloadNormalizer {
     private static final int GRID_ROWS = 48;
     private static final int MAX_DOCK_ITEMS = 100;
     private static final int MAX_DOCK_KEY_LENGTH = 64;
-    private static final Set<String> CARD_IDS = Set.of("todo", "workLog", "bills", "health", "fuel", "knowledge");
+    private static final Set<String> CARD_IDS = Set.of("todo", "workLog", "bills", "health", "fuel", "knowledge", "aiSubscriptions");
     private static final Map<String, Dimensions> CARD_SIZES = Map.of(
             "S", new Dimensions(4, 2), "M", new Dimensions(6, 3), "L", new Dimensions(8, 4));
 

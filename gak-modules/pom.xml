@@ -38,6 +38,7 @@
         <module>gak-requirement-board</module>
         <module>gak-system-log</module>
         <module>gak-workbench</module>
+        <module>gak-ai-subscription</module>
     </modules>
 
 </project>
