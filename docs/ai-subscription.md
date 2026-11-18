@@ -14,6 +14,13 @@
 2. `docs/sql/20261118-ai-subscription-business.sql`
 3. `docs/sql/20261118-ai-subscription-sync.sql`
 4. `docs/sql/20261118-ai-subscription-integrations.sql`
+5. `docs/sql/20261119-ai-quota-snapshots.sql`
+
+## 消费者套餐额度
+
+在「套餐额度」选择账号后记录快照。ChatGPT 分别填写 5 小时和每周的剩余百分比，可逐项附上手动重置机会。Grok 可记录每周已用、额外额度状态和 Bot 用量，来源和 Bot 分组分别展示。Muse 可记录免费额度、额外额度、剩余数量和厂商单位。快照历史最多展示最近 50 条，同一窗口的已用与剩余各自展示变化。
+
+采集时填厂商原始读数。只看到倒计时或重置日期时可直接填写提示，不需估算时分。提交相同账号和相同采集时间会更新该条快照。额度快照为手动录入，现有的 AI 订阅、用量和支付快捷入口仍用于原有记录。
 
 ## 官方同步
 
