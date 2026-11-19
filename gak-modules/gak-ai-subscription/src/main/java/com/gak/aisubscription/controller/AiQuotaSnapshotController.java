@@ -4,6 +4,7 @@ import com.gak.aisubscription.dto.SaveAiQuotaSnapshotRequest;
 import com.gak.aisubscription.service.AiAccessService;
 import com.gak.aisubscription.service.AiQuotaSnapshotService;
 import com.gak.aisubscription.vo.AiQuotaSnapshotVO;
+import com.gak.aisubscription.vo.AiLatestQuotaVO;
 import com.gak.framework.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -31,5 +32,10 @@ public class AiQuotaSnapshotController {
     public ApiResponse<AiQuotaSnapshotVO> save(@Valid @RequestBody SaveAiQuotaSnapshotRequest snapshot,
             HttpServletRequest request) {
         return ApiResponse.success(snapshots.save(access.requireCurrentUserId(request), snapshot));
+    }
+
+    @GetMapping("/latest")
+    public ApiResponse<List<AiLatestQuotaVO>> latest(HttpServletRequest request) {
+        return ApiResponse.success(snapshots.latest(access.requireCurrentUserId(request)));
     }
 }

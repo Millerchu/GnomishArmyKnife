@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gak.aisubscription.dto.SaveAiQuotaSnapshotRequest;
 import com.gak.aisubscription.vo.AiQuotaSnapshotVO;
+import com.gak.aisubscription.vo.AiLatestQuotaVO;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.HashSet;
@@ -35,6 +36,25 @@ public class AiQuotaSnapshotService {
                 WHERE owner_user_id=? AND account_id=? ORDER BY observed_at DESC, id DESC LIMIT ?
                 """, (row, index) -> view(row.getLong("id"), decode(row.getString("record_json"))),
                 owner, accountId, HISTORY_LIMIT);
+    }
+
+    /** 活跃账号各取最新一条，利用账号和采集时间索引，避免读取完整历史。 */
+    public List<AiLatestQuotaVO> latest(Long owner) {
+        return jdbc.query("""
+                SELECT account.id, account.alias, account.tool_code, latest.record_json
+                FROM gak_ai_account account
+                JOIN LATERAL (
+                    SELECT snapshot.record_json FROM gak_ai_quota_snapshot snapshot
+                    WHERE snapshot.owner_user_id = account.owner_user_id AND snapshot.account_id = account.id
+                    ORDER BY snapshot.observed_at DESC LIMIT 1
+                ) latest ON TRUE
+                WHERE account.owner_user_id = ? AND NOT account.archived
+                ORDER BY account.tool_code, account.alias, account.id
+                """, (row, index) -> {
+                    var snapshot = decode(row.getString("record_json"));
+                    return new AiLatestQuotaVO(row.getLong("id"), row.getString("alias"), row.getString("tool_code"),
+                            snapshot.observedAt(), snapshot.windows());
+                }, owner);
     }
 
     @Transactional
