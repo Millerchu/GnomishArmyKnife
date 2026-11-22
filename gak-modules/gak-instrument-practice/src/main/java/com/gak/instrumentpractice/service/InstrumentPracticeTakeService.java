@@ -147,12 +147,16 @@ public class InstrumentPracticeTakeService {
         }
     }
 
+    static boolean supportsTuning(String instrumentId, String tuningId) {
+        return SUPPORTED_TUNINGS.getOrDefault(instrumentId, Set.of()).contains(tuningId);
+    }
+
     private void validateTakeRequest(SaveInstrumentPracticeTakeRequest request) {
         String instrumentId = normalizeInstrumentId(request.getInstrumentId());
         if (!SUPPORTED_INSTRUMENT_IDS.contains(instrumentId)) {
             throw new BusinessException("INSTRUMENT_ID_INVALID", "乐器类型不支持");
         }
-        if (!SUPPORTED_TUNINGS.get(instrumentId).contains(request.getTuningId().trim())) {
+        if (!supportsTuning(instrumentId, request.getTuningId().trim())) {
             throw new BusinessException("INSTRUMENT_TUNING_INVALID", "调弦设置与乐器不匹配");
         }
         if (!SUPPORTED_METERS.contains(request.getMeter().trim())) {

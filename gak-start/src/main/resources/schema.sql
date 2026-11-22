@@ -314,6 +314,23 @@ CREATE TABLE IF NOT EXISTS gak_instrument_practice_take (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_instrument_practice_score (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL REFERENCES gak_user (id) ON DELETE CASCADE,
+    title VARCHAR(80) NOT NULL,
+    notation VARCHAR(5000) NOT NULL,
+    tonic INTEGER NOT NULL,
+    mode VARCHAR(16) NOT NULL,
+    meter VARCHAR(8) NOT NULL,
+    bpm INTEGER NOT NULL,
+    instrument_id VARCHAR(24) NOT NULL,
+    tuning_id VARCHAR(64) NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_instrument_practice_score_owner_updated
+    ON gak_instrument_practice_score (owner_user_id, updated_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS gak_health_visit (
     id BIGINT PRIMARY KEY,
     amount NUMERIC(12, 2) CONSTRAINT ck_health_visit_amount CHECK (amount >= 0),
