@@ -333,6 +333,29 @@ CREATE TABLE IF NOT EXISTS gak_health_visit (
     updated_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gak_dental_cleaning (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL REFERENCES gak_user(id) ON DELETE CASCADE,
+    cleaning_date DATE NOT NULL,
+    hospital_name VARCHAR(64) NOT NULL,
+    amount NUMERIC(12, 2) CHECK (amount >= 0),
+    note VARCHAR(255)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dental_cleaning_owner_date
+    ON gak_dental_cleaning (owner_user_id, cleaning_date DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS gak_dental_reminder (
+    owner_user_id BIGINT PRIMARY KEY REFERENCES gak_user(id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL,
+    interval_months INTEGER NOT NULL CHECK (interval_months BETWEEN 1 AND 60),
+    lead_days INTEGER NOT NULL CHECK (lead_days BETWEEN 0 AND 365 AND lead_days < interval_months * 28),
+    next_due_date DATE
+);
+
+CREATE INDEX IF NOT EXISTS idx_dental_reminder_send_date
+    ON gak_dental_reminder ((next_due_date - lead_days)) WHERE enabled;
+
 CREATE TABLE IF NOT EXISTS gak_health_report (
     id BIGINT PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
