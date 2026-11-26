@@ -1,9 +1,11 @@
 package com.gak.personalbills.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -27,6 +29,10 @@ public class SavePersonalBillRequest {
 
     @Size(max = 64, message = "accountName 长度不能超过 64")
     private String accountName;
+
+    @Positive
+    private Long bankCardId;
+    private boolean bankCardIdProvided;
 
     @Size(max = 64, message = "paymentMethod 长度不能超过 64")
     private String paymentMethod;
@@ -63,6 +69,20 @@ public class SavePersonalBillRequest {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public Long getBankCardId() {
+        return bankCardId;
+    }
+
+    @JsonSetter("bankCardId")
+    public void setBankCardId(Long bankCardId) {
+        this.bankCardId = bankCardId;
+        this.bankCardIdProvided = true;
+    }
+
+    public boolean hasBankCardId() {
+        return bankCardIdProvided;
     }
 
     public String getAccountName() {

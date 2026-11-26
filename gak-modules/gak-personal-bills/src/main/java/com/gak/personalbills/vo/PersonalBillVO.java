@@ -14,6 +14,7 @@ public class PersonalBillVO {
     private String categoryName;
     private BigDecimal amount;
     private String accountName;
+    private Long bankCardId;
     private String paymentMethod;
     private String merchantName;
     private LocalDate billDate;
@@ -50,6 +51,14 @@ public class PersonalBillVO {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public Long getBankCardId() {
+        return bankCardId;
+    }
+
+    public void setBankCardId(Long bankCardId) {
+        this.bankCardId = bankCardId;
     }
 
     public String getAccountName() {

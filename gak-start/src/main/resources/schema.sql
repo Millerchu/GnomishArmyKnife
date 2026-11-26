@@ -2795,6 +2795,33 @@ CREATE TABLE IF NOT EXISTS gak_personal_credit_account (
 );
 CREATE INDEX IF NOT EXISTS idx_personal_credit_account_owner ON gak_personal_credit_account (owner_user_id, updated_at, id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uk_personal_credit_account_owner_id
+    ON gak_personal_credit_account (owner_user_id, id);
+
+CREATE TABLE IF NOT EXISTS gak_personal_bank_card (
+    id BIGINT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    card_type VARCHAR(8) NOT NULL CHECK (card_type IN ('DEBIT', 'CREDIT')),
+    card_name VARCHAR(56) NOT NULL,
+    institution VARCHAR(64) NOT NULL,
+    last_four VARCHAR(4) CHECK (last_four ~ '^[0-9]{4}$'),
+    credit_account_id BIGINT,
+    note VARCHAR(160),
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    CHECK (card_type = 'CREDIT' OR credit_account_id IS NULL),
+    FOREIGN KEY (owner_user_id, credit_account_id) REFERENCES gak_personal_credit_account (owner_user_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_bank_card_owner
+    ON gak_personal_bank_card (owner_user_id, archived, card_type, card_name, id);
+CREATE INDEX IF NOT EXISTS idx_personal_bank_card_credit
+    ON gak_personal_bank_card (owner_user_id, credit_account_id) WHERE credit_account_id IS NOT NULL;
+
+ALTER TABLE gak_personal_bill ADD COLUMN IF NOT EXISTS bank_card_id BIGINT REFERENCES gak_personal_bank_card (id);
+CREATE INDEX IF NOT EXISTS idx_personal_bill_bank_card ON gak_personal_bill (bank_card_id) WHERE bank_card_id IS NOT NULL;
+
 INSERT INTO gak_data_dictionary_item (id, dictionary_id, dict_code, item_code, item_label, item_value, sort_no, status, is_default, description, created_at, updated_at, deleted)
 SELECT 5791, dictionary.id, dictionary.dict_code, 'childcare', '养娃', '养娃', 15, 'ENABLED', FALSE, '育儿、奶粉、托育与子女教育', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE
 FROM gak_data_dictionary dictionary

@@ -32,6 +32,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -57,6 +58,12 @@ class PersonalBillServiceTest {
 
     @Mock
     private DataDictionaryUsageSupport dataDictionaryUsageSupport;
+
+    @Mock
+    private PersonalBankCardService bankCards;
+
+    @Mock
+    private PersonalBillAccessService access;
 
     @InjectMocks
     private PersonalBillService personalBillService;
@@ -121,6 +128,49 @@ class PersonalBillServiceTest {
         assertEquals("餐饮", captor.getValue().getCategoryName());
         assertEquals("支付宝", captor.getValue().getPaymentMethod());
         assertEquals(new BigDecimal("88.00"), result.getAmount());
+    }
+
+    @Test
+    void createUsesCardSnapshotAndKeepsPaymentChannelSeparate() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        when(bankCards.snapshotForSelection(1L, 9007199254740993L)).thenReturn("工资卡（尾号0123）");
+        SavePersonalBillRequest request = buildBillRequest();
+        request.setBankCardId(9007199254740993L);
+        request.setAccountName("客户端传入名称");
+        request.setPaymentMethod("微信支付");
+
+        PersonalBillVO result = personalBillService.create(1L, request);
+
+        verify(access).requireAccess(1L);
+        assertEquals(9007199254740993L, result.getBankCardId());
+        assertEquals("工资卡（尾号0123）", result.getAccountName());
+        assertEquals("微信支付", result.getPaymentMethod());
+    }
+
+    @Test
+    void updateKeepsHistoricalSnapshotUntilCardIsReplacedOrCleared() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L));
+        PersonalBill bill = buildBill(1001L, "EXPENSE", "餐饮", new BigDecimal("88.00"), LocalDate.of(2026, 5, 10));
+        bill.setBankCardId(90L);
+        bill.setAccountName("原名称（尾号1234）");
+        when(personalBillMapper.selectOwnedForUpdate(1001L, 1L)).thenReturn(bill);
+        SavePersonalBillRequest request = buildBillRequest();
+        request.setAccountName(bill.getAccountName());
+
+        assertEquals(90L, personalBillService.update(1L, 1001L, request).getBankCardId());
+        request.setAccountName(null);
+        assertEquals(90L, personalBillService.update(1L, 1001L, request).getBankCardId());
+
+        request.setBankCardId(90L);
+        request.setAccountName("改名后的卡");
+        assertEquals("原名称（尾号1234）", personalBillService.update(1L, 1001L, request).getAccountName());
+        verify(bankCards, never()).snapshotForSelection(1L, 90L);
+
+        request.setBankCardId(null);
+        request.setAccountName("  ");
+        PersonalBillVO result = personalBillService.update(1L, 1001L, request);
+        assertNull(result.getBankCardId());
+        assertNull(result.getAccountName());
     }
 
     @Test

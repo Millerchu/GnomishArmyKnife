@@ -61,14 +61,20 @@ public class PersonalBillService {
     private final UserMapper userMapper;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
+    private final PersonalBankCardService bankCards;
+    private final PersonalBillAccessService access;
+
     public PersonalBillService(PersonalBillMapper personalBillMapper,
                                PersonalBudgetMapper personalBudgetMapper,
                                UserMapper userMapper,
-                               DataDictionaryUsageSupport dataDictionaryUsageSupport) {
+                               DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                               PersonalBankCardService bankCards, PersonalBillAccessService access) {
         this.personalBillMapper = personalBillMapper;
         this.personalBudgetMapper = personalBudgetMapper;
         this.userMapper = userMapper;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
+        this.bankCards = bankCards;
+        this.access = access;
     }
 
     /**
@@ -103,6 +109,7 @@ public class PersonalBillService {
         NormalizedBill normalized = normalizeBillRequest(request);
         PersonalBill bill = new PersonalBill();
         bill.setOwnerUserId(currentUserId);
+        applyFundingAccount(bill, request);
         applyNormalizedBill(bill, normalized);
         bill.setCurrency(normalizeCurrency(request.getCurrency()));
         LocalDateTime now = LocalDateTime.now();
@@ -121,6 +128,7 @@ public class PersonalBillService {
         PersonalBill current = getOwnedBillOrThrow(currentUserId, id);
         ensureBillIsEditable(current);
         NormalizedBill normalized = normalizeBillRequest(request);
+        applyFundingAccount(current, request);
         applyNormalizedBill(current, normalized);
         current.setCurrency(normalizeCurrency(request.getCurrency()));
         current.setUpdatedAt(LocalDateTime.now());
@@ -339,7 +347,6 @@ public class PersonalBillService {
                 billType,
                 categoryName,
                 request.isRefund() ? scaleMoney(request.getAmount()).negate() : scaleMoney(request.getAmount()),
-                trimToNull(request.getAccountName()),
                 paymentMethod,
                 trimToNull(request.getMerchantName()),
                 request.getBillDate(),
@@ -365,11 +372,30 @@ public class PersonalBillService {
         );
     }
 
+    private void applyFundingAccount(PersonalBill bill, SavePersonalBillRequest request) {
+        Long cardId = request.getBankCardId();
+        String manualName = trimToNull(request.getAccountName());
+        if (cardId == null) {
+            // 兼容旧客户端的空值更新语义；显式传入 bankCardId 才能清空资金账户。
+            if (!request.hasBankCardId() && (manualName == null || Objects.equals(manualName, bill.getAccountName()))) {
+                return;
+            }
+            bill.setBankCardId(null);
+            bill.setAccountName(manualName);
+            return;
+        }
+
+        access.requireAccess(bill.getOwnerUserId());
+        if (!Objects.equals(cardId, bill.getBankCardId())) {
+            bill.setAccountName(bankCards.snapshotForSelection(bill.getOwnerUserId(), cardId));
+            bill.setBankCardId(cardId);
+        }
+    }
+
     private void applyNormalizedBill(PersonalBill bill, NormalizedBill normalized) {
         bill.setBillType(normalized.billType());
         bill.setCategoryName(normalized.categoryName());
         bill.setAmount(normalized.amount());
-        bill.setAccountName(normalized.accountName());
         bill.setPaymentMethod(normalized.paymentMethod());
         bill.setMerchantName(normalized.merchantName());
         bill.setBillDate(normalized.billDate());
@@ -491,6 +517,7 @@ public class PersonalBillService {
         vo.setCategoryName(bill.getCategoryName());
         vo.setAmount(scaleMoney(bill.getAmount()));
         vo.setAccountName(bill.getAccountName());
+        vo.setBankCardId(bill.getBankCardId());
         vo.setPaymentMethod(bill.getPaymentMethod());
         vo.setMerchantName(bill.getMerchantName());
         vo.setBillDate(bill.getBillDate());
@@ -578,7 +605,6 @@ public class PersonalBillService {
     private record NormalizedBill(String billType,
                                   String categoryName,
                                   BigDecimal amount,
-                                  String accountName,
                                   String paymentMethod,
                                   String merchantName,
                                   LocalDate billDate,

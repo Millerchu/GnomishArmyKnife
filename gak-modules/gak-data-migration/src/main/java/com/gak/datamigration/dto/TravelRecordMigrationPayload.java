@@ -11,6 +11,7 @@ public class TravelRecordMigrationPayload {
     private List<TravelRecord> records;
     private List<TravelGroup> groups;
     private List<PersonalBill> bills;
+    private boolean bankCardLinksIncluded;
     private List<TransferItem> attachments;
 
     public List<TravelRecord> getRecords() { return records; }
@@ -19,6 +20,8 @@ public class TravelRecordMigrationPayload {
     public void setGroups(List<TravelGroup> groups) { this.groups = groups; }
     public List<PersonalBill> getBills() { return bills; }
     public void setBills(List<PersonalBill> bills) { this.bills = bills; }
+    public boolean isBankCardLinksIncluded() { return bankCardLinksIncluded; }
+    public void setBankCardLinksIncluded(boolean included) { this.bankCardLinksIncluded = included; }
     public List<TransferItem> getAttachments() { return attachments; }
     public void setAttachments(List<TransferItem> attachments) { this.attachments = attachments; }
 }

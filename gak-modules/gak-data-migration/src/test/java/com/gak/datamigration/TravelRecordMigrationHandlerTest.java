@@ -8,6 +8,7 @@ import com.gak.datamigration.service.DataMigrationArchiveService;
 import com.gak.framework.exception.BusinessException;
 import com.gak.personalbills.domain.PersonalBill;
 import com.gak.personalbills.mapper.PersonalBillMapper;
+import com.gak.personalbills.mapper.PersonalBankCardMapper;
 import com.gak.travelrecord.domain.TravelGroup;
 import com.gak.travelrecord.domain.TravelRecord;
 import com.gak.travelrecord.mapper.TravelGroupMapper;
@@ -32,8 +33,9 @@ class TravelRecordMigrationHandlerTest {
     private final UserMapper users = mock(UserMapper.class);
     private final DataMigrationArchiveService archive = mock(DataMigrationArchiveService.class);
     private final AttachmentMigrationSupport attachments = mock(AttachmentMigrationSupport.class);
+    private final PersonalBankCardMapper cards = mock(PersonalBankCardMapper.class);
     private final TravelRecordMigrationHandler handler = new TravelRecordMigrationHandler(
-            records, groups, bills, users, archive, attachments);
+            records, groups, bills, users, archive, attachments, cards);
     private final TravelRecordMigrationPayload payload = new TravelRecordMigrationPayload();
     private final ImportContext context = new ImportContext("MERGE", false, Path.of("backup"));
 
@@ -47,6 +49,29 @@ class TravelRecordMigrationHandlerTest {
         target.setId(22L);
         when(users.selectById(22L)).thenReturn(target);
         context.mapUserId(11L, 22L);
+    }
+
+    @Test
+    void importingTravelWithoutItsCardPreservesTheFundingLabel() throws Exception {
+        payload.setRecords(List.of(record(101L)));
+        payload.setBankCardLinksIncluded(true);
+        PersonalBill payment = new PersonalBill();
+        payment.setId(103L);
+        payment.setOwnerUserId(11L);
+        payment.setSourceType("TRAVEL_RECORD");
+        payment.setSourceId(101L);
+        payment.setSourceEntry("PAYMENT");
+        payment.setBankCardId(99L);
+        payment.setAccountName("出行卡（尾号0123）");
+        payload.setBills(List.of(payment));
+
+        var result = handler.importData(context);
+
+        ArgumentCaptor<PersonalBill> restored = ArgumentCaptor.forClass(PersonalBill.class);
+        verify(bills).insert(restored.capture());
+        assertNull(restored.getValue().getBankCardId());
+        assertEquals("出行卡（尾号0123）", restored.getValue().getAccountName());
+        assertTrue(result.message().contains("1 笔账单缺少对应银行卡"));
     }
 
     @Test

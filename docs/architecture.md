@@ -29,7 +29,7 @@
 | `gak-wow-character` | 角色、周常、赛季、专精指南 | `/wow-characters`、`/wow-specialization-guides` |
 | `gak-todo-list` | 待办与状态 | `/todo-items` |
 | `gak-fuel-stats` | 车辆、加油与统计 | `/fuel-vehicles`、`/fuel-records` |
-| `gak-personal-bills` | 收支、预算、信用账户 | `/personal-bills`、`/personal-bills/credit-accounts` |
+| `gak-personal-bills` | 收支、预算、银行卡和信用卡授信组 | `/personal-bills`、`/personal-bills/bank-cards`、`/personal-bills/credit-accounts` |
 | `gak-health-record` | 体征、报告、就诊与费用 | `/health-records` |
 | `gak-knowledge-base` | 经验条目、审核、公开精选 | `/knowledge-base` |
 | `gak-instrument-practice` | 演奏作品存储 | `/instrument-practice/takes` |

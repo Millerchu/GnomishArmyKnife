@@ -1,8 +1,11 @@
 package com.gak.personalbills.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.exception.BusinessException;
+import com.gak.personalbills.domain.PersonalBankCard;
 import com.gak.personalbills.domain.PersonalCreditAccount;
 import com.gak.personalbills.dto.SaveCreditAccountRequest;
+import com.gak.personalbills.mapper.PersonalBankCardMapper;
 import com.gak.personalbills.mapper.PersonalCreditAccountMapper;
 import com.gak.personalbills.vo.PersonalCreditAccountVO;
 import com.gak.personalbills.vo.PersonalCreditSummaryVO;
@@ -22,7 +25,12 @@ public class PersonalCreditService {
     private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private final PersonalCreditAccountMapper mapper;
 
-    public PersonalCreditService(PersonalCreditAccountMapper mapper) { this.mapper = mapper; }
+    private final PersonalBankCardMapper cards;
+
+    public PersonalCreditService(PersonalCreditAccountMapper mapper, PersonalBankCardMapper cards) {
+        this.mapper = mapper;
+        this.cards = cards;
+    }
 
     /** 按当前用户汇总独立授信；超额使用时可用额度最低为零。 */
     public PersonalCreditSummaryVO summary(Long userId) {
@@ -69,10 +77,17 @@ public class PersonalCreditService {
 
     /** 删除当前用户的授信账户。 */
     @Transactional
-    public void delete(Long userId, Long id) { mapper.deleteById(owned(userId, id).getId()); }
+    public void delete(Long userId, Long id) {
+        PersonalCreditAccount account = owned(userId, id);
+        if (cards.exists(new QueryWrapper<PersonalBankCard>().eq("owner_user_id", userId)
+                .eq("credit_account_id", id))) {
+            throw new BusinessException("PERSONAL_BILL_CREDIT_ACCOUNT_IN_USE", "请先解除银行卡与此授信组的关联");
+        }
+        mapper.deleteById(account.getId());
+    }
 
     private PersonalCreditAccount owned(Long userId, Long id) {
-        PersonalCreditAccount account = mapper.selectById(id);
+        PersonalCreditAccount account = mapper.selectOwnedForUpdate(id, userId);
         if (account == null || !Objects.equals(account.getOwnerUserId(), userId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "授信账户不存在");
         }

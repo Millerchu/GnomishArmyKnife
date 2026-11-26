@@ -12,6 +12,8 @@ import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
 import com.gak.datamigration.service.DataMigrationQuerySupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.personalbills.domain.PersonalBill;
+import com.gak.personalbills.domain.PersonalBankCard;
+import com.gak.personalbills.mapper.PersonalBankCardMapper;
 import com.gak.personalbills.mapper.PersonalBillMapper;
 import com.gak.travelrecord.domain.TravelGroup;
 import com.gak.travelrecord.domain.TravelRecord;
@@ -38,19 +40,21 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
     private final TravelRecordMapper recordMapper;
     private final TravelGroupMapper groupMapper;
     private final PersonalBillMapper billMapper;
+    private final PersonalBankCardMapper bankCards;
     private final UserMapper userMapper;
     private final DataMigrationArchiveService archiveService;
     private final AttachmentMigrationSupport attachmentSupport;
 
     public TravelRecordMigrationHandler(TravelRecordMapper recordMapper, TravelGroupMapper groupMapper,
             PersonalBillMapper billMapper, UserMapper userMapper, DataMigrationArchiveService archiveService,
-            AttachmentMigrationSupport attachmentSupport) {
+            AttachmentMigrationSupport attachmentSupport, PersonalBankCardMapper bankCards) {
         this.recordMapper = recordMapper;
         this.groupMapper = groupMapper;
         this.billMapper = billMapper;
         this.userMapper = userMapper;
         this.archiveService = archiveService;
         this.attachmentSupport = attachmentSupport;
+        this.bankCards = bankCards;
     }
 
     @Override public String resourceCode() { return DataMigrationConstants.APP_TRAVEL_RECORD; }
@@ -95,6 +99,7 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
         payload.setRecords(records);
         payload.setGroups(groups);
         payload.setBills(bills);
+        payload.setBankCardLinksIncluded(true);
         payload.setAttachments(bundle.items());
         return new MigrationResourceExportData(resourceCode(), entryPath(), payload,
                 (long) records.size() + groups.size() + bills.size(), bundle.files().size(), bundle.files());
@@ -115,21 +120,32 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
             TravelGroup target = new TravelGroup();
             DataMigrationBeanMergeSupport.overwrite(source, target);
             target.setOwnerUserId(resolveOwner(source.getOwnerUserId(), context));
-            save(target, groupMapper, TravelGroup::getId, TravelGroup::getOwnerUserId, context);
+            save(target, groupMapper, TravelGroup::getId, TravelGroup::getOwnerUserId, context, false);
         }
         for (TravelRecord source : records) {
             TravelRecord target = new TravelRecord();
             DataMigrationBeanMergeSupport.overwrite(source, target);
             target.setOwnerUserId(resolveOwner(source.getOwnerUserId(), context));
-            save(target, recordMapper, TravelRecord::getId, TravelRecord::getOwnerUserId, context);
+            save(target, recordMapper, TravelRecord::getId, TravelRecord::getOwnerUserId, context, false);
             recordIds.put(source.getId(), target.getId());
         }
+        int missingCards = 0;
         for (PersonalBill source : bills) {
             PersonalBill target = new PersonalBill();
             DataMigrationBeanMergeSupport.overwrite(source, target);
             target.setOwnerUserId(resolveOwner(source.getOwnerUserId(), context));
             validateExistingBill(target);
-            save(target, billMapper, PersonalBill::getId, PersonalBill::getOwnerUserId, context);
+            if (target.getBankCardId() != null) {
+                PersonalBankCard card = bankCards.selectById(target.getBankCardId());
+                if (card == null) {
+                    target.setBankCardId(null);
+                    missingCards++;
+                } else {
+                    require(Objects.equals(target.getOwnerUserId(), card.getOwnerUserId()), "关联银行卡归属不一致");
+                }
+            }
+            save(target, billMapper, PersonalBill::getId, PersonalBill::getOwnerUserId, context,
+                    !payload.isBankCardLinksIncluded() && source.getBankCardId() == null);
         }
         long attachments = attachmentSupport.restore(context, AttachmentConstants.BUSINESS_TRAVEL_RECORD,
                 DataMigrationQuerySupport.emptyIfNull(payload.getAttachments()), recordIds,
@@ -137,8 +153,11 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
                     TravelRecord record = recordMapper.selectById(id);
                     return record == null ? null : record.getOwnerUserId();
                 }, MAX_ATTACHMENTS);
-        return MigrationResourceImportResult.success((long) records.size() + groups.size() + bills.size(),
-                attachments, "个人行程及关联账单导入完成");
+        String message = "个人行程及关联账单导入完成";
+        if (missingCards > 0) {
+            message += "，" + missingCards + " 笔账单缺少对应银行卡，已保留资金账户名称";
+        }
+        return MigrationResourceImportResult.success((long) records.size() + groups.size() + bills.size(), attachments, message);
     }
 
     private void validateAttachmentFiles(TravelRecordMigrationPayload payload, List<TravelRecord> records,
@@ -221,7 +240,7 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
 
     /** 保留稳定 ID 保证重复恢复幂等；跨用户碰撞直接拒绝，绝不覆盖他人记录。 */
     private <T> void save(T source, BaseMapper<T> mapper, Function<T, Long> idGetter,
-            Function<T, Long> ownerGetter, ImportContext context) {
+            Function<T, Long> ownerGetter, ImportContext context, boolean legacyBill) {
         T existing = mapper.selectById(idGetter.apply(source));
         if (existing == null) {
             mapper.insert(source);
@@ -230,7 +249,9 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
         require(Objects.equals(ownerGetter.apply(source), ownerGetter.apply(existing)), "迁移 ID 与其他用户记录冲突");
         require(!context.isStrict(), "行程迁移记录已存在: " + idGetter.apply(source));
         // 金额、退款、币种和来源是一个快照，逐字段合并会拼出从未存在过的账务状态。
-        if (context.isOverwrite() || existing instanceof TravelRecord || existing instanceof PersonalBill) {
+        if (legacyBill && existing instanceof PersonalBill bill && bill.getBankCardId() != null) {
+            DataMigrationBeanMergeSupport.overwriteNewest(source, existing, "id", "ownerUserId", "accountName", "bankCardId");
+        } else if (context.isOverwrite() || existing instanceof TravelRecord || existing instanceof PersonalBill) {
             DataMigrationBeanMergeSupport.overwriteNewest(source, existing, "id", "ownerUserId", "version");
         } else {
             DataMigrationBeanMergeSupport.mergeNewestNonNull(source, existing, "id", "ownerUserId", "version");

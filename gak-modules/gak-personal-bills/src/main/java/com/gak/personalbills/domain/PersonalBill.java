@@ -1,6 +1,8 @@
 package com.gak.personalbills.domain;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
@@ -19,7 +21,10 @@ public class PersonalBill {
     private String billType;
     private String categoryName;
     private BigDecimal amount;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String accountName;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Long bankCardId;
     private String paymentMethod;
     private String merchantName;
     private LocalDate billDate;
@@ -65,6 +70,14 @@ public class PersonalBill {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public Long getBankCardId() {
+        return bankCardId;
+    }
+
+    public void setBankCardId(Long bankCardId) {
+        this.bankCardId = bankCardId;
     }
 
     public String getAccountName() {

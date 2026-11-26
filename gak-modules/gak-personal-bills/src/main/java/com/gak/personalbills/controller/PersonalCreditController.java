@@ -2,6 +2,7 @@ package com.gak.personalbills.controller;
 
 import com.gak.framework.response.ApiResponse;
 import com.gak.personalbills.dto.SaveCreditAccountRequest;
+import com.gak.personalbills.service.PersonalBillAccessService;
 import com.gak.personalbills.service.PersonalCreditService;
 import com.gak.personalbills.vo.PersonalCreditAccountVO;
 import com.gak.personalbills.vo.PersonalCreditSummaryVO;
@@ -17,29 +18,39 @@ public class PersonalCreditController {
     private final PersonalCreditService service;
     private final TokenService tokenService;
 
-    public PersonalCreditController(PersonalCreditService service, TokenService tokenService) {
+    private final PersonalBillAccessService access;
+
+    public PersonalCreditController(PersonalCreditService service, TokenService tokenService,
+                                    PersonalBillAccessService access) {
         this.service = service;
         this.tokenService = tokenService;
+        this.access = access;
     }
 
     @GetMapping
     public ApiResponse<PersonalCreditSummaryVO> summary(HttpServletRequest http) {
-        return ApiResponse.success(service.summary(tokenService.requireCurrentUserId(http)));
+        return ApiResponse.success(service.summary(requireOwner(http)));
     }
 
     @PostMapping
     public ApiResponse<PersonalCreditAccountVO> create(@Valid @RequestBody SaveCreditAccountRequest request, HttpServletRequest http) {
-        return ApiResponse.success(service.save(tokenService.requireCurrentUserId(http), null, request));
+        return ApiResponse.success(service.save(requireOwner(http), null, request));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<PersonalCreditAccountVO> update(@PathVariable Long id, @Valid @RequestBody SaveCreditAccountRequest request, HttpServletRequest http) {
-        return ApiResponse.success(service.save(tokenService.requireCurrentUserId(http), id, request));
+        return ApiResponse.success(service.save(requireOwner(http), id, request));
     }
 
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest http) {
-        service.delete(tokenService.requireCurrentUserId(http), id);
+        service.delete(requireOwner(http), id);
         return ApiResponse.success();
+    }
+
+    private Long requireOwner(HttpServletRequest http) {
+        Long owner = tokenService.requireCurrentUserId(http);
+        access.requireAccess(owner);
+        return owner;
     }
 }

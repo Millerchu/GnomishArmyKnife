@@ -13,8 +13,11 @@ public class PersonalCreditAccount {
     private String institution;
     private BigDecimal creditLimit;
     private BigDecimal usedAmount;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Integer billingDay;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Integer repaymentDay;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String note;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
