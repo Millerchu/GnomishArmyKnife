@@ -3,6 +3,7 @@ package com.gak.user.service.user;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.user.domain.user.User;
+import com.gak.user.dto.user.ChangePasswordRequest;
 import com.gak.user.dto.user.RegisterRequest;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.user.vo.user.UserProfileVO;
@@ -90,5 +91,48 @@ class AuthServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> authService.register(request));
         assertEquals("PASSWORD_MISMATCH", exception.getCode());
+    }
+
+    @Test
+    void changePasswordShouldRevokeUserTokens() {
+        User user = new User();
+        user.setId(8L);
+        user.setUsername("zhangsan");
+        user.setPasswordHash("OLD_HASH");
+        user.setStatus("ENABLED");
+        user.setEnabled(true);
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(passwordCryptoService.decrypt("oldEnc")).thenReturn("OldPass123");
+        when(passwordCryptoService.decrypt("newEnc")).thenReturn("NewPass123");
+        when(passwordEncoder.matches("OldPass123", "OLD_HASH")).thenReturn(true);
+        when(passwordEncoder.encode("NewPass123")).thenReturn("NEW_HASH");
+
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setUsername("zhangsan");
+        request.setOldEncryptedPassword("oldEnc");
+        request.setNewEncryptedPassword("newEnc");
+
+        authService.changePassword(request);
+
+        verify(userMapper).updateById(any(User.class));
+        verify(tokenService).revokeByUserId(8L);
+    }
+
+    @Test
+    void changePasswordShouldRejectDisabledUser() {
+        User user = new User();
+        user.setId(8L);
+        user.setUsername("zhangsan");
+        user.setStatus("DISABLED");
+        user.setEnabled(false);
+        when(userMapper.selectOne(any())).thenReturn(user);
+
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setUsername("zhangsan");
+        request.setOldEncryptedPassword("oldEnc");
+        request.setNewEncryptedPassword("newEnc");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.changePassword(request));
+        assertEquals("USER_DISABLED", exception.getCode());
     }
 }

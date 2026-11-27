@@ -1,11 +1,12 @@
 package com.gak.healthrecord.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import com.gak.healthrecord.domain.HealthRecord;
 import com.gak.attachment.service.AttachmentService;
+import com.gak.healthrecord.domain.HealthRecord;
 import com.gak.healthrecord.domain.HealthReport;
 import com.gak.healthrecord.domain.HealthVisit;
 import com.gak.healthrecord.dto.HealthTrendQueryRequest;
@@ -14,11 +15,15 @@ import com.gak.healthrecord.mapper.HealthRecordMapper;
 import com.gak.healthrecord.mapper.HealthReportMapper;
 import com.gak.healthrecord.mapper.HealthVisitMapper;
 import com.gak.healthrecord.vo.HealthRecordVO;
+import com.gak.healthrecord.vo.HealthReportFileResource;
 import com.gak.healthrecord.vo.HealthSummaryVO;
 import com.gak.healthrecord.vo.HealthTrendVO;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 健康服务测试。
@@ -68,6 +75,8 @@ class HealthRecordServiceTest {
         );
         User user = new User();
         user.setId(1L);
+        user.setEnabled(true);
+        user.setStatus("ENABLED");
         when(userMapper.selectById(1L)).thenReturn(user);
     }
 
@@ -120,6 +129,35 @@ class HealthRecordServiceTest {
         assertThat(result.getId()).isEqualTo(101L);
         assertThat(result.getWeightKg()).isEqualByComparingTo("73.3");
         assertThat(result.getBodyFatRate()).isEqualByComparingTo("19.2");
+    }
+
+    @Test
+    void loadReportFileShouldEnforceAppPermissionAndOwnership() throws Exception {
+        Path dir = Path.of("./target/health-records-test");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("owned.pdf"), "pdf-content", StandardCharsets.UTF_8);
+
+        when(healthReportMapper.hasHealthAppAccess(1L)).thenReturn(false);
+        assertThatThrownBy(() -> healthRecordService.loadReportFile(1L, "owned.pdf"))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+
+        when(healthReportMapper.hasHealthAppAccess(1L)).thenReturn(true);
+        when(healthReportMapper.existsOwnedReportFile(1L, "owned.pdf", "/api/health-records/report-files/owned.pdf"))
+                .thenReturn(false);
+        when(healthVisitMapper.existsOwnedCaseRecordFile(1L, "owned.pdf", "/api/health-records/report-files/owned.pdf"))
+                .thenReturn(false);
+        assertThatThrownBy(() -> healthRecordService.loadReportFile(1L, "owned.pdf"))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+
+        when(healthReportMapper.existsOwnedReportFile(1L, "owned.pdf", "/api/health-records/report-files/owned.pdf"))
+                .thenReturn(true);
+        HealthReportFileResource fileResource = healthRecordService.loadReportFile(1L, "owned.pdf");
+        assertThat(fileResource.fileName()).isEqualTo("owned.pdf");
+        assertThat(fileResource.resource().exists()).isTrue();
     }
 
     private HealthRecord buildRecord(Long id, LocalDate date) {

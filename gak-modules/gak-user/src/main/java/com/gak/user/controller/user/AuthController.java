@@ -6,10 +6,12 @@ import com.gak.user.dto.user.LoginRequest;
 import com.gak.user.dto.user.RegisterRequest;
 import com.gak.user.service.user.AuthService;
 import com.gak.user.service.user.PasswordCryptoService;
+import com.gak.user.service.user.TokenService;
 import com.gak.user.vo.user.CaptchaVO;
 import com.gak.user.vo.user.PublicKeyVO;
 import com.gak.user.vo.user.UserLoginVO;
 import com.gak.user.vo.user.UserProfileVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.security.SecureRandom;
@@ -33,10 +35,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final PasswordCryptoService passwordCryptoService;
+    private final TokenService tokenService;
 
-    public AuthController(AuthService authService, PasswordCryptoService passwordCryptoService) {
+    public AuthController(AuthService authService,
+                          PasswordCryptoService passwordCryptoService,
+                          TokenService tokenService) {
         this.authService = authService;
         this.passwordCryptoService = passwordCryptoService;
+        this.tokenService = tokenService;
     }
 
     @GetMapping("/captcha")
@@ -64,6 +70,12 @@ public class AuthController {
     @PostMapping("/change-password")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(request);
+        return ApiResponse.success();
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(HttpServletRequest httpServletRequest) {
+        tokenService.revokeRequestToken(httpServletRequest);
         return ApiResponse.success();
     }
 

@@ -1,6 +1,7 @@
 package com.gak.passwordmemo.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
@@ -15,11 +16,11 @@ import com.gak.passwordmemo.dto.UpdatePasswordMemoInfoRequest;
 import com.gak.passwordmemo.dto.VerifyAccessRequest;
 import com.gak.passwordmemo.mapper.PasswordMemoHistoryMapper;
 import com.gak.passwordmemo.mapper.PasswordMemoMapper;
-import com.gak.passwordmemo.service.PasswordMemoCryptoService.EncryptedPayload;
 import com.gak.passwordmemo.vo.PasswordMemoDetailVO;
 import com.gak.passwordmemo.vo.PasswordMemoHistoryVO;
 import com.gak.passwordmemo.vo.PasswordMemoListItemVO;
 import com.gak.passwordmemo.vo.VerifyAccessResponse;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.time.LocalDateTime;
@@ -110,10 +111,13 @@ public class PasswordMemoService {
     public PasswordMemoDetailVO create(Long currentUserId, SavePasswordMemoRequest request) {
         ensureCurrentUserExists(currentUserId);
 
-        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword());
+        Long memoId = IdWorker.getId();
+        EncryptedPasswordPayload encryptedPayload = passwordMemoCryptoService.encrypt(
+                currentUserId, memoId, request.getPassword());
         LocalDateTime now = LocalDateTime.now();
 
         PasswordMemo passwordMemo = new PasswordMemo();
+        passwordMemo.setId(memoId);
         passwordMemo.setOwnerUserId(currentUserId);
         passwordMemo.setCategory(normalizeCategory(request.getCategory(), true));
         passwordMemo.setSiteName(request.getSiteName().trim());
@@ -158,14 +162,15 @@ public class PasswordMemoService {
         PasswordMemo current = getOwnedMemoOrThrow(currentUserId, id);
         String newPassword = request.getNewPassword();
         String currentPassword = passwordMemoCryptoService.decrypt(
-                current.getPasswordCiphertext(), current.getPasswordNonce());
+                currentUserId, current.getId(), current.getPasswordCiphertext(), current.getPasswordNonce());
         if (currentPassword.equals(newPassword)) {
             throw new BusinessException("PASSWORD_MEMO_PASSWORD_UNCHANGED", "新密码不能与当前密码相同");
         }
 
         LocalDateTime now = LocalDateTime.now();
         archiveCurrentPassword(currentUserId, current, now);
-        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(newPassword);
+        EncryptedPasswordPayload encryptedPayload = passwordMemoCryptoService.encrypt(
+                currentUserId, current.getId(), newPassword);
         current.setPasswordCiphertext(encryptedPayload.ciphertext());
         current.setPasswordNonce(encryptedPayload.nonce());
         current.setPasswordStartedAt(now);
@@ -184,7 +189,8 @@ public class PasswordMemoService {
         ensureCurrentUserExists(currentUserId);
         PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, memoId);
         validateUsagePeriod(request.getUsageStartedAt(), request.getUsageEndedAt());
-        EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(request.getPassword());
+        EncryptedPasswordPayload encryptedPayload = passwordMemoCryptoService.encrypt(
+                currentUserId, memo.getId(), request.getPassword());
 
         PasswordMemoHistory history = new PasswordMemoHistory();
         history.setMemoId(memoId);
@@ -213,7 +219,8 @@ public class PasswordMemoService {
         // 编辑历史记录时，未传密码或传空字符串仍表示仅调整使用周期。
         String password = request.getPassword();
         if (password != null && !password.isEmpty()) {
-            EncryptedPayload encryptedPayload = passwordMemoCryptoService.encrypt(password);
+            EncryptedPasswordPayload encryptedPayload = passwordMemoCryptoService.encrypt(
+                    currentUserId, memo.getId(), password);
             history.setPasswordCiphertext(encryptedPayload.ciphertext());
             history.setPasswordNonce(encryptedPayload.nonce());
         }
@@ -253,14 +260,17 @@ public class PasswordMemoService {
         if (!passwordEncoder.matches(request.getLoginPassword(), currentUser.getPasswordHash())) {
             throw new BusinessException("LOGIN_PASSWORD_INVALID", "当前用户密码错误");
         }
-        String password = passwordMemoCryptoService.decrypt(memo.getPasswordCiphertext(), memo.getPasswordNonce());
+        String password = passwordMemoCryptoService.decrypt(
+                currentUserId, memo.getId(), memo.getPasswordCiphertext(), memo.getPasswordNonce());
         log.info("password memo revealed, userId={}, memoId={}, ip={}", currentUserId, id, ipAddress);
         return new VerifyAccessResponse(password, maskFirstCharacter(password), listPasswordHistory(memo, true));
     }
 
     private User ensureCurrentUserExists(Long currentUserId) {
-        User user = userMapper.selectById(currentUserId);
-        if (user == null) {
+        User user = currentUserId == null ? null : userMapper.selectById(currentUserId);
+        if (user == null
+                || !Boolean.TRUE.equals(user.getEnabled())
+                || !UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(user.getStatus())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或登录已过期");
         }
         return user;
@@ -353,7 +363,10 @@ public class PasswordMemoService {
     private String maskHistoryFirstCharacter(PasswordMemoHistory history) {
         try {
             String historyPassword = passwordMemoCryptoService.decrypt(
-                    history.getPasswordCiphertext(), history.getPasswordNonce());
+                    history.getOwnerUserId(),
+                    history.getMemoId(),
+                    history.getPasswordCiphertext(),
+                    history.getPasswordNonce());
             return maskFirstCharacter(historyPassword);
         } catch (RuntimeException exception) {
             log.warn("failed to mask password memo history, historyId={}", history.getId(), exception);

@@ -41,7 +41,7 @@ public class WowSpecializationGuideController {
     public ApiResponse<WowSpecializationGuideVO> update(@PathVariable Long id,
                                                         @Valid @RequestBody SaveWowSpecializationGuideRequest request,
                                                         HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        return ApiResponse.success(wowSpecializationGuideService.update(id, request));
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(wowSpecializationGuideService.update(currentUserId, id, request));
     }
 }

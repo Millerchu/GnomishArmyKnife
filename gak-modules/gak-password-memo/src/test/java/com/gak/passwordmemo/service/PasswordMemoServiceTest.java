@@ -29,6 +29,8 @@ import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,11 +62,10 @@ class PasswordMemoServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"MemoPassword123", "", "   ", " password "})
     void createShouldEncryptExactPasswordAndBindCurrentOwner(String password) {
-        User user = new User();
-        user.setId(1L);
+        User user = enabledUser(1L);
         when(userMapper.selectById(1L)).thenReturn(user);
-        when(passwordMemoCryptoService.encrypt(password))
-                .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("ciphertext", "nonce"));
+        when(passwordMemoCryptoService.encrypt(eq(1L), anyLong(), eq(password)))
+                .thenReturn(new EncryptedPasswordPayload("ciphertext", "nonce"));
         when(dataDictionaryUsageSupport.normalizeValueByUsage(
                 "APP_PASSWORD_MEMO", "PASSWORD_MEMO", "category", "工作", true))
                 .thenReturn("工作");
@@ -97,8 +98,7 @@ class PasswordMemoServiceTest {
 
     @Test
     void verifyAccessShouldValidateCurrentLoginPassword() {
-        User user = new User();
-        user.setId(1L);
+        User user = enabledUser(1L);
         user.setPasswordHash("encoded");
         when(userMapper.selectById(1L)).thenReturn(user);
 
@@ -109,7 +109,7 @@ class PasswordMemoServiceTest {
         memo.setPasswordNonce("nonce");
         when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
         when(passwordEncoder.matches("current-login-password", "encoded")).thenReturn(true);
-        when(passwordMemoCryptoService.decrypt("ciphertext", "nonce")).thenReturn("third-party-password");
+        when(passwordMemoCryptoService.decrypt(1L, 12L, "ciphertext", "nonce")).thenReturn("third-party-password");
 
         VerifyAccessRequest request = new VerifyAccessRequest();
         request.setLoginPassword("current-login-password");
@@ -120,8 +120,7 @@ class PasswordMemoServiceTest {
 
     @Test
     void verifyAccessShouldRejectWrongLoginPassword() {
-        User user = new User();
-        user.setId(1L);
+        User user = enabledUser(1L);
         user.setPasswordHash("encoded");
         when(userMapper.selectById(1L)).thenReturn(user);
 
@@ -144,8 +143,7 @@ class PasswordMemoServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"new-password", "", "   "})
     void updatePasswordShouldArchiveCurrentPasswordBeforeReplacingIt(String password) {
-        User user = new User();
-        user.setId(1L);
+        User user = enabledUser(1L);
         when(userMapper.selectById(1L)).thenReturn(user);
 
         PasswordMemo memo = new PasswordMemo();
@@ -155,9 +153,9 @@ class PasswordMemoServiceTest {
         memo.setPasswordNonce("old-nonce");
         memo.setPasswordStartedAt(java.time.LocalDateTime.of(2026, 1, 1, 8, 0));
         when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
-        when(passwordMemoCryptoService.decrypt("old-ciphertext", "old-nonce")).thenReturn("old-password");
-        when(passwordMemoCryptoService.encrypt(password))
-                .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("new-ciphertext", "new-nonce"));
+        when(passwordMemoCryptoService.decrypt(1L, 12L, "old-ciphertext", "old-nonce")).thenReturn("old-password");
+        when(passwordMemoCryptoService.encrypt(1L, 12L, password))
+                .thenReturn(new EncryptedPasswordPayload("new-ciphertext", "new-nonce"));
 
         UpdateMemoPasswordRequest request = new UpdateMemoPasswordRequest();
         request.setNewPassword(password);
@@ -175,8 +173,7 @@ class PasswordMemoServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"old-password", "", "   "})
     void createPasswordHistoryShouldEncryptPasswordAndKeepCurrentPasswordUntouched(String password) {
-        User user = new User();
-        user.setId(1L);
+        User user = enabledUser(1L);
         when(userMapper.selectById(1L)).thenReturn(user);
 
         PasswordMemo memo = new PasswordMemo();
@@ -184,8 +181,8 @@ class PasswordMemoServiceTest {
         memo.setOwnerUserId(1L);
         memo.setPasswordCiphertext("current-ciphertext");
         when(passwordMemoMapper.selectOne(any())).thenReturn(memo);
-        when(passwordMemoCryptoService.encrypt(password))
-                .thenReturn(new PasswordMemoCryptoService.EncryptedPayload("history-ciphertext", "history-nonce"));
+        when(passwordMemoCryptoService.encrypt(1L, 12L, password))
+                .thenReturn(new EncryptedPasswordPayload("history-ciphertext", "history-nonce"));
 
         CreatePasswordHistoryRequest request = new CreatePasswordHistoryRequest();
         request.setPassword(password);
@@ -199,5 +196,13 @@ class PasswordMemoServiceTest {
         assertEquals("history-ciphertext", history.getPasswordCiphertext());
         assertEquals(request.getUsageStartedAt(), history.getUsageStartedAt());
         assertEquals("current-ciphertext", memo.getPasswordCiphertext());
+    }
+
+    private User enabledUser(Long id) {
+        User user = new User();
+        user.setId(id);
+        user.setEnabled(true);
+        user.setStatus("ENABLED");
+        return user;
     }
 }

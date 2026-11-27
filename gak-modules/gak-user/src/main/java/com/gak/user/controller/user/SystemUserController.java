@@ -41,23 +41,23 @@ public class SystemUserController {
     @GetMapping
     public ApiResponse<PagedResult<UserListItemVO>> page(@Valid UserQueryRequest request,
                                                          HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        return ApiResponse.success(systemUserService.page(request));
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(systemUserService.page(currentUserId, request));
     }
 
     @PostMapping
     public ApiResponse<UserProfileVO> create(@Valid @RequestBody CreateUserRequest request,
                                              HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        return ApiResponse.success(systemUserService.create(request));
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(systemUserService.create(currentUserId, request));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<UserProfileVO> update(@PathVariable Long id,
                                              @Valid @RequestBody UpdateUserRequest request,
                                              HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        return ApiResponse.success(systemUserService.update(id, request));
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(systemUserService.update(currentUserId, id, request));
     }
 
     @DeleteMapping("/{id}")
@@ -71,8 +71,8 @@ public class SystemUserController {
     public ApiResponse<Void> updateStatus(@PathVariable Long id,
                                           @Valid @RequestBody UpdateUserStatusRequest request,
                                           HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        systemUserService.updateStatus(id, request);
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        systemUserService.updateStatus(currentUserId, id, request);
         return ApiResponse.success();
     }
 
@@ -80,8 +80,8 @@ public class SystemUserController {
     public ApiResponse<Void> resetPassword(@PathVariable Long id,
                                            @Valid @RequestBody ResetPasswordRequest request,
                                            HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        systemUserService.resetPassword(id, request);
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        systemUserService.resetPassword(currentUserId, id, request);
         return ApiResponse.success();
     }
 }

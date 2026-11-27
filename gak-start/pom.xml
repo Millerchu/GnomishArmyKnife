@@ -134,6 +134,16 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <gak.security.memo.aes-key>M2Y5YzhlN2Q2YjVhNGYzZTJkMWMwOWI4YTc2ZjVlNGQ=</gak.security.memo.aes-key>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <!-- 只声明，不写版本（从 parent 继承） -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>

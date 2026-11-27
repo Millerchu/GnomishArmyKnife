@@ -21,11 +21,13 @@ import com.gak.healthrecord.mapper.HealthReportMapper;
 import com.gak.healthrecord.mapper.HealthVisitMapper;
 import com.gak.healthrecord.vo.HealthFileUploadVO;
 import com.gak.healthrecord.vo.HealthRecordVO;
+import com.gak.healthrecord.vo.HealthReportFileResource;
 import com.gak.healthrecord.vo.HealthReportVO;
 import com.gak.healthrecord.vo.HealthSummaryVO;
 import com.gak.healthrecord.vo.HealthTrendPointVO;
 import com.gak.healthrecord.vo.HealthTrendVO;
 import com.gak.healthrecord.vo.HealthVisitVO;
+import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.io.IOException;
@@ -307,15 +309,25 @@ public class HealthRecordService {
         return result;
     }
 
-    public ReportFileResource loadReportFile(String fileName) {
+    public HealthReportFileResource loadReportFile(Long currentUserId, String fileName) {
+        ensureCurrentUserExists(currentUserId);
+        if (!healthReportMapper.hasHealthAppAccess(currentUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "未获得健康应用权限");
+        }
         String normalized = normalizeFileName(fileName);
+        String expectedUrl = publicUrlPrefix + normalized;
+        boolean ownsFile = healthReportMapper.existsOwnedReportFile(currentUserId, normalized, expectedUrl)
+                || healthVisitMapper.existsOwnedCaseRecordFile(currentUserId, normalized, expectedUrl);
+        if (!ownsFile) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "健康附件不存在");
+        }
         Path path = localStorageDir.resolve(normalized).normalize();
         if (!path.startsWith(localStorageDir) || !Files.exists(path) || !Files.isRegularFile(path)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "健康附件不存在");
         }
         try {
             Resource resource = new UrlResource(path.toUri());
-            return new ReportFileResource(resource, resolveMediaType(path));
+            return new HealthReportFileResource(resource, resolveMediaType(path), normalized);
         } catch (MalformedURLException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "健康附件不存在");
         } catch (IOException exception) {
@@ -569,9 +581,11 @@ public class HealthRecordService {
     }
 
     private void ensureCurrentUserExists(Long currentUserId) {
-        User currentUser = userMapper.selectById(currentUserId);
-        if (currentUser == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
+        User currentUser = currentUserId == null ? null : userMapper.selectById(currentUserId);
+        if (currentUser == null
+                || !Boolean.TRUE.equals(currentUser.getEnabled())
+                || !UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(currentUser.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户已失效，请重新登录");
         }
     }
 
@@ -686,8 +700,5 @@ public class HealthRecordService {
 
     private static BigDecimal integerToDecimal(Integer value) {
         return value == null ? null : BigDecimal.valueOf(value);
-    }
-
-    public record ReportFileResource(Resource resource, MediaType mediaType) {
     }
 }

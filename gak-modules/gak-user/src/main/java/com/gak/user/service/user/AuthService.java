@@ -118,6 +118,9 @@ public class AuthService {
         if (user == null) {
             throw new BusinessException("AUTH_INVALID", "用户名或原密码错误");
         }
+        if (!isEnabled(user)) {
+            throw new BusinessException("USER_DISABLED", "用户已被禁用");
+        }
 
         String oldPlainPassword = passwordCryptoService.decrypt(request.getOldEncryptedPassword());
         String newPlainPassword = passwordCryptoService.decrypt(request.getNewEncryptedPassword());
@@ -135,6 +138,7 @@ public class AuthService {
         updatedUser.setForceChangePassword(false);
         updatedUser.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(updatedUser);
+        tokenService.revokeByUserId(user.getId());
     }
 
     private void ensureUsernameUnique(String username, Long excludeId) {

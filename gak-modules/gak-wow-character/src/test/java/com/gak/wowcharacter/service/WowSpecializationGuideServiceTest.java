@@ -3,10 +3,13 @@ package com.gak.wowcharacter.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.gak.framework.exception.BusinessException;
+import com.gak.user.domain.user.User;
+import com.gak.user.mapper.user.UserMapper;
 import com.gak.wowcharacter.constant.WowSeasonConstants;
 import com.gak.wowcharacter.domain.WowSpecializationGuide;
 import com.gak.wowcharacter.dto.SaveWowSpecializationGuideRequest;
@@ -21,6 +24,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * WoW 赛季职业专精指南服务测试。
@@ -30,6 +35,9 @@ class WowSpecializationGuideServiceTest {
 
     @Mock
     private WowSpecializationGuideMapper wowSpecializationGuideMapper;
+
+    @Mock
+    private UserMapper userMapper;
 
     @InjectMocks
     private WowSpecializationGuideService wowSpecializationGuideService;
@@ -47,12 +55,13 @@ class WowSpecializationGuideServiceTest {
     }
 
     @Test
-    void shouldUpdateEditableGuideFields() {
+    void shouldUpdateEditableGuideFieldsForEnabledAdmin() {
         WowSpecializationGuide guide = buildGuide();
         SaveWowSpecializationGuideRequest request = buildRequest();
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "ADMIN", true, "ENABLED"));
         when(wowSpecializationGuideMapper.selectById(guide.getId())).thenReturn(guide);
 
-        WowSpecializationGuideVO updated = wowSpecializationGuideService.update(guide.getId(), request);
+        WowSpecializationGuideVO updated = wowSpecializationGuideService.update(1L, guide.getId(), request);
 
         ArgumentCaptor<WowSpecializationGuide> captor = ArgumentCaptor.forClass(WowSpecializationGuide.class);
         verify(wowSpecializationGuideMapper).updateById(captor.capture());
@@ -64,10 +73,35 @@ class WowSpecializationGuideServiceTest {
 
     @Test
     void shouldRejectMissingGuide() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "ADMIN", true, "ENABLED"));
         when(wowSpecializationGuideMapper.selectById(404L)).thenReturn(null);
 
         assertThrows(BusinessException.class,
-                () -> wowSpecializationGuideService.update(404L, buildRequest()));
+                () -> wowSpecializationGuideService.update(1L, 404L, buildRequest()));
+    }
+
+    @Test
+    void shouldRejectNonAdminOrDisabledUserOnUpdate() {
+        when(userMapper.selectById(2L)).thenReturn(buildUser(2L, "USER", true, "ENABLED"));
+        ResponseStatusException forbidden = assertThrows(ResponseStatusException.class,
+                () -> wowSpecializationGuideService.update(2L, 1L, buildRequest()));
+        assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
+
+        when(userMapper.selectById(3L)).thenReturn(buildUser(3L, "ADMIN", false, "DISABLED"));
+        ResponseStatusException unauthorized = assertThrows(ResponseStatusException.class,
+                () -> wowSpecializationGuideService.update(3L, 1L, buildRequest()));
+        assertEquals(HttpStatus.UNAUTHORIZED, unauthorized.getStatusCode());
+
+        verify(wowSpecializationGuideMapper, never()).updateById(any(WowSpecializationGuide.class));
+    }
+
+    private User buildUser(Long id, String roleCode, boolean enabled, String status) {
+        User user = new User();
+        user.setId(id);
+        user.setRoleCode(roleCode);
+        user.setEnabled(enabled);
+        user.setStatus(status);
+        return user;
     }
 
     private WowSpecializationGuide buildGuide() {

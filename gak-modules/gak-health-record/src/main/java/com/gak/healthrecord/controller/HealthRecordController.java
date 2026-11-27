@@ -12,6 +12,7 @@ import com.gak.healthrecord.dto.SaveHealthVisitRequest;
 import com.gak.healthrecord.service.HealthRecordService;
 import com.gak.healthrecord.vo.HealthFileUploadVO;
 import com.gak.healthrecord.vo.HealthRecordVO;
+import com.gak.healthrecord.vo.HealthReportFileResource;
 import com.gak.healthrecord.vo.HealthReportVO;
 import com.gak.healthrecord.vo.HealthSummaryVO;
 import com.gak.healthrecord.vo.HealthTrendVO;
@@ -19,7 +20,10 @@ import com.gak.healthrecord.vo.HealthVisitVO;
 import com.gak.user.service.user.TokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.nio.charset.StandardCharsets;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -126,10 +130,18 @@ public class HealthRecordController {
     }
 
     @GetMapping("/report-files/{fileName:.+}")
-    public ResponseEntity<Resource> getReportFile(@PathVariable String fileName) {
-        HealthRecordService.ReportFileResource reportFileResource = healthRecordService.loadReportFile(fileName);
+    public ResponseEntity<Resource> getReportFile(@PathVariable String fileName,
+                                                  HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        HealthReportFileResource reportFileResource = healthRecordService.loadReportFile(currentUserId, fileName);
+        ContentDisposition contentDisposition = ContentDisposition.attachment()
+                .filename(reportFileResource.fileName(), StandardCharsets.UTF_8)
+                .build();
         return ResponseEntity.ok()
                 .contentType(reportFileResource.mediaType())
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(reportFileResource.resource());
     }
 

@@ -1,6 +1,7 @@
 # GnomishArmyKnife (GAK) 后端全面代码评审报告
 
-> **评审日期**：2026-11-26  
+> **评审日期**：2026-11-26（**整改更新**：2026-11-27 完成全部 5 项 P0 严重问题修复）
+>
 > **评审基线**：`repos/backend`（分支 `main`，Java 21 / Spring Boot 3.4.1 / MyBatis Plus 3.5.9 / PostgreSQL）  
 > **评审范围**：`gak-framework`、`gak-start`（含 `schema.sql` 与配置项）、以及 `gak-modules/*` 全部 21 个业务模块（共 **544 个主源码文件 / 45,371 行**，**76 个测试文件 / 11,058 行**；`gak-common` 当前为空模块）  
 > **评审依据**：仓库 `AGENTS.md` 工程与类设计规范、《阿里巴巴 Java 开发手册（1.4.0）》及现代 Java 21 / Web 安全最佳实践
@@ -11,35 +12,27 @@
 
 ### 1.1 总体结论
 
-后端代码整体分层清晰、业务建模扎实，且在近期演进的标杆模块（如 `gak-system-log`、`gak-workbench`、`gak-message`、`gak-growth-record`）中展现了很强的并发控制、脱敏审计和防御式编程水平。**但当前系统存在 5 项可直接导致越权接管或敏感数据泄露的 P0 级严重安全漏洞**，同时在“统一应用鉴权、大表分页与 N+1 查询、缓存与事务一致性、代码体量与类设计规范”四个维度存在明显的系统性历史债。
-
-**建议优先完成全部 P0 项的紧急修复后再对外网或非完全信任环境开放访问。**
+后端代码整体分层清晰、业务建模扎实，且在近期演进的标杆模块（如 `gak-system-log`、`gak-workbench`、`gak-message`、`gak-growth-record`）中展现了很强的并发控制、脱敏审计和防御式编程水平。原评审发现的 **5 项 P0 级严重安全漏洞已于 2026-11-27 全部修复并通过单元测试与 MockMvc 权限回归验证**；当前剩余历史债主要集中在 P1–P3 维度的“统一应用鉴权、大表分页与 N+1 查询、缓存与事务一致性、代码体量与类设计规范”。
 
 ### 1.2 构建与测试基线
 
-在 JDK 21 环境下执行 `.\mvnw.cmd test` 全量验证结果：
-
-| 指标 | 结果 | 说明 |
-| --- | --- | --- |
-| 构建状态 | **BUILD SUCCESS**（01:12） | 26 个 Reactor 模块全部编译通过 |
-| 单元测试总数 | **467**（失败 0 / 错误 0） | 现有启用的单元测试全部通过 |
-| 跳过测试数 | **45** | `gak-start` 24/25 跳过（集成测试默认跳过）、`gak-message` 11/11 跳过、`gak-system-log` 8/65 跳过、`gak-workbench` 2/82 跳过 |
-| 静态 hygiene | `printStackTrace`: 0 / `System.out`: 0 / `// TODO`: 0 | 无调试输出残留；但存在 63 处内部类/嵌套记录、2 处 `Executors.new*`、1 处 `new Thread` |
+- **2026-11-26 初评基线**：在 JDK 21 环境下执行 `.\mvnw.cmd test`，26 个 Reactor 模块 **BUILD SUCCESS**（01:12），单元测试总数 **467**（失败 0 / 错误 0），跳过 **45**（`gak-start` 24/25、`gak-message` 11/11、`gak-system-log` 8/65、`gak-workbench` 2/82）。静态 hygiene：`printStackTrace`: 0 / `System.out`: 0 / `// TODO`: 0；但存在 63 处内部类/嵌套记录、2 处 `Executors.new*`、1 处 `new Thread`。
+- **2026-11-27 P0 修复后验证**：执行 `.\scripts\backend-dev.ps1 test`（`.\mvnw.cmd test`），26 个 Reactor 模块 **BUILD SUCCESS**（01:29），总测试数 **486**，实际执行 **441**（失败 0 / 错误 0），跳过 **45**（与既有条件集成测试一致）。
 
 ### 1.3 问题严重级别分布
 
-| 级别 | 定义 | 数量 | 核心聚焦点 |
-| --- | --- | --- | --- |
-| **P0 严重** | 匿名/普通用户可直接越权接管系统、窃取敏感数据或离线解密密文 | **5** | 后台用户管理无管理员鉴权、Token 无过期/无吊销/不查启用态、医疗报告免鉴权下载、密码备忘录硬编码默认密钥、WoW 共享指南无管理员鉴权 |
-| **P1 高危** | 权限绕过、同源 XSS、ZIP 炸弹/路径风险、严重 N+1/万级 UPDATE、数据与缓存一致性缺陷 | **25** | 10+ 模块缺应用级权限校验、改密无鉴权防爆破、SVG XSS、ZIP 炸弹与路径边界、AI 同步万级 UPDATE、油耗/知识库/乐器性能瓶颈、字典缓存脏读、SSE 线程安全 |
-| **P2 中等** | 内存分页扩展性瓶颈、并发竞态、可空字段无法置空、异常日志缺失、索引缺口 | **16 类** | 12+ 模块全表 `selectList` 内存分页、`GlobalExceptionHandler` 不记 500 堆栈、MyBatis-Plus `NOT_NULL` 置空失效、多处并发竞态与索引缺口 |
-| **P3 建议** | 巨型类治理、违反内部类规范、文案/格式/微优化、测试覆盖缺口 | **4 类** | `WowCharacterService`(1872行)/`WorkLogService`(1012行)、公开嵌套 record/Payload 违反 `AGENTS.md`、多模块缺少 Controller/核心 Service 单测 |
+| 级别 | 定义 | 数量 | 当前状态 | 核心聚焦点 |
+| --- | --- | --- | --- | --- |
+| **P0 严重** | 匿名/普通用户可直接越权接管系统、窃取敏感数据或离线解密密文 | **5** | **5/5 已修复** | 后台用户管理管理员鉴权、Token 过期/吊销与启用态校验、医疗报告下载鉴权归属、密码备忘录强制外置密钥与 AAD、WoW 共享指南管理员鉴权 |
+| **P1 高危** | 权限绕过、同源 XSS、ZIP 炸弹/路径风险、严重 N+1/万级 UPDATE、数据与缓存一致性缺陷 | **25** | 待修复 | 10+ 模块缺应用级权限校验、改密无鉴权防爆破、SVG XSS、ZIP 炸弹与路径边界、AI 同步万级 UPDATE、油耗/知识库/乐器性能瓶颈、字典缓存脏读、SSE 线程安全 |
+| **P2 中等** | 内存分页扩展性瓶颈、并发竞态、可空字段无法置空、异常日志缺失、索引缺口 | **16 类** | 待修复 | 12+ 模块全表 `selectList` 内存分页、`GlobalExceptionHandler` 不记 500 堆栈、MyBatis-Plus `NOT_NULL` 置空失效、多处并发竞态与索引缺口 |
+| **P3 建议** | 巨型类治理、违反内部类规范、文案/格式/微优化、测试覆盖缺口 | **4 类** | 待修复 | `WowCharacterService`(1872行)/`WorkLogService`(1012行)、公开嵌套 record/Payload 违反 `AGENTS.md`、多模块缺少 Controller/核心 Service 单测 |
 
 ---
 
-## 二、P0 严重问题（必须立即修复）
+## 二、P0 严重问题（已完成修复）
 
-### P0-1：`gak-user` 后台用户管理全部 6 个接口缺失管理员权限校验（垂直越权 / 全站接管）
+### P0-1：`gak-user` 后台用户管理全部 6 个接口缺失管理员权限校验（垂直越权 / 全站接管） — `[已修复 2026-11-27]`
 
 - **代码位置**：
   - `gak-modules/gak-user/src/main/java/com/gak/user/controller/user/SystemUserController.java:41-86`
@@ -51,8 +44,10 @@
   1. 在 `SystemUserService` 所有管理方法入口统一校验操作者存在、已启用（`enabled == true && "ENABLED".equals(status)`）且 `roleCode == ADMIN`；
   2. 禁止降级/禁用默认 `admin` 账号以及当前登录管理员自身；
   3. 补充普通用户访问 `/system/users/**` 返回 `403` 的集成测试。
+- **整改记录（2026-11-27）**：
+  - `SystemUserController` 全接口透传 `currentUserId`；`SystemUserService` 新增 `requireAdminOperator` 与受保护账号校验，禁止降级/禁用默认 `admin` 与当前登录管理员自身，并在禁用/删除/改角色/重置密码时吊销目标用户令牌；补充 `SystemUserServiceTest` 与 `SystemUserControllerSecurityTest`（MockMvc 验证未登录 401、普通用户 403、停用管理员 401）。
 
-### P0-2：`gak-user` Token 无过期时间、无吊销机制且鉴权不校验账号启用状态（权限永久残留 + OOM）
+### P0-2：`gak-user` Token 无过期时间、无吊销机制且鉴权不校验账号启用状态（权限永久残留 + OOM） — `[已修复 2026-11-27]`
 
 - **代码位置**：
   - `gak-modules/gak-user/src/main/java/com/gak/user/service/user/TokenService.java:20-38`
@@ -66,8 +61,10 @@
   1. 为 Token 引入绝对过期 + 滑动续期机制与容量上限（如 Caffeine 缓存），提供 `revokeToken(token)` 和 `revokeByUserId(userId)`；
   2. 在用户登出、禁用、删除、改密、重置密码时立即吊销目标用户全部 Token；
   3. 在统一认证层（建议收敛为全局 `HandlerInterceptor` 默认拦截 + 显式白名单）校验用户有效性与启用状态。
+- **整改记录（2026-11-27）**：
+  - 改造 `TokenService`（配合独立会话元数据类 `TokenSession`），支持 24h 绝对过期、2h 滑动续期、10000 容量淘汰、`revokeToken`/`revokeRequestToken`/`revokeByUserId`，并在校验时实时检查 `UserMapper` 用户存在性与启用态（失效即吊销并抛 401）；`AuthController` 新增幂等 `POST /auth/logout`；`AuthService.changePassword` 拦截禁用账号并在改密后吊销该用户全部令牌；补充 `TokenServiceTest`、`AuthServiceTest`、`AuthControllerLogoutTest`。统一全局 `HandlerInterceptor` 收口继续留在 P1-1 推进。
 
-### P0-3：`gak-health-record` 医疗报告文件下载接口完全未鉴权（匿名下载他人敏感医疗文件）
+### P0-3：`gak-health-record` 医疗报告文件下载接口完全未鉴权（匿名下载他人敏感医疗文件） — `[已修复 2026-11-27]`
 
 - **代码位置**：
   - `gak-modules/gak-health-record/src/main/java/com/gak/healthrecord/controller/HealthRecordController.java:128-134`
@@ -78,8 +75,10 @@
 - **修复建议**：
   1. 若需保留历史兼容路径，必须先校验登录态 + `APP_HEALTH_RECORD` 权限，再查询数据库确认该 `fileName` 属于当前用户的 `HealthReport.reportUrl` 或 `HealthVisit.caseRecordUrl`；
   2. 长期建议彻底下线该直链下载接口，统一收口至带 `AttachmentBusinessAccessPolicy` 保护的通用附件下载服务。
+- **整改记录（2026-11-27）**：
+  - `HealthRecordController.getReportFile` 增加 `HttpServletRequest` 登录鉴权并附带 `Content-Disposition: attachment`、`X-Content-Type-Options: nosniff`、`Cache-Control: no-store`；`HealthRecordService.loadReportFile` 校验用户启用态、`APP_HEALTH_RECORD` 应用授权及数据库文件归属（`HealthReportMapper.existsOwnedReportFile` / `HealthVisitMapper.existsOwnedCaseRecordFile`），拆出独立 `HealthReportFileResource`；补充 `HealthRecordServiceTest` 与 `HealthRecordReportFileControllerTest`。
 
-### P0-4：`gak-password-memo` 硬编码默认 AES-256 密钥且主配置文件未覆盖（全量密码可离线解密）
+### P0-4：`gak-password-memo` 硬编码默认 AES-256 密钥且主配置文件未覆盖（全量密码可离线解密） — `[已修复 2026-11-27]`
 
 - **代码位置**：
   - `gak-modules/gak-password-memo/src/main/java/com/gak/passwordmemo/service/PasswordMemoCryptoService.java:24-35`
@@ -91,8 +90,10 @@
   1. 移除源码中的硬编码默认密钥，改为强制外部注入（`${GAK_PASSWORD_MEMO_AES_KEY}`），启动时若缺失或命中已知弱密钥则 fail-fast 拒绝启动；
   2. 参考 `AiSyncCrypto` 的做法，在 AES-GCM 加密时绑定 `AAD`（如 `ownerUserId:memoId`），防止密文在不同记录或不同用户间被替换复用；
   3. 制定旧密钥数据重加密迁移方案并在生产环境轮换密钥。
+- **整改记录（2026-11-27）**：
+  - 移除 `PasswordMemoCryptoService` 硬编码默认密钥，改为强制读取 `${gak.security.memo.aes-key:}`（即 `GAK_PASSWORD_MEMO_AES_KEY`），缺失、格式非法或命中已知弱密钥时启动 fail-fast；新增 `v2:` 密文格式并在 AES-GCM 中绑定 `ownerUserId:memoId` AAD，拆出独立 `EncryptedPasswordPayload`；`PasswordMemoService` 在新建备忘录时预生成 `memoId` 并在全链路加解密传入 `(ownerUserId, memoId)`；`application.properties` 与 NAS 部署模板 `deploy/nas/docker-compose.yml`、`.env.example` 已同步声明 `GAK_PASSWORD_MEMO_AES_KEY`（测试配置仅在 `gak-start/pom.xml` surefire 与 `GakStartApplicationTests` 注入）。生产库如存有旧密钥密文，仍需在切换前按旧密钥解密并用新密钥 + `v2:` AAD 重加密轮换。
 
-### P0-5：`gak-wow-character` 全局共享职业专精指南更新接口缺失管理员鉴权
+### P0-5：`gak-wow-character` 全局共享职业专精指南更新接口缺失管理员鉴权 — `[已修复 2026-11-27]`
 
 - **代码位置**：
   - `gak-modules/gak-wow-character/src/main/java/com/gak/wowcharacter/controller/WowSpecializationGuideController.java:40-46`
@@ -102,6 +103,8 @@
   - 任意普通登录用户均可篡改全站所有用户看到的职业天赋、导入码、手法说明和外链 `sourceUrl`（可替换为钓鱼/恶意站点）。
 - **修复建议**：
   - 在 `WowSpecializationGuideService.update()` 接收 `currentUserId` 并校验管理员角色（及启用状态），非管理员返回 `403 FORBIDDEN`。
+- **整改记录（2026-11-27）**：
+  - `WowSpecializationGuideController.update` 透传 `currentUserId`；`WowSpecializationGuideService` 注入 `UserMapper` 并校验操作者存在、已启用且为 `ADMIN`（否则返回 401/403）；补充 `WowSpecializationGuideServiceTest` 与 `WowSpecializationGuideControllerTest`。
 
 ---
 
@@ -294,10 +297,12 @@
 
 ## 七、分阶段整改路线图
 
-### 第一阶段：P0 紧急止血（1–3 天内完成）
-1. **权限补洞**：为 `SystemUserService` 全部 6 个管理接口与 `WowSpecializationGuideService.update` 补齐管理员角色 + 启用状态校验；下线或加严鉴权 `/health-records/report-files/{fileName}`。
-2. **密钥与凭据清理**：移除 `PasswordMemoCryptoService` 硬编码默认密钥（改为强制环境变量 + 启动 fail-fast）；将 `application.properties:7` 数据库密码改为 `${SPRING_DATASOURCE_PASSWORD:}` 并轮换凭据。
-3. **Token 生命周期改造**：为 `TokenService` 增加 TTL 过期、登出/按用户吊销（禁用/删除/改密/重置密码联动吊销）与账号启用态校验。
+### 第一阶段：P0 紧急止血（已于 2026-11-27 完成主体修复）
+1. **[x] 权限补洞**：已为 `SystemUserService` 全部 6 个管理接口与 `WowSpecializationGuideService.update` 补齐管理员角色 + 启用状态校验；已为 `/health-records/report-files/{fileName}` 补齐登录态、`APP_HEALTH_RECORD` 权限与归属校验。
+2. **[x] 备忘录密钥清理 / [ ] 保留项 P1-6**：已移除 `PasswordMemoCryptoService` 硬编码默认密钥（改为强制环境变量 + 启动 fail-fast + AAD 绑定）；`application.properties:7` 数据库密码按 P1-6 与本地开发约定保留现状，待环境统一切换为 `${SPRING_DATASOURCE_PASSWORD:}` 并轮换凭据。
+3. **[x] Token 生命周期改造**：已为 `TokenService` 增加绝对/滑动 TTL 过期、容量上限淘汰、登出/按用户吊销（禁用/删除/改角色/改密/重置密码联动吊销）与账号启用态校验。
+
+> **注**：生产环境上线前需配置 `GAK_PASSWORD_MEMO_AES_KEY` 并完成历史密文重加密轮换。
 
 ### 第二阶段：P1 安全加固与核心性能修复（1–2 周）
 1. **统一鉴权架构**：在 `gak-framework` 落地全局认证与 `@RequireAppPermission` 拦截器，一次性收口 10+ 模块的应用权限校验、`forceChangePassword` 强制拦截、`/auth/change-password` 鉴权与登录/二次鉴权限流、图形验证码与用户名枚举修复。

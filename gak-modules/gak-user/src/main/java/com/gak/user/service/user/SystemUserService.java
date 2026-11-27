@@ -39,16 +39,20 @@ public class SystemUserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
+    private final TokenService tokenService;
 
     public SystemUserService(UserMapper userMapper,
                              PasswordEncoder passwordEncoder,
-                             DataDictionaryUsageSupport dataDictionaryUsageSupport) {
+                             DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                             TokenService tokenService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.dataDictionaryUsageSupport = dataDictionaryUsageSupport;
+        this.tokenService = tokenService;
     }
 
-    public PagedResult<UserListItemVO> page(UserQueryRequest request) {
+    public PagedResult<UserListItemVO> page(Long currentUserId, UserQueryRequest request) {
+        requireAdminOperator(currentUserId);
         QueryWrapper<User> wrapper = new QueryWrapper<>();
         String keyword = UserValidationSupport.trimToNull(request.getKeyword());
         if (StringUtils.hasText(keyword)) {
@@ -84,7 +88,8 @@ public class SystemUserService {
     }
 
     @Transactional
-    public UserProfileVO create(CreateUserRequest request) {
+    public UserProfileVO create(Long currentUserId, CreateUserRequest request) {
+        requireAdminOperator(currentUserId);
         String username = normalizeUsername(request.getUsername());
         ensureUsernameUnique(username, null);
         String roleCode = normalizeRoleCode(request.getRoleCode(), true);
@@ -116,17 +121,20 @@ public class SystemUserService {
     }
 
     @Transactional
-    public UserProfileVO update(Long id, UpdateUserRequest request) {
+    public UserProfileVO update(Long currentUserId, Long id, UpdateUserRequest request) {
+        requireAdminOperator(currentUserId);
         User current = getByIdOrThrow(id);
+        String previousRoleCode = resolveCurrentRoleCode(current);
         String username = normalizeUsername(request.getUsername());
         ensureUsernameUnique(username, id);
-        String roleCode = normalizeRoleCode(request.getRoleCode(), true, resolveCurrentRoleCode(current));
+        String roleCode = normalizeRoleCode(request.getRoleCode(), true, previousRoleCode);
         String status = normalizeStatusValue(request.getStatus(), true, resolveCurrentStatus(current));
         StatusEnabledPair statusEnabledPair = UserValidationSupport.normalizeStatusEnabled(
                 status,
                 request.getEnabled(),
                 isEnabledStatus(status)
         );
+        validateProtectedAccountMutation(current, currentUserId, roleCode, statusEnabledPair);
 
         current.setUsername(username);
         current.setDisplayName(resolveDisplayName(request.getDisplayName(), username));
@@ -138,11 +146,15 @@ public class SystemUserService {
         current.setRemark(UserValidationSupport.trimToNull(request.getRemark()));
         current.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(current);
+        if (!statusEnabledPair.enabled() || !previousRoleCode.equalsIgnoreCase(roleCode)) {
+            tokenService.revokeByUserId(id);
+        }
         return toUserProfile(current);
     }
 
     @Transactional
     public void delete(Long id, Long currentUserId) {
+        requireAdminOperator(currentUserId);
         User current = getByIdOrThrow(id);
         if (DEFAULT_ADMIN_USERNAME.equalsIgnoreCase(current.getUsername())) {
             throw new BusinessException("ADMIN_DELETE_FORBIDDEN", "默认管理员账号不可删除");
@@ -151,10 +163,12 @@ public class SystemUserService {
             throw new BusinessException("SELF_DELETE_FORBIDDEN", "当前登录用户不能删除自己");
         }
         userMapper.deleteById(id);
+        tokenService.revokeByUserId(id);
     }
 
     @Transactional
-    public void updateStatus(Long id, UpdateUserStatusRequest request) {
+    public void updateStatus(Long currentUserId, Long id, UpdateUserStatusRequest request) {
+        requireAdminOperator(currentUserId);
         User current = getByIdOrThrow(id);
         String status = normalizeStatusValue(request.getStatus(), true, resolveCurrentStatus(current));
         StatusEnabledPair statusEnabledPair = UserValidationSupport.normalizeStatusEnabled(
@@ -162,6 +176,7 @@ public class SystemUserService {
                 request.getEnabled(),
                 isEnabledStatus(status)
         );
+        validateProtectedAccountStatusChange(current, currentUserId, statusEnabledPair);
 
         User updatedUser = new User();
         updatedUser.setId(id);
@@ -169,10 +184,14 @@ public class SystemUserService {
         updatedUser.setEnabled(statusEnabledPair.enabled());
         updatedUser.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(updatedUser);
+        if (!statusEnabledPair.enabled()) {
+            tokenService.revokeByUserId(id);
+        }
     }
 
     @Transactional
-    public void resetPassword(Long id, ResetPasswordRequest request) {
+    public void resetPassword(Long currentUserId, Long id, ResetPasswordRequest request) {
+        requireAdminOperator(currentUserId);
         getByIdOrThrow(id);
         User updatedUser = new User();
         updatedUser.setId(id);
@@ -180,6 +199,57 @@ public class SystemUserService {
         updatedUser.setForceChangePassword(Boolean.TRUE.equals(request.getForceChange()));
         updatedUser.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(updatedUser);
+        tokenService.revokeByUserId(id);
+    }
+
+    private User requireAdminOperator(Long currentUserId) {
+        if (currentUserId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或登录已过期");
+        }
+        User operator = userMapper.selectById(currentUserId);
+        if (operator == null || !isAccountEnabled(operator)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户已失效，请重新登录");
+        }
+        if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(resolveCurrentRoleCode(operator))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可执行用户管理操作");
+        }
+        return operator;
+    }
+
+    private void validateProtectedAccountMutation(User target,
+                                                  Long currentUserId,
+                                                  String targetRoleCode,
+                                                  StatusEnabledPair statusEnabledPair) {
+        if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(targetRoleCode)) {
+            if (DEFAULT_ADMIN_USERNAME.equalsIgnoreCase(target.getUsername())) {
+                throw new BusinessException("ADMIN_ROLE_CHANGE_FORBIDDEN", "默认管理员账号不可降级");
+            }
+            if (target.getId().equals(currentUserId)) {
+                throw new BusinessException("SELF_ROLE_CHANGE_FORBIDDEN", "当前登录管理员不能降级自己");
+            }
+        }
+        validateProtectedAccountStatusChange(target, currentUserId, statusEnabledPair);
+    }
+
+    private void validateProtectedAccountStatusChange(User target,
+                                                      Long currentUserId,
+                                                      StatusEnabledPair statusEnabledPair) {
+        boolean disabling = !statusEnabledPair.enabled() || !isEnabledStatus(statusEnabledPair.status());
+        if (!disabling) {
+            return;
+        }
+        if (DEFAULT_ADMIN_USERNAME.equalsIgnoreCase(target.getUsername())) {
+            throw new BusinessException("ADMIN_DISABLE_FORBIDDEN", "默认管理员账号不可禁用");
+        }
+        if (target.getId().equals(currentUserId)) {
+            throw new BusinessException("SELF_DISABLE_FORBIDDEN", "当前登录用户不能禁用自己");
+        }
+    }
+
+    private boolean isAccountEnabled(User user) {
+        String status = resolveCurrentStatus(user);
+        boolean enabled = user.getEnabled() != null ? user.getEnabled() : isEnabledStatus(status);
+        return isEnabledStatus(status) && enabled;
     }
 
     private User getByIdOrThrow(Long id) {

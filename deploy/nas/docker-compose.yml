@@ -35,6 +35,7 @@ services:
       - GAK_ATTACHMENT_STORAGE_ROOT=/app/data
       - GAK_FUEL_PRICE_JUHE_API_KEY=${GAK_FUEL_PRICE_JUHE_API_KEY:-}
       - GAK_FUEL_PRICE_CACHE_MINUTES=${GAK_FUEL_PRICE_CACHE_MINUTES:-30}
+      - GAK_PASSWORD_MEMO_AES_KEY=${GAK_PASSWORD_MEMO_AES_KEY:?GAK_PASSWORD_MEMO_AES_KEY must be configured}
     volumes:
       - ./data/app:/app/data
     networks:
