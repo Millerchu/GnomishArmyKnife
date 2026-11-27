@@ -1,5 +1,6 @@
 package com.gak.todolist.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.todolist.dto.SaveTodoItemRequest;
 import com.gak.todolist.dto.TodoItemQueryRequest;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 待办任务控制器。
  */
 @RestController
+@RequireAppPermission("APP_TODO_LIST")
 @RequestMapping("/todo-items")
 public class TodoItemController {
 

@@ -14,6 +14,9 @@ public class InstrumentPracticeTakeVO {
     private Integer bpm;
     private String meter;
     private Long durationMs;
+    private Integer eventCount;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private List<PerformanceEventRequest> events;
     private Long createdAt;
 
@@ -63,6 +66,14 @@ public class InstrumentPracticeTakeVO {
 
     public void setDurationMs(Long durationMs) {
         this.durationMs = durationMs;
+    }
+
+    public Integer getEventCount() {
+        return eventCount;
+    }
+
+    public void setEventCount(Integer eventCount) {
+        this.eventCount = eventCount;
     }
 
     public List<PerformanceEventRequest> getEvents() {

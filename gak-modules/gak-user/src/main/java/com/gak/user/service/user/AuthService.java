@@ -1,6 +1,7 @@
 package com.gak.user.service.user;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.gak.framework.security.AttemptLimiter;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.exception.BusinessException;
 import com.gak.user.constant.UserSecurityConstants;
@@ -13,7 +14,11 @@ import com.gak.user.service.user.UserValidationSupport.StatusEnabledPair;
 import com.gak.user.vo.user.UserLoginVO;
 import com.gak.user.vo.user.UserProfileVO;
 import jakarta.servlet.http.HttpSession;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Locale;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +33,14 @@ public class AuthService {
     private static final String APP_CODE = "APP_USER_AUTH";
     private static final String MODULE_CODE = "AUTH_REGISTER";
 
+    private static final String INVALID_CREDENTIALS = "AUTH_INVALID";
+    // 相同成本的固定 BCrypt 占位，仅用于不存在账号时完成同等验证。
+    private static final String DUMMY_HASH = "$2a$10$wAEl23WkbzO1Gs7BIJtnCeKJt3Xij9uOqS4vNNrYYRF4GKPTNwJu6";
+
+    private final AttemptLimiter loginByAddress = new AttemptLimiter(120, Duration.ofMinutes(1));
+    private final AttemptLimiter loginByAccount = new AttemptLimiter(10, Duration.ofMinutes(10));
+    private final AttemptLimiter passwordChanges = new AttemptLimiter(8, Duration.ofMinutes(10));
+    private final LoginCaptchaService captchaService;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final PasswordCryptoService passwordCryptoService;
@@ -38,7 +51,9 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        PasswordCryptoService passwordCryptoService,
                        TokenService tokenService,
-                       DataDictionaryUsageSupport dataDictionaryUsageSupport) {
+                       DataDictionaryUsageSupport dataDictionaryUsageSupport,
+                       LoginCaptchaService captchaService) {
+        this.captchaService = captchaService;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.passwordCryptoService = passwordCryptoService;
@@ -80,24 +95,16 @@ public class AuthService {
     }
 
     @Transactional
-    public UserLoginVO login(LoginRequest request, HttpSession session, String captchaSessionKey) {
-        String captcha = (String) session.getAttribute(captchaSessionKey);
-        session.removeAttribute(captchaSessionKey);
-        if (!StringUtils.hasText(captcha) || !captcha.equalsIgnoreCase(request.getCaptcha())) {
-            throw new BusinessException("CAPTCHA_INVALID", "验证码错误或已过期");
-        }
-
-        User user = getByUsername(normalizeUsername(request.getUsername()));
-        if (user == null) {
-            throw new BusinessException("AUTH_INVALID", "用户名或密码错误");
-        }
-
+    public UserLoginVO login(LoginRequest request, HttpSession session, String address) {
+        loginByAddress.acquire(address);
+        captchaService.verify(session, request.getCaptcha());
+        String username = normalizeUsername(request.getUsername());
+        loginByAccount.acquire(username.toLowerCase(Locale.ROOT));
         String plainPassword = passwordCryptoService.decrypt(request.getEncryptedPassword());
-        if (!passwordEncoder.matches(plainPassword, user.getPasswordHash())) {
-            throw new BusinessException("AUTH_INVALID", "用户名或密码错误");
-        }
-        if (!isEnabled(user)) {
-            throw new BusinessException("USER_DISABLED", "用户已被禁用");
+        User user = getByUsername(username);
+        boolean matches = passwordEncoder.matches(plainPassword, user == null ? DUMMY_HASH : user.getPasswordHash());
+        if (!matches || user == null || !isEnabled(user)) {
+            throw new BusinessException(INVALID_CREDENTIALS, "用户名或密码错误");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -109,26 +116,23 @@ public class AuthService {
         user.setLastLoginTime(now);
         user.setUpdatedAt(now);
 
-        return new UserLoginVO(tokenService.issueToken(user.getId()), toUserProfile(user));
+        return new UserLoginVO(tokenService.issueToken(user.getId(), Boolean.TRUE.equals(user.getForceChangePassword())), toUserProfile(user));
     }
 
     @Transactional
-    public void changePassword(ChangePasswordRequest request) {
-        User user = getByUsername(normalizeUsername(request.getUsername()));
-        if (user == null) {
-            throw new BusinessException("AUTH_INVALID", "用户名或原密码错误");
-        }
-        if (!isEnabled(user)) {
-            throw new BusinessException("USER_DISABLED", "用户已被禁用");
-        }
-
+    public void changePassword(Long currentUserId, ChangePasswordRequest request) {
+        passwordChanges.acquire(currentUserId.toString());
         String oldPlainPassword = passwordCryptoService.decrypt(request.getOldEncryptedPassword());
+        User user = userMapper.selectOne(new QueryWrapper<User>().eq("id", currentUserId).last("FOR UPDATE"));
+        if (user == null || !isEnabled(user)) {
+            throw new BusinessException("USER_DISABLED", "用户不可用");
+        }
+        if (!passwordEncoder.matches(oldPlainPassword, user.getPasswordHash())) {
+            throw new BusinessException(INVALID_CREDENTIALS, "原密码错误");
+        }
         String newPlainPassword = passwordCryptoService.decrypt(request.getNewEncryptedPassword());
         if (oldPlainPassword.equals(newPlainPassword)) {
             throw new BusinessException("PASSWORD_UNCHANGED", "新密码不能与原密码相同");
-        }
-        if (!passwordEncoder.matches(oldPlainPassword, user.getPasswordHash())) {
-            throw new BusinessException("AUTH_INVALID", "用户名或原密码错误");
         }
         UserValidationSupport.validatePasswordLength(newPlainPassword);
 
@@ -138,7 +142,16 @@ public class AuthService {
         updatedUser.setForceChangePassword(false);
         updatedUser.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(updatedUser);
-        tokenService.revokeByUserId(user.getId());
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    tokenService.revokeByUserId(currentUserId);
+                }
+            });
+        } else {
+            tokenService.revokeByUserId(currentUserId);
+        }
     }
 
     private void ensureUsernameUnique(String username, Long excludeId) {
@@ -155,7 +168,7 @@ public class AuthService {
 
     private User getByUsername(String username) {
         QueryWrapper<User> wrapper = new QueryWrapper<>();
-        wrapper.eq("username", username);
+        wrapper.eq("username", username).last("FOR UPDATE");
         return userMapper.selectOne(wrapper);
     }
 

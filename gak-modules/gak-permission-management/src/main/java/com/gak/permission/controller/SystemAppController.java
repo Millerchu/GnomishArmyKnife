@@ -1,5 +1,6 @@
 package com.gak.permission.controller;
 
+import com.gak.framework.security.PublicEndpoint;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.permission.service.SystemAppIconService;
@@ -14,7 +15,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,7 +59,7 @@ public class SystemAppController {
         return ApiResponse.success(systemAppService.create(
                 currentUserId,
                 request,
-                resolveClientIp(httpServletRequest),
+                httpServletRequest.getRemoteAddr(),
                 resolveUserAgent(httpServletRequest)
         ));
     }
@@ -73,7 +73,7 @@ public class SystemAppController {
                 currentUserId,
                 id,
                 request,
-                resolveClientIp(httpServletRequest),
+                httpServletRequest.getRemoteAddr(),
                 resolveUserAgent(httpServletRequest)
         ));
     }
@@ -87,7 +87,7 @@ public class SystemAppController {
                 currentUserId,
                 id,
                 request,
-                resolveClientIp(httpServletRequest),
+                httpServletRequest.getRemoteAddr(),
                 resolveUserAgent(httpServletRequest)
         ));
     }
@@ -99,25 +99,22 @@ public class SystemAppController {
         return ApiResponse.success(systemAppIconService.upload(
                 currentUserId,
                 file,
-                resolveClientIp(httpServletRequest),
+                httpServletRequest.getRemoteAddr(),
                 resolveUserAgent(httpServletRequest)
         ));
     }
 
+    @PublicEndpoint
     @GetMapping("/icon-files/{fileName:.+}")
     public ResponseEntity<Resource> getIconFile(@PathVariable String fileName) {
         SystemAppIconService.IconResource iconResource = systemAppIconService.load(fileName);
-        return ResponseEntity.ok()
-                .contentType(iconResource.mediaType())
-                .body(iconResource.resource());
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            return forwarded.split(",")[0].trim();
+        var response = ResponseEntity.ok().contentType(iconResource.mediaType())
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", "default-src 'none'; sandbox");
+        if (org.springframework.http.MediaType.APPLICATION_OCTET_STREAM.equals(iconResource.mediaType())) {
+            response.header("Content-Disposition", "attachment");
         }
-        return request.getRemoteAddr();
+        return response.body(iconResource.resource());
     }
 
     private String resolveUserAgent(HttpServletRequest request) {

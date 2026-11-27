@@ -1,5 +1,6 @@
 package com.gak.instrumentpractice.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.instrumentpractice.dto.SaveInstrumentPracticeTakeRequest;
 import com.gak.instrumentpractice.service.InstrumentPracticeTakeService;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 随身乐器练习片段接口。
  */
 @RestController
+@RequireAppPermission("APP_INSTRUMENT_PRACTICE")
 @RequestMapping("/instrument-practice/takes")
 public class InstrumentPracticeTakeController {
 
@@ -36,6 +38,11 @@ public class InstrumentPracticeTakeController {
     @GetMapping
     public ApiResponse<List<InstrumentPracticeTakeVO>> list(HttpServletRequest request) {
         return ApiResponse.success(instrumentPracticeTakeService.list(tokenService.requireCurrentUserId(request)));
+    }
+
+    @GetMapping("/{takeId}")
+    public ApiResponse<InstrumentPracticeTakeVO> detail(@PathVariable Long takeId, HttpServletRequest request) {
+        return ApiResponse.success(instrumentPracticeTakeService.detail(tokenService.requireCurrentUserId(request), takeId));
     }
 
     @PostMapping

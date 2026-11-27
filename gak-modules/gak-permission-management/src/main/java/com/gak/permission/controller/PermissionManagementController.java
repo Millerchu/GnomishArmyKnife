@@ -73,7 +73,7 @@ public class PermissionManagementController {
                 userId,
                 request,
                 resolveTraceId(httpServletRequest),
-                resolveClientIp(httpServletRequest),
+                httpServletRequest.getRemoteAddr(),
                 resolveUserAgent(httpServletRequest)
         ));
     }
@@ -84,7 +84,7 @@ public class PermissionManagementController {
         return ApiResponse.success(permissionManagementService.getCurrentUserApps(
                 currentUserId,
                 resolveTraceId(httpServletRequest),
-                resolveClientIp(httpServletRequest),
+                httpServletRequest.getRemoteAddr(),
                 resolveUserAgent(httpServletRequest)
         ));
     }
@@ -99,14 +99,6 @@ public class PermissionManagementController {
             }
         }
         return UUID.randomUUID().toString();
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 
     private String resolveUserAgent(HttpServletRequest request) {

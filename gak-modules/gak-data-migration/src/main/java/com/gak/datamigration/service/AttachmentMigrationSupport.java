@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class AttachmentMigrationSupport {
 
+    private static final long MAX_ATTACHMENT_BYTES = 50L * 1024 * 1024;
     private final AttachmentMapper attachmentMapper;
     private final AttachmentService attachmentService;
     private final Path storageRoot;
@@ -48,7 +49,7 @@ public class AttachmentMigrationSupport {
         List<TransferItem> items = new ArrayList<>();
         List<MigrationAttachment> files = new ArrayList<>();
         for (Attachment attachment : attachmentMapper.selectList(wrapper)) {
-            Path source = storageRoot.resolve(attachment.getObjectKey()).normalize();
+            Path source = MigrationPaths.resolveEntry(storageRoot, attachment.getObjectKey());
             if (!source.startsWith(storageRoot) || !Files.isRegularFile(source)) continue;
             String entryPath = entryBase + "/" + attachment.getId() + "/" + attachment.getOriginalFileName();
             items.add(new TransferItem(attachment.getBusinessId(), attachment.getUsageType(),
@@ -72,6 +73,9 @@ public class AttachmentMigrationSupport {
             Long ownerUserId = ownerResolver.apply(targetBusinessId);
             Path file = context.attachmentPath(item.getEntryPath());
             if (ownerUserId == null || !file.startsWith(context.packageRoot()) || !Files.isRegularFile(file)) continue;
+            if (Files.size(file) > MAX_ATTACHMENT_BYTES) {
+                throw new IOException("迁移附件超过大小限制");
+            }
             AttachmentVO uploaded = attachmentService.uploadBytes(ownerUserId, Files.readAllBytes(file),
                     item.getOriginalFileName(), item.getUsageType());
             attachmentIds.computeIfAbsent(new BindingKey(targetBusinessId, ownerUserId, item.getUsageType()), key -> new ArrayList<>())

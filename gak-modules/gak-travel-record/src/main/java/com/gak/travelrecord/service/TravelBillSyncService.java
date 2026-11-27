@@ -110,12 +110,30 @@ public class TravelBillSyncService {
         bill.setSourceType(SOURCE_TYPE);
         bill.setSourceId(record.getId());
         bill.setSourceEntry(entry);
-        bill.setMerchantName(record.getCarrier());
+        if (create) {
+            bill.setMerchantName(record.getCarrier());
+        }
         bill.setNote((REFUND.equals(entry) ? "行程退款 · " : "行程付款 · ")
                 + record.getDeparture() + " → " + record.getArrival()
                 + " · " + transportLabel(record.getTransportType()));
         bill.setUpdatedAt(LocalDateTime.now());
-        if (create) { mapper.insert(bill); } else { mapper.updateById(bill); }
+        if (create) {
+            mapper.insert(bill);
+        } else {
+            mapper.update(null, new UpdateWrapper<PersonalBill>()
+                    .eq("id", bill.getId())
+                    .eq("owner_user_id", record.getOwnerUserId())
+                    .set("bill_type", bill.getBillType())
+                    .set("currency", bill.getCurrency())
+                    .set("amount", bill.getAmount())
+                    .set("bill_date", bill.getBillDate())
+                    .set("source_type", bill.getSourceType())
+                    .set("source_id", bill.getSourceId())
+                    .set("source_entry", bill.getSourceEntry())
+                    .set("merchant_name", record.getCarrier())
+                    .set("note", bill.getNote())
+                    .set("updated_at", bill.getUpdatedAt()));
+        }
     }
 
     private String transportLabel(String type) {

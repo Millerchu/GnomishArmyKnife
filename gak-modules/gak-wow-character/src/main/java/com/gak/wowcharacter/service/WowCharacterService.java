@@ -1,6 +1,7 @@
 package com.gak.wowcharacter.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -201,6 +202,8 @@ public class WowCharacterService {
         Map<Long, List<WowCharacterKeybinding>> keybindingMap = loadKeybindingMap(pageCharacterIds);
         Map<Long, List<WowCharacterMacro>> macroMap = loadMacroMap(pageCharacterIds);
 
+        WowCharacterViewContext context = loadViewContext(pageRecords, weeklyVaultMap.values().stream()
+                .flatMap(Collection::stream).toList());
         List<WowCharacterListVO> list = new ArrayList<>();
         for (WowCharacter record : pageRecords) {
             list.add(toListVO(
@@ -208,7 +211,7 @@ public class WowCharacterService {
                     mythicRunMap.getOrDefault(record.getId(), Collections.emptyList()),
                     weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList()),
                     keybindingMap.getOrDefault(record.getId(), Collections.emptyList()),
-                    macroMap.getOrDefault(record.getId(), Collections.emptyList())
+                    macroMap.getOrDefault(record.getId(), Collections.emptyList()), context
             ));
         }
         return new PagedResult<>(list, total);
@@ -216,7 +219,7 @@ public class WowCharacterService {
 
     @Transactional
     public WowCharacterListVO create(Long currentUserId, SaveWowCharacterRequest request) {
-        ensureCurrentUserExists(currentUserId);
+        lockOwnerForMutation(currentUserId);
         validateFeaturedCharacterLimit(currentUserId, null, request.getIsFeatured());
         NormalizedCharacter normalized = normalizeRequest(request);
 
@@ -229,18 +232,19 @@ public class WowCharacterService {
         wowCharacterMapper.insert(character);
 
         syncMythicRuns(currentUserId, character.getId(), normalized.mythicRuns(), now);
-        syncWeeklyVaults(currentUserId, character.getId(), normalized.weeklyVaults(), now);
+        List<WowCharacterWeeklyVault> weeklyVaults = syncWeeklyVaults(
+                currentUserId, character.getId(), normalized.weeklyVaults(), now);
         syncKeybindings(currentUserId, character.getId(), normalized.keybindings(), now);
         syncMacros(currentUserId, character.getId(), normalized.macros(), now);
         return toListVO(character, toDomainMythicRuns(character.getId(), currentUserId, normalized.mythicRuns(), now),
-                toDomainWeeklyVaults(character.getId(), currentUserId, normalized.weeklyVaults(), now),
+                weeklyVaults,
                 toDomainKeybindings(character.getId(), currentUserId, normalized.keybindings(), now),
                 toDomainMacros(character.getId(), currentUserId, normalized.macros(), now));
     }
 
     @Transactional
     public WowCharacterListVO update(Long currentUserId, Long id, SaveWowCharacterRequest request) {
-        ensureCurrentUserExists(currentUserId);
+        lockOwnerForMutation(currentUserId);
         WowCharacter current = getOwnedCharacterOrThrow(currentUserId, id);
         validateFeaturedCharacterLimit(currentUserId, current, request.getIsFeatured());
         NormalizedCharacter normalized = normalizeRequest(request);
@@ -251,11 +255,12 @@ public class WowCharacterService {
         wowCharacterMapper.updateById(current);
 
         syncMythicRuns(currentUserId, current.getId(), normalized.mythicRuns(), now);
-        syncWeeklyVaults(currentUserId, current.getId(), normalized.weeklyVaults(), now);
+        List<WowCharacterWeeklyVault> weeklyVaults = syncWeeklyVaults(
+                currentUserId, current.getId(), normalized.weeklyVaults(), now);
         syncKeybindings(currentUserId, current.getId(), normalized.keybindings(), now);
         syncMacros(currentUserId, current.getId(), normalized.macros(), now);
         return toListVO(current, toDomainMythicRuns(current.getId(), currentUserId, normalized.mythicRuns(), now),
-                toDomainWeeklyVaults(current.getId(), currentUserId, normalized.weeklyVaults(), now),
+                weeklyVaults,
                 toDomainKeybindings(current.getId(), currentUserId, normalized.keybindings(), now),
                 toDomainMacros(current.getId(), currentUserId, normalized.macros(), now));
     }
@@ -266,7 +271,7 @@ public class WowCharacterService {
     @Transactional
     public void saveWeeklyVault(Long currentUserId, Long characterId,
                                 SaveWowCharacterWeeklyVaultRequest request) {
-        ensureCurrentUserExists(currentUserId);
+        lockOwnerForMutation(currentUserId);
         getOwnedCharacterOrThrow(currentUserId, characterId);
         NormalizedWeeklyVault normalized = normalizeWeeklyVaults(List.of(request)).get(0);
         deleteHistoricalWeeklyVaults(currentUserId, characterId, normalized.weekStartDate());
@@ -337,7 +342,7 @@ public class WowCharacterService {
      */
     @Transactional
     public WowCharacterListVO resetWeeklyProgressIfNeeded(Long currentUserId, Long id) {
-        ensureCurrentUserExists(currentUserId);
+        lockOwnerForMutation(currentUserId);
         WowCharacter current = getOwnedCharacterOrThrow(currentUserId, id);
         List<Long> characterIds = List.of(current.getId());
         List<WowCharacterWeeklyVault> weeklyVaults = loadWeeklyVaultMap(characterIds)
@@ -355,10 +360,10 @@ public class WowCharacterService {
         boolean hasCurrentWeekVault = weeklyVaults.stream()
                 .anyMatch(item -> currentWeekStartDate.equals(item.getWeekStartDate()));
         if (!hasCurrentWeekVault) {
+            clearCharacterProgress(currentUserId, List.of(current.getId()), now, false);
             current.setMythicBestLevel(0);
             current.setMythicDungeonName(null);
             current.setUpdatedAt(now);
-            wowCharacterMapper.updateById(current);
 
             WowCharacterWeeklyVault currentWeekVault = createEmptyWeeklyVault(
                     current.getId(), currentUserId, currentWeekStartDate, now
@@ -374,36 +379,35 @@ public class WowCharacterService {
      */
     @Transactional
     public long resetAllWeeklyProgress(Long currentUserId) {
-        ensureCurrentUserExists(currentUserId);
+        lockOwnerForMutation(currentUserId);
         List<WowCharacter> characters = filterCharacters(currentUserId, null, null, null, null);
         if (characters.isEmpty()) {
             return 0L;
         }
 
         LocalDateTime now = LocalDateTime.now(WowWeeklyResetSchedule.CHINA_ZONE_ID);
-        LocalDate currentWeekStartDate = WowWeeklyResetSchedule.resolveWeekStartDate(now);
-        long resetCount = 0L;
-        for (WowCharacter character : characters) {
-            deleteHistoricalWeeklyVaults(currentUserId, character.getId(), currentWeekStartDate);
-            if (character.getLevel() == null || character.getLevel() < MAX_CHARACTER_LEVEL) {
-                continue;
-            }
-            character.setMythicBestLevel(0);
-            character.setMythicDungeonName(null);
-            character.setUpdatedAt(now);
-            wowCharacterMapper.updateById(character);
-            QueryWrapper<WowCharacterWeeklyVault> currentWeekWrapper = new QueryWrapper<>();
-            currentWeekWrapper.eq("character_id", character.getId())
-                    .eq("owner_user_id", currentUserId)
-                    .eq("week_start_date", currentWeekStartDate);
-            if (wowCharacterWeeklyVaultMapper.selectCount(currentWeekWrapper) == 0) {
-                wowCharacterWeeklyVaultMapper.insert(createEmptyWeeklyVault(
-                        character.getId(), currentUserId, currentWeekStartDate, now
-                ));
-            }
-            resetCount++;
+        LocalDate week = WowWeeklyResetSchedule.resolveWeekStartDate(now);
+        Map<Long, List<WowCharacterWeeklyVault>> vaults = loadWeeklyVaultMap(extractCharacterIds(characters), false);
+        List<Long> oldVaultIds = vaults.values().stream().flatMap(Collection::stream)
+                .filter(vault -> !week.equals(vault.getWeekStartDate())).map(WowCharacterWeeklyVault::getId).toList();
+        if (!oldVaultIds.isEmpty()) {
+            attachmentService.deleteByBusinessIds(AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT, oldVaultIds);
+            wowCharacterWeeklyVaultMapper.delete(new QueryWrapper<WowCharacterWeeklyVault>()
+                    .eq("owner_user_id", currentUserId).in("id", oldVaultIds));
         }
-        return resetCount;
+        List<Long> maxLevelIds = characters.stream().filter(this::isMaxLevel).map(WowCharacter::getId).toList();
+        if (maxLevelIds.isEmpty()) {
+            return 0L;
+        }
+        clearCharacterProgress(currentUserId, maxLevelIds, now, false);
+        List<WowCharacterWeeklyVault> missing = maxLevelIds.stream()
+                .filter(id -> vaults.getOrDefault(id, List.of()).stream()
+                        .noneMatch(vault -> week.equals(vault.getWeekStartDate())))
+                .map(id -> createEmptyWeeklyVault(id, currentUserId, week, now)).toList();
+        if (!missing.isEmpty()) {
+            wowCharacterWeeklyVaultMapper.insert(missing);
+        }
+        return maxLevelIds.size();
     }
 
     /**
@@ -411,32 +415,31 @@ public class WowCharacterService {
      */
     @Transactional
     public long archiveAndResetMythicSeason(Long currentUserId) {
-        ensureCurrentUserExists(currentUserId);
-        List<WowCharacter> characters = filterCharacters(currentUserId, null, null, null, null);
+        lockOwnerForMutation(currentUserId);
+        List<WowCharacter> characters = filterCharacters(currentUserId, null, null, null, null).stream()
+                .filter(this::isMaxLevel).toList();
+        if (characters.isEmpty()) {
+            return 0L;
+        }
+        List<Long> characterIds = extractCharacterIds(characters);
+        Set<Long> archivedIds = new HashSet<>(wowCharacterMythicSeasonHistoryMapper.<Long>selectObjs(
+                new QueryWrapper<WowCharacterMythicSeasonHistory>().select("character_id")
+                        .eq("owner_user_id", currentUserId).in("character_id", characterIds)
+                        .eq("season_code", WowSeasonConstants.ARCHIVE_SEASON_CODE)));
+        Map<Long, List<WowCharacterMythicRun>> runsByCharacter = loadMythicRunMap(characterIds);
         LocalDateTime now = LocalDateTime.now(WowWeeklyResetSchedule.CHINA_ZONE_ID);
-        long resetCount = 0L;
+        List<WowCharacterMythicSeasonHistory> archives = new ArrayList<>();
         for (WowCharacter character : characters) {
-            if (character.getLevel() == null || character.getLevel() < MAX_CHARACTER_LEVEL) {
-                continue;
-            }
-            QueryWrapper<WowCharacterMythicSeasonHistory> existingWrapper = new QueryWrapper<>();
-            existingWrapper.eq("character_id", character.getId())
-                    .eq("owner_user_id", currentUserId)
-                    .eq("season_code", WowSeasonConstants.ARCHIVE_SEASON_CODE);
-            List<WowCharacterMythicRun> runs = loadMythicRunMap(List.of(character.getId()))
-                    .getOrDefault(character.getId(), Collections.emptyList());
-            if (wowCharacterMythicSeasonHistoryMapper.selectCount(existingWrapper) > 0) {
-                boolean hasNewSeasonScore = safeMythicScore(character).compareTo(BigDecimal.ZERO) > 0
-                        || runs.stream().anyMatch(run -> scale2(run.getScore()).compareTo(BigDecimal.ZERO) > 0);
+            List<WowCharacterMythicRun> runs = runsByCharacter.getOrDefault(character.getId(), List.of());
+            if (archivedIds.contains(character.getId())) {
+                boolean hasNewSeasonScore = safeMythicScore(character).signum() > 0
+                        || runs.stream().anyMatch(run -> scale2(run.getScore()).signum() > 0);
                 if (hasNewSeasonScore) {
-                    throw new BusinessException(
-                            "WOW_MYTHIC_SEASON_ALREADY_ARCHIVED",
-                            "至暗之夜第1赛季已归档，检测到新的 M+ 成绩，已阻止重复结算"
-                    );
+                    throw new BusinessException("WOW_MYTHIC_SEASON_ALREADY_ARCHIVED",
+                            "至暗之夜第1赛季已归档，检测到新的 M+ 成绩，已阻止重复结算");
                 }
                 continue;
             }
-
             WowCharacterMythicSeasonHistory history = new WowCharacterMythicSeasonHistory();
             history.setCharacterId(character.getId());
             history.setOwnerUserId(currentUserId);
@@ -445,21 +448,38 @@ public class WowCharacterService {
             history.setMythicScore(safeMythicScore(character));
             history.setDungeonSnapshotJson(writeMythicSnapshot(runs));
             history.setArchivedAt(now);
-            wowCharacterMythicSeasonHistoryMapper.insert(history);
-
-            QueryWrapper<WowCharacterMythicRun> runWrapper = new QueryWrapper<>();
-            runWrapper.eq("character_id", character.getId()).eq("owner_user_id", currentUserId);
-            wowCharacterMythicRunMapper.delete(runWrapper);
-            character.setMythicScore(ZERO_DECIMAL);
-            character.setMythicBestLevel(0);
-            character.setMythicDungeonName(null);
-            character.setUpdatedAt(now);
-            wowCharacterMapper.updateById(character);
-            resetCount++;
+            archives.add(history);
         }
-        return resetCount;
+        if (archives.isEmpty()) {
+            return 0L;
+        }
+        wowCharacterMythicSeasonHistoryMapper.insert(archives);
+        List<Long> resetIds = archives.stream().map(WowCharacterMythicSeasonHistory::getCharacterId).toList();
+        wowCharacterMythicRunMapper.delete(new QueryWrapper<WowCharacterMythicRun>()
+                .eq("owner_user_id", currentUserId).in("character_id", resetIds));
+        clearCharacterProgress(currentUserId, resetIds, now, true);
+        return archives.size();
     }
 
+    private void clearCharacterProgress(Long owner, List<Long> ids, LocalDateTime now, boolean clearScore) {
+        wowCharacterMapper.update(null, new UpdateWrapper<WowCharacter>()
+                .eq("owner_user_id", owner).in("id", ids)
+                .set("mythic_best_level", 0).set("mythic_dungeon_name", null).set("updated_at", now)
+                .set(clearScore, "mythic_score", ZERO_DECIMAL));
+    }
+
+    private boolean isMaxLevel(WowCharacter character) {
+        return character.getLevel() != null && character.getLevel() >= MAX_CHARACTER_LEVEL;
+    }
+
+    private void lockOwnerForMutation(Long owner) {
+        ensureCurrentUserExists(owner);
+        if (userMapper.lockUser(owner) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
+        }
+    }
+
+    /** 查询当前用户角色已经归档的 M+ 赛季成绩。 */
     public List<WowCharacterMythicSeasonHistoryVO> listMythicSeasonHistory(Long currentUserId, Long characterId) {
         ensureCurrentUserExists(currentUserId);
         getOwnedCharacterOrThrow(currentUserId, characterId);
@@ -509,7 +529,7 @@ public class WowCharacterService {
 
     @Transactional
     public void delete(Long currentUserId, Long id) {
-        ensureCurrentUserExists(currentUserId);
+        lockOwnerForMutation(currentUserId);
         WowCharacter current = getOwnedCharacterOrThrow(currentUserId, id);
 
         QueryWrapper<WowCharacterMythicRun> mythicRunWrapper = new QueryWrapper<>();
@@ -543,7 +563,9 @@ public class WowCharacterService {
             records.removeIf(character -> !Integer.valueOf(MAX_CHARACTER_LEVEL).equals(character.getLevel()));
         }
         records.sort(DEFAULT_ORDER);
-        List<Long> characterIds = extractCharacterIds(records);
+        List<WowCharacter> featured = records.stream().filter(item -> Boolean.TRUE.equals(item.getIsFeatured()))
+                .limit(FEATURED_CHARACTER_LIMIT).toList();
+        List<Long> characterIds = extractCharacterIds(featured);
         Map<Long, List<WowCharacterMythicRun>> mythicRunMap = loadMythicRunMap(characterIds);
         Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap = loadWeeklyVaultMap(characterIds);
         Map<Long, List<WowCharacterKeybinding>> keybindingMap = loadKeybindingMap(characterIds);
@@ -555,7 +577,7 @@ public class WowCharacterService {
         overviewVO.setHighestItemLevel(findHighestItemLevel(records));
         overviewVO.setHighestMythicScore(findHighestMythicScore(records));
         overviewVO.setAverageItemLevel(calculateAverageItemLevel(records));
-        overviewVO.setFeaturedCharacters(buildFeaturedCharacters(records, mythicRunMap, weeklyVaultMap, keybindingMap, macroMap));
+        overviewVO.setFeaturedCharacters(buildFeaturedCharacters(featured, mythicRunMap, weeklyVaultMap, keybindingMap, macroMap));
         overviewVO.setFactionStats(buildFactionStats(records));
         overviewVO.setClassStats(buildClassStats(records));
         overviewVO.setRealmStats(buildRealmStats(records));
@@ -695,7 +717,7 @@ public class WowCharacterService {
         ClassOption classOption = normalizeRequiredClassOption(request.getClassName());
         String faction = normalizeRequiredFaction(request.getFaction());
         RaceOption raceOption = normalizeRequiredRaceOption(request.getRaceName());
-        SpecOption specOption = normalizeOptionalSpecName(classOption.classCode(), request.getSpecName());
+        WowSpecOption specOption = normalizeOptionalSpecName(classOption.classCode(), request.getSpecName());
         String professionPrimary = normalizeOptionalProfession(
                 PROFESSION_PRIMARY_FIELD,
                 request.getProfessionPrimary(),
@@ -907,7 +929,7 @@ public class WowCharacterService {
         }
     }
 
-    private void syncWeeklyVaults(Long currentUserId, Long characterId,
+    private List<WowCharacterWeeklyVault> syncWeeklyVaults(Long currentUserId, Long characterId,
                                   List<NormalizedWeeklyVault> normalizedVaults, LocalDateTime now) {
         LocalDate currentWeekStartDate = normalizedVaults.isEmpty()
                 ? WowWeeklyResetSchedule.currentWeekStartDate()
@@ -915,7 +937,7 @@ public class WowCharacterService {
         deleteHistoricalWeeklyVaults(currentUserId, characterId, currentWeekStartDate);
         if (normalizedVaults.isEmpty()) {
             deleteWeeklyVaults(currentUserId, characterId);
-            return;
+            return List.of();
         }
 
         NormalizedWeeklyVault normalized = normalizedVaults.get(0);
@@ -940,6 +962,7 @@ public class WowCharacterService {
                 normalized.attachmentIds(),
                 WEEKLY_VAULT_ATTACHMENT_LIMIT
         );
+        return List.of(weeklyVault);
     }
 
     private void syncKeybindings(Long currentUserId, Long characterId, List<NormalizedKeybinding> normalizedKeybindings, LocalDateTime now) {
@@ -1024,31 +1047,6 @@ public class WowCharacterService {
         return result;
     }
 
-    private List<WowCharacterWeeklyVault> toDomainWeeklyVaults(Long characterId,
-                                                               Long currentUserId,
-                                                               List<NormalizedWeeklyVault> normalizedVaults,
-                                                               LocalDateTime now) {
-        if (normalizedVaults == null || normalizedVaults.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<WowCharacterWeeklyVault> result = new ArrayList<>();
-        for (NormalizedWeeklyVault item : normalizedVaults) {
-            WowCharacterWeeklyVault vault = new WowCharacterWeeklyVault();
-            vault.setId(item.id());
-            vault.setCharacterId(characterId);
-            vault.setOwnerUserId(currentUserId);
-            vault.setWeekStartDate(item.weekStartDate());
-            vault.setRaidProgressCount(item.raidProgressCount());
-            vault.setMythicProgressCount(item.mythicProgressCount());
-            vault.setWorldProgressCount(item.worldProgressCount());
-            vault.setNote(item.note());
-            vault.setCreatedAt(now);
-            vault.setUpdatedAt(now);
-            result.add(vault);
-        }
-        return result;
-    }
-
     private Map<Long, List<WowCharacterMythicRun>> loadMythicRunMap(List<Long> characterIds) {
         if (characterIds.isEmpty()) {
             return Collections.emptyMap();
@@ -1063,12 +1061,16 @@ public class WowCharacterService {
     }
 
     private Map<Long, List<WowCharacterWeeklyVault>> loadWeeklyVaultMap(List<Long> characterIds) {
+        return loadWeeklyVaultMap(characterIds, true);
+    }
+
+    private Map<Long, List<WowCharacterWeeklyVault>> loadWeeklyVaultMap(List<Long> characterIds, boolean currentWeekOnly) {
         if (characterIds.isEmpty()) {
             return Collections.emptyMap();
         }
         QueryWrapper<WowCharacterWeeklyVault> wrapper = new QueryWrapper<>();
         wrapper.in("character_id", characterIds)
-                .eq("week_start_date", WowWeeklyResetSchedule.currentWeekStartDate())
+                .eq(currentWeekOnly, "week_start_date", WowWeeklyResetSchedule.currentWeekStartDate())
                 .orderByAsc("character_id").orderByDesc("id");
         Map<Long, List<WowCharacterWeeklyVault>> result = new HashMap<>();
         for (WowCharacterWeeklyVault item : wowCharacterWeeklyVaultMapper.selectList(wrapper)) {
@@ -1158,18 +1160,19 @@ public class WowCharacterService {
                                                                Map<Long, List<WowCharacterWeeklyVault>> weeklyVaultMap,
                                                                Map<Long, List<WowCharacterKeybinding>> keybindingMap,
                                                                Map<Long, List<WowCharacterMacro>> macroMap) {
+        if (records.isEmpty()) {
+            return List.of();
+        }
+        WowCharacterViewContext context = loadViewContext(records, weeklyVaultMap.values().stream()
+                .flatMap(Collection::stream).toList());
         List<WowCharacterSimpleVO> result = new ArrayList<>();
-        for (WowCharacter record : records.stream()
-                .filter(item -> Boolean.TRUE.equals(item.getIsFeatured()))
-                .sorted(DEFAULT_ORDER)
-                .limit(FEATURED_CHARACTER_LIMIT)
-                .toList()) {
+        for (WowCharacter record : records) {
             result.add(toSimpleVO(
                     record,
                     mythicRunMap.getOrDefault(record.getId(), Collections.emptyList()),
                     weeklyVaultMap.getOrDefault(record.getId(), Collections.emptyList()),
                     keybindingMap.getOrDefault(record.getId(), Collections.emptyList()),
-                    macroMap.getOrDefault(record.getId(), Collections.emptyList())
+                    macroMap.getOrDefault(record.getId(), Collections.emptyList()), context
             ));
         }
         return result;
@@ -1255,8 +1258,17 @@ public class WowCharacterService {
                                         List<WowCharacterWeeklyVault> weeklyVaults,
                                         List<WowCharacterKeybinding> keybindings,
                                         List<WowCharacterMacro> macros) {
-        ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
-        List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(record, mythicRuns);
+        return toListVO(record, mythicRuns, weeklyVaults, keybindings, macros,
+                loadViewContext(List.of(record), weeklyVaults));
+    }
+
+    private WowCharacterListVO toListVO(WowCharacter record,
+                                        List<WowCharacterMythicRun> mythicRuns,
+                                        List<WowCharacterWeeklyVault> weeklyVaults,
+                                        List<WowCharacterKeybinding> keybindings,
+                                        List<WowCharacterMacro> macros, WowCharacterViewContext context) {
+        ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName(), context);
+        List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(mythicRuns, context.dungeons());
         WowCharacterListVO vo = new WowCharacterListVO();
         vo.setId(record.getId());
         vo.setCharacterName(record.getCharacterName());
@@ -1274,13 +1286,13 @@ public class WowCharacterService {
         vo.setMythicScore(safeMythicScore(record));
         vo.setMythicCompletedDungeonCount(countCompletedMythicRuns(mythicRunVOs));
         vo.setProfessionPrimary(record.getProfessionPrimary());
-        vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
+        vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary(), context));
         vo.setProfessionSecondary(record.getProfessionSecondary());
-        vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
+        vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary(), context));
         vo.setNote(record.getNote());
         vo.setUpdatedAt(record.getUpdatedAt());
         vo.setMythicRuns(mythicRunVOs);
-        vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
+        vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults, context));
         vo.setKeybindings(buildKeybindingVOs(keybindings));
         vo.setMacros(buildMacroVOs(macros));
         return vo;
@@ -1290,9 +1302,9 @@ public class WowCharacterService {
                                             List<WowCharacterMythicRun> mythicRuns,
                                             List<WowCharacterWeeklyVault> weeklyVaults,
                                             List<WowCharacterKeybinding> keybindings,
-                                            List<WowCharacterMacro> macros) {
-        ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName());
-        List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(record, mythicRuns);
+                                            List<WowCharacterMacro> macros, WowCharacterViewContext context) {
+        ResolvedSpec resolvedSpec = resolveSpecForView(record.getClassName(), record.getSpecName(), context);
+        List<WowCharacterMythicRunVO> mythicRunVOs = buildMythicRunVOs(mythicRuns, context.dungeons());
         WowCharacterSimpleVO vo = new WowCharacterSimpleVO();
         vo.setId(record.getId());
         vo.setCharacterName(record.getCharacterName());
@@ -1310,24 +1322,25 @@ public class WowCharacterService {
         vo.setMythicScore(safeMythicScore(record));
         vo.setMythicCompletedDungeonCount(countCompletedMythicRuns(mythicRunVOs));
         vo.setProfessionPrimary(record.getProfessionPrimary());
-        vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary()));
+        vo.setProfessionPrimaryLabel(resolveProfessionLabel(record.getProfessionPrimary(), context));
         vo.setProfessionSecondary(record.getProfessionSecondary());
-        vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary()));
+        vo.setProfessionSecondaryLabel(resolveProfessionLabel(record.getProfessionSecondary(), context));
         vo.setMythicRuns(mythicRunVOs);
-        vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults));
+        vo.setWeeklyVaults(buildWeeklyVaultVOs(weeklyVaults, context));
         vo.setKeybindings(buildKeybindingVOs(keybindings));
         vo.setMacros(buildMacroVOs(macros));
         return vo;
     }
 
-    private List<WowCharacterMythicRunVO> buildMythicRunVOs(WowCharacter record, List<WowCharacterMythicRun> mythicRuns) {
+    private List<WowCharacterMythicRunVO> buildMythicRunVOs(List<WowCharacterMythicRun> mythicRuns,
+                                                        List<DictionaryOptionVO> dungeons) {
         Map<String, WowCharacterMythicRun> runMap = new HashMap<>();
         for (WowCharacterMythicRun item : mythicRuns) {
             runMap.put(item.getDungeonName(), item);
         }
 
         List<WowCharacterMythicRunVO> result = new ArrayList<>();
-        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, MYTHIC_DUNGEON_FIELD)) {
+        for (DictionaryOptionVO option : dungeons) {
             WowCharacterMythicRun item = runMap.get(option.getItemValue());
             WowCharacterMythicRunVO vo = new WowCharacterMythicRunVO();
             vo.setDungeonName(option.getItemValue());
@@ -1374,7 +1387,8 @@ public class WowCharacterService {
         return result;
     }
 
-    private List<WowCharacterWeeklyVaultVO> buildWeeklyVaultVOs(List<WowCharacterWeeklyVault> weeklyVaults) {
+    private List<WowCharacterWeeklyVaultVO> buildWeeklyVaultVOs(List<WowCharacterWeeklyVault> weeklyVaults,
+                                                                WowCharacterViewContext context) {
         if (weeklyVaults == null || weeklyVaults.isEmpty()) {
             return Collections.emptyList();
         }
@@ -1390,11 +1404,8 @@ public class WowCharacterService {
             vo.setMythicUnlockedCount(calculateUnlockedCount(defaultInt(item.getMythicProgressCount()), MYTHIC_VAULT_THRESHOLDS));
             vo.setWorldUnlockedCount(calculateUnlockedCount(defaultInt(item.getWorldProgressCount()), WORLD_VAULT_THRESHOLDS));
             vo.setNote(item.getNote());
-            vo.setAttachments(attachmentService.listBusinessAttachments(
-                    AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT,
-                    item.getId(),
-                    AttachmentConstants.USAGE_ATTACHMENT
-            ));
+            vo.setAttachments(item.getId() == null ? List.of()
+                    : context.vaultAttachments().getOrDefault(item.getId(), List.of()));
             result.add(vo);
         }
         return result;
@@ -1539,21 +1550,21 @@ public class WowCharacterService {
         return option;
     }
 
-    private SpecOption normalizeOptionalSpecName(String classCode, String specName) {
+    private WowSpecOption normalizeOptionalSpecName(String classCode, String specName) {
         String trimmed = trimToNull(specName);
         if (trimmed == null) {
             return null;
         }
-        List<SpecOption> options = listSpecOptions();
+        List<WowSpecOption> options = listSpecOptions();
         try {
             String normalized = normalizeUsageValue(SPEC_NAME_FIELD, trimmed, true, "WOW_SPEC_INVALID", "specName 非法");
-            SpecOption option = findSpecOptionByValue(options, normalized);
+            WowSpecOption option = findSpecOptionByValue(options, normalized);
             if (option == null) {
                 throw new BusinessException("WOW_SPEC_INVALID", "specName 非法");
             }
             return option;
         } catch (BusinessException exception) {
-            SpecOption legacyOption = findSpecOptionByLabel(options, classCode, trimmed);
+            WowSpecOption legacyOption = findSpecOptionByLabel(options, classCode, trimmed);
             if (legacyOption != null) {
                 return legacyOption;
             }
@@ -1586,25 +1597,43 @@ public class WowCharacterService {
         }
     }
 
-    private void validateClassSpecRelation(ClassOption classOption, SpecOption specOption) {
+    private void validateClassSpecRelation(ClassOption classOption, WowSpecOption specOption) {
         if (specOption != null && !classOption.classCode().equals(specOption.classCode())) {
             throw new BusinessException("WOW_CLASS_SPEC_MISMATCH", "className 与 specName 不匹配");
         }
     }
 
-    private ResolvedSpec resolveSpecForView(String className, String specName) {
+    private WowCharacterViewContext loadViewContext(List<WowCharacter> records, List<WowCharacterWeeklyVault> vaults) {
+        Set<String> professions = new HashSet<>();
+        for (WowCharacter record : records) {
+            professions.add(trimToNull(record.getProfessionPrimary()));
+            professions.add(trimToNull(record.getProfessionSecondary()));
+        }
+        professions.remove(null);
+        List<Long> vaultIds = vaults.stream().map(WowCharacterWeeklyVault::getId)
+                .filter(Objects::nonNull).toList();
+        return new WowCharacterViewContext(
+                dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, CLASS_NAME_FIELD),
+                listSpecOptions(),
+                dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, MYTHIC_DUNGEON_FIELD),
+                dataDictionarySupport.getLabelsByValue(PROFESSION_DICT_CODE, professions),
+                vaultIds.isEmpty() ? Map.of() : attachmentService.listBusinessAttachmentsByIds(
+                        AttachmentConstants.BUSINESS_WOW_WEEKLY_VAULT, vaultIds, AttachmentConstants.USAGE_ATTACHMENT));
+    }
+
+    private ResolvedSpec resolveSpecForView(String className, String specName, WowCharacterViewContext context) {
         String trimmed = trimToNull(specName);
         if (trimmed == null) {
             return new ResolvedSpec(null, null);
         }
-        List<SpecOption> options = listSpecOptions();
-        SpecOption byValue = findSpecOptionByValue(options, trimmed);
+        List<WowSpecOption> options = context.specs();
+        WowSpecOption byValue = findSpecOptionByValue(options, trimmed);
         if (byValue != null) {
             return new ResolvedSpec(byValue.code(), byValue.label());
         }
-        ClassOption classOption = findClassOption(className);
+        ClassOption classOption = findClassOption(className, context.classes());
         if (classOption != null) {
-            SpecOption byLabel = findSpecOptionByLabel(options, classOption.classCode(), trimmed);
+            WowSpecOption byLabel = findSpecOptionByLabel(options, classOption.classCode(), trimmed);
             if (byLabel != null) {
                 return new ResolvedSpec(byLabel.code(), byLabel.label());
             }
@@ -1612,9 +1641,9 @@ public class WowCharacterService {
         return new ResolvedSpec(trimmed, trimmed);
     }
 
-    private String resolveProfessionLabel(String profession) {
+    private String resolveProfessionLabel(String profession, WowCharacterViewContext context) {
         String trimmed = trimToNull(profession);
-        return trimmed == null ? null : dataDictionarySupport.getLabelByValue(PROFESSION_DICT_CODE, trimmed);
+        return trimmed == null ? null : context.professionLabels().getOrDefault(trimmed, trimmed);
     }
 
     private String normalizeUsageValue(String bizFieldCode,
@@ -1630,11 +1659,16 @@ public class WowCharacterService {
     }
 
     private ClassOption findClassOption(String className) {
+        return findClassOption(className,
+                dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, CLASS_NAME_FIELD));
+    }
+
+    private ClassOption findClassOption(String className, List<DictionaryOptionVO> classes) {
         String normalized = trimToNull(className);
         if (normalized == null) {
             return null;
         }
-        for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, CLASS_NAME_FIELD)) {
+        for (DictionaryOptionVO option : classes) {
             if (normalized.equalsIgnoreCase(option.getItemValue())) {
                 return new ClassOption(normalizeClassCode(option.getItemCode()), option.getItemValue());
             }
@@ -1659,10 +1693,10 @@ public class WowCharacterService {
         return null;
     }
 
-    private List<SpecOption> listSpecOptions() {
-        List<SpecOption> result = new ArrayList<>();
+    private List<WowSpecOption> listSpecOptions() {
+        List<WowSpecOption> result = new ArrayList<>();
         for (DictionaryOptionVO option : dataDictionaryUsageSupport.listEnabledOptionsByUsage(APP_CODE, MODULE_CODE, SPEC_NAME_FIELD)) {
-            result.add(new SpecOption(
+            result.add(new WowSpecOption(
                     option.getItemValue(),
                     option.getItemLabel(),
                     readNormalizedStringValue(option.getExtraJson(), "classCode", false)
@@ -1671,12 +1705,12 @@ public class WowCharacterService {
         return result;
     }
 
-    private SpecOption findSpecOptionByValue(List<SpecOption> options, String specValue) {
+    private WowSpecOption findSpecOptionByValue(List<WowSpecOption> options, String specValue) {
         String normalized = trimToNull(specValue);
         if (normalized == null) {
             return null;
         }
-        for (SpecOption option : options) {
+        for (WowSpecOption option : options) {
             if (normalized.equalsIgnoreCase(option.code())) {
                 return option;
             }
@@ -1684,12 +1718,12 @@ public class WowCharacterService {
         return null;
     }
 
-    private SpecOption findSpecOptionByLabel(List<SpecOption> options, String classCode, String specLabel) {
+    private WowSpecOption findSpecOptionByLabel(List<WowSpecOption> options, String classCode, String specLabel) {
         String normalizedLabel = trimToNull(specLabel);
         if (normalizedLabel == null || classCode == null) {
             return null;
         }
-        for (SpecOption option : options) {
+        for (WowSpecOption option : options) {
             if (classCode.equals(option.classCode()) && normalizedLabel.equalsIgnoreCase(option.label())) {
                 return option;
             }
@@ -1862,9 +1896,6 @@ public class WowCharacterService {
     }
 
     private record RaceOption(String raceName, Set<String> factions, Set<String> allowedClassCodes) {
-    }
-
-    private record SpecOption(String code, String label, String classCode) {
     }
 
     private record ResolvedSpec(String value, String label) {

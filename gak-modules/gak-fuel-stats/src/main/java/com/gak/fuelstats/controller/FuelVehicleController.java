@@ -1,5 +1,6 @@
 package com.gak.fuelstats.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.fuelstats.dto.SaveFuelVehicleRequest;
 import com.gak.fuelstats.service.FuelVehicleService;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 用户车辆档案控制器。
  */
 @RestController
+@RequireAppPermission("APP_FUEL_STATS")
 @RequestMapping("/fuel-vehicles")
 public class FuelVehicleController {
 

@@ -3,6 +3,7 @@ package com.gak.knowledgebase.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.attachment.constant.AttachmentConstants;
 import com.gak.attachment.service.AttachmentService;
+import com.gak.attachment.vo.AttachmentVO;
 import com.gak.framework.response.PagedResult;
 import com.gak.knowledgebase.domain.KnowledgeEntry;
 import com.gak.knowledgebase.dto.KnowledgeEntryQueryRequest;
@@ -17,7 +18,8 @@ import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.time.Duration;
+import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -38,6 +40,11 @@ public class KnowledgeBaseService {
     private static final String VIEW_MY_SUBMISSIONS = "my-submissions";
     private static final String VIEW_PENDING_REVIEW = "pending-review";
     private static final int MIN_PAGE_NO = 1;
+    private static final int MAX_HIGHLIGHTS = 12;
+    private static final long HIGHLIGHT_CACHE_NANOS = Duration.ofSeconds(30).toNanos();
+
+    private List<Long> publicHighlightIds = List.of();
+    private long nextPublicSampleAt = System.nanoTime();
 
     private final KnowledgeEntryMapper knowledgeEntryMapper;
     private final UserMapper userMapper;
@@ -56,18 +63,17 @@ public class KnowledgeBaseService {
      */
     public PagedResult<KnowledgeEntryVO> page(Long currentUserId, KnowledgeEntryQueryRequest request) {
         User currentUser = requireCurrentUser(currentUserId);
-        List<KnowledgeEntry> allEntries = listEntriesByView(currentUser, normalizeView(request.getView()));
+        QueryWrapper<KnowledgeEntry> query = entriesByView(currentUser, normalizeView(request.getView()));
+        long total = knowledgeEntryMapper.selectCount(query);
+        if (total == 0) {
+            return new PagedResult<>(List.of(), 0);
+        }
         int pageSize = request.getPageSize();
-        long total = allEntries.size();
-        int pageNo = Math.max(MIN_PAGE_NO, request.getPageNo());
         long maxPageNo = Math.max(MIN_PAGE_NO, (total + pageSize - 1) / pageSize);
-        pageNo = (int) Math.min(pageNo, maxPageNo);
-        int fromIndex = Math.max(0, (pageNo - 1) * pageSize);
-        int toIndex = Math.min(allEntries.size(), fromIndex + pageSize);
-        List<KnowledgeEntryVO> list = fromIndex >= toIndex
-                ? List.of()
-                : allEntries.subList(fromIndex, toIndex).stream().map(this::toVO).toList();
-        return new PagedResult<>(list, total);
+        long pageNo = Math.min(Math.max(MIN_PAGE_NO, request.getPageNo()), maxPageNo);
+        List<KnowledgeEntry> entries = knowledgeEntryMapper.selectList(query.orderByDesc("updated_at", "id")
+                .last("LIMIT " + pageSize + " OFFSET " + ((pageNo - 1) * pageSize)));
+        return new PagedResult<>(withAttachments(entries), total);
     }
 
     /**
@@ -157,25 +163,56 @@ public class KnowledgeBaseService {
      */
     public List<KnowledgeEntryVO> highlights(Long currentUserId, KnowledgeHighlightQueryRequest request) {
         requireCurrentUser(currentUserId);
-        return buildHighlights(request);
+        return withAttachments(loadHighlights(samplePublishedIds(request.getSize()), request.getSize()));
     }
 
-    /**
-     * 匿名访问的公共经验推荐。
-     */
+    /** 短期缓存样本 ID，每次仍按已发布状态过滤，避免继续展示撤回或删除的内容。 */
     public List<KnowledgeEntryVO> publicHighlights(KnowledgeHighlightQueryRequest request) {
-        return buildHighlights(request).stream().map(this::withoutAttachments).toList();
+        return loadHighlights(publicSample(), request.getSize()).stream().map(this::toBaseVO).toList();
     }
 
-    private List<KnowledgeEntryVO> buildHighlights(KnowledgeHighlightQueryRequest request) {
-        List<KnowledgeEntry> allEntries = listPublishedEntries();
-        if (allEntries.isEmpty()) {
+    private synchronized List<Long> publicSample() {
+        long now = System.nanoTime();
+        if (now - nextPublicSampleAt >= 0) {
+            publicHighlightIds = samplePublishedIds(MAX_HIGHLIGHTS);
+            nextPublicSampleAt = now + HIGHLIGHT_CACHE_NANOS;
+        }
+        return publicHighlightIds;
+    }
+
+    private List<Long> samplePublishedIds(int size) {
+        List<Long> bounds = knowledgeEntryMapper.selectPublishedBounds();
+        if (bounds.isEmpty()) {
             return List.of();
         }
-        int size = Math.min(request.getSize(), allEntries.size());
-        List<KnowledgeEntry> shuffled = new ArrayList<>(allEntries);
-        shuffle(shuffled);
-        return shuffled.subList(0, size).stream().map(this::toVO).toList();
+        long first = bounds.getFirst();
+        long last = bounds.getLast();
+        long pivot = first == last ? first : ThreadLocalRandom.current().nextLong(first, last);
+        List<Long> result = new ArrayList<>(sampleFrom(pivot, size, true));
+        if (result.size() < size && pivot > first) {
+            result.addAll(sampleFrom(pivot, size - result.size(), false));
+        }
+        return List.copyOf(result);
+    }
+
+    private List<Long> sampleFrom(long pivot, int limit, boolean fromPivot) {
+        QueryWrapper<KnowledgeEntry> query = publishedEntries().select("id");
+        if (fromPivot) {
+            query.ge("id", pivot);
+        } else {
+            query.lt("id", pivot);
+        }
+        return knowledgeEntryMapper.selectList(query.orderByAsc("id").last("LIMIT " + limit))
+                .stream().map(KnowledgeEntry::getId).toList();
+    }
+
+    private List<KnowledgeEntry> loadHighlights(List<Long> ids, int size) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, KnowledgeEntry> byId = knowledgeEntryMapper.selectList(publishedEntries().in("id", ids))
+                .stream().collect(java.util.stream.Collectors.toMap(KnowledgeEntry::getId, entry -> entry));
+        return ids.stream().map(byId::get).filter(java.util.Objects::nonNull).limit(size).toList();
     }
 
     private void applySaveRequest(KnowledgeEntry entry, SaveKnowledgeEntryRequest request) {
@@ -188,48 +225,20 @@ public class KnowledgeBaseService {
         entry.setContent(request.getContent().trim());
     }
 
-    private List<KnowledgeEntry> listEntriesByView(User currentUser, String view) {
+    private QueryWrapper<KnowledgeEntry> entriesByView(User currentUser, String view) {
         if (VIEW_MY_SUBMISSIONS.equals(view)) {
-            return listMySubmissionEntries(currentUser.getId());
+            return new QueryWrapper<KnowledgeEntry>().eq("owner_user_id", currentUser.getId());
         }
         if (VIEW_PENDING_REVIEW.equals(view)) {
             ensureAdmin(currentUser);
-            return listPendingReviewEntries();
+            return new QueryWrapper<KnowledgeEntry>().eq("status", KnowledgeEntryStatus.PENDING.name());
         }
-        return listPublishedEntries();
+        return publishedEntries();
     }
 
-    private List<KnowledgeEntry> listMySubmissionEntries(Long currentUserId) {
-        QueryWrapper<KnowledgeEntry> wrapper = new QueryWrapper<>();
-        wrapper.eq("owner_user_id", currentUserId)
-                .orderByDesc("updated_at")
-                .orderByDesc("id");
-        return knowledgeEntryMapper.selectList(wrapper).stream()
-                .filter(entry -> currentUserId.equals(entry.getOwnerUserId()))
-                .sorted(entryOrderComparator())
-                .toList();
-    }
-
-    private List<KnowledgeEntry> listPendingReviewEntries() {
-        QueryWrapper<KnowledgeEntry> wrapper = new QueryWrapper<>();
-        wrapper.eq("status", KnowledgeEntryStatus.PENDING.name())
-                .orderByDesc("updated_at")
-                .orderByDesc("id");
-        return knowledgeEntryMapper.selectList(wrapper).stream()
-                .filter(entry -> KnowledgeEntryStatus.PENDING.name().equals(entry.getStatus()))
-                .sorted(entryOrderComparator())
-                .toList();
-    }
-
-    private List<KnowledgeEntry> listPublishedEntries() {
-        QueryWrapper<KnowledgeEntry> wrapper = new QueryWrapper<>();
-        wrapper.eq("status", KnowledgeEntryStatus.PUBLISHED.name())
-                .orderByDesc("updated_at")
-                .orderByDesc("id");
-        return knowledgeEntryMapper.selectList(wrapper).stream()
-                .filter(entry -> KnowledgeEntryStatus.PUBLISHED.name().equals(entry.getStatus()))
-                .sorted(entryOrderComparator())
-                .toList();
+    private QueryWrapper<KnowledgeEntry> publishedEntries() {
+        // 固定条件与 PostgreSQL 部分索引一致，查询按索引从随机游标开始读取少量 ID。
+        return new QueryWrapper<KnowledgeEntry>().apply("status = 'PUBLISHED'");
     }
 
     private KnowledgeEntry getAccessibleEntryOrThrow(User currentUser, Long id) {
@@ -291,6 +300,27 @@ public class KnowledgeBaseService {
     }
 
     private KnowledgeEntryVO toVO(KnowledgeEntry entry) {
+        KnowledgeEntryVO vo = toBaseVO(entry);
+        vo.setAttachments(attachmentService.listBusinessAttachments(
+                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY, entry.getId(), AttachmentConstants.USAGE_IMAGE));
+        return vo;
+    }
+
+    private List<KnowledgeEntryVO> withAttachments(List<KnowledgeEntry> entries) {
+        if (entries.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, List<AttachmentVO>> attachments = attachmentService.listBusinessAttachmentsByIds(
+                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY,
+                entries.stream().map(KnowledgeEntry::getId).toList(), AttachmentConstants.USAGE_IMAGE);
+        return entries.stream().map(entry -> {
+            KnowledgeEntryVO vo = toBaseVO(entry);
+            vo.setAttachments(attachments.getOrDefault(entry.getId(), List.of()));
+            return vo;
+        }).toList();
+    }
+
+    private KnowledgeEntryVO toBaseVO(KnowledgeEntry entry) {
         KnowledgeEntryVO vo = new KnowledgeEntryVO();
         vo.setId(entry.getId());
         vo.setOwnerUserId(entry.getOwnerUserId());
@@ -307,14 +337,8 @@ public class KnowledgeBaseService {
         vo.setReviewRemark(entry.getReviewRemark());
         vo.setCreatedAt(entry.getCreatedAt());
         vo.setUpdatedAt(entry.getUpdatedAt());
-        vo.setAttachments(attachmentService.listBusinessAttachments(
-                AttachmentConstants.BUSINESS_KNOWLEDGE_ENTRY, entry.getId(), AttachmentConstants.USAGE_IMAGE));
+        vo.setAttachments(List.of());
         return vo;
-    }
-
-    private KnowledgeEntryVO withoutAttachments(KnowledgeEntryVO source) {
-        source.setAttachments(List.of());
-        return source;
     }
 
     private List<String> normalizeTags(List<String> tags) {
@@ -417,20 +441,5 @@ public class KnowledgeBaseService {
 
     private boolean isAdmin(User currentUser) {
         return UserSecurityConstants.ADMIN_ROLE_CODE.equals(currentUser.getRoleCode());
-    }
-
-    private Comparator<KnowledgeEntry> entryOrderComparator() {
-        return Comparator.comparing(KnowledgeEntry::getUpdatedAt,
-                        Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(KnowledgeEntry::getId, Comparator.nullsLast(Comparator.reverseOrder()));
-    }
-
-    private void shuffle(List<KnowledgeEntry> entries) {
-        for (int index = entries.size() - 1; index > 0; index -= 1) {
-            int swapIndex = ThreadLocalRandom.current().nextInt(index + 1);
-            KnowledgeEntry current = entries.get(index);
-            entries.set(index, entries.get(swapIndex));
-            entries.set(swapIndex, current);
-        }
     }
 }

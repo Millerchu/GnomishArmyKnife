@@ -1,5 +1,6 @@
 package com.gak.wowcharacter.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.user.service.user.TokenService;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * WoW 角色控制器。
  */
 @RestController
+@RequireAppPermission("APP_WOW_CHARACTER")
 @RequestMapping("/wow-characters")
 public class WowCharacterController {
 

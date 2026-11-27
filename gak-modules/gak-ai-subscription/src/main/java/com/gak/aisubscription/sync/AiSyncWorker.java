@@ -74,12 +74,8 @@ public class AiSyncWorker {
         if (!valid(connection, job)) return;
         accounts.requireActive(job.ownerUserId(), job.accountId());
         if (!repository.complete(job)) return;
-        usage.supersedeOfficialCostWindow(job.ownerUserId(), job.accountId(), start, end);
         String prefix = connection.teamId() == null ? "OPENAI_COST:" : "XAI_COST:";
-        for (AiOfficialCost cost : costs) {
-            usage.upsertOfficialCost(job.ownerUserId(), job.accountId(), prefix + cost.startDate() + ":" + cost.currency(),
-                    cost.startDate(), cost.endDate(), cost.amount(), cost.currency(), "UTC");
-        }
+        usage.replaceOfficialCostWindow(job.ownerUserId(), job.accountId(), start, end, prefix, costs);
         repository.markSuccess(job);
     }
     private void fail(AiSyncJob job, AiSyncFailure failure) {

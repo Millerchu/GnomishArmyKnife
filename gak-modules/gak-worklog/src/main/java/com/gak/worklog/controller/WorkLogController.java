@@ -1,5 +1,6 @@
 package com.gak.worklog.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.dictionary.vo.DictionaryOptionVO;
 import com.gak.user.service.user.TokenService;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 工作日志控制器。
  */
 @RestController
+@RequireAppPermission("APP_WORK_LOG")
 @RequestMapping("/work-logs")
 public class WorkLogController {
 
@@ -60,8 +62,8 @@ public class WorkLogController {
     public ApiResponse<DictionaryOptionVO> createProject(
             @Valid @RequestBody CreateWorkLogProjectRequest request,
             HttpServletRequest httpServletRequest) {
-        tokenService.requireCurrentUserId(httpServletRequest);
-        return ApiResponse.success(workLogService.createProject(request.getProjectName()));
+        Long userId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(workLogService.createProject(userId, request.getProjectName()));
     }
 
     /**

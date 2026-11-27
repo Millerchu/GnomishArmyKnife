@@ -169,7 +169,7 @@ public class TravelRecordMigrationHandler implements MigrationResourceHandler {
                 : DataMigrationQuerySupport.emptyIfNull(payload.getAttachments())) {
             require(attachment != null && attachment.getEntryPath() != null
                     && recordIds.contains(attachment.getSourceBusinessId()), "票据附件关联无效");
-            Path file = packageRoot.resolve(attachment.getEntryPath()).normalize();
+            Path file = com.gak.datamigration.service.MigrationPaths.resolveEntry(packageRoot, attachment.getEntryPath());
             require(file.startsWith(packageRoot) && Files.isRegularFile(file),
                     "票据原件缺失或路径无效: " + attachment.getEntryPath());
         }

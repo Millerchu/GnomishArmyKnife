@@ -116,7 +116,7 @@ public interface MigrationResourceHandler {
         }
 
         public Path attachmentPath(String relativePath) {
-            return packageRoot.resolve(relativePath).normalize();
+            return com.gak.datamigration.service.MigrationPaths.resolveEntry(packageRoot, relativePath);
         }
     }
 

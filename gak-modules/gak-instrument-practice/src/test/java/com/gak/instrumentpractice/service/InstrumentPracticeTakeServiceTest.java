@@ -49,6 +49,7 @@ class InstrumentPracticeTakeServiceTest {
                 new ObjectMapper()
         );
         when(userMapper.selectById(USER_ID)).thenReturn(new User());
+        org.mockito.Mockito.lenient().when(userMapper.lockUser(USER_ID)).thenReturn(USER_ID);
     }
 
     @Test
@@ -66,7 +67,7 @@ class InstrumentPracticeTakeServiceTest {
         SaveInstrumentPracticeTakeResultVO result = instrumentPracticeTakeService.create(USER_ID, createValidRequest());
 
         assertEquals("1", result.getOverwrittenTakeId());
-        verify(instrumentPracticeTakeMapper).deleteById(1L);
+        verify(instrumentPracticeTakeMapper).deleteByIds(List.of(1L));
         ArgumentCaptor<InstrumentPracticeTake> takeCaptor = ArgumentCaptor.forClass(InstrumentPracticeTake.class);
         verify(instrumentPracticeTakeMapper).insert(takeCaptor.capture());
         assertEquals("guzheng", takeCaptor.getValue().getInstrumentId());

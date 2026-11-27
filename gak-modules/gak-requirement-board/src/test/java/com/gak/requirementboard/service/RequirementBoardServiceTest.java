@@ -1,5 +1,6 @@
 package com.gak.requirementboard.service;
 
+import org.springframework.web.server.ResponseStatusException;
 import com.gak.framework.exception.BusinessException;
 import com.gak.requirementboard.domain.Requirement;
 import com.gak.requirementboard.domain.RequirementProgressLog;
@@ -85,14 +86,14 @@ class RequirementBoardServiceTest {
     }
 
     @Test
-    void updateProgressShouldAllowAnyLoggedInUserAndWriteTimeline() {
+    void updateProgressShouldAllowAdminAndWriteTimeline() {
         Requirement requirement = buildRequirement(100L, 1L, "待处理需求", "PENDING_REVIEW", 3L);
-        when(userMapper.selectById(2L)).thenReturn(buildUser(2L, "协作者", "USER"));
+        when(userMapper.selectById(2L)).thenReturn(buildUser(2L, "管理员", "ADMIN"));
         when(requirementMapper.selectById(100L)).thenReturn(requirement);
         when(requirementMapper.update(any(Requirement.class), any())).thenReturn(1);
         when(requirementProgressLogMapper.selectList(any())).thenReturn(List.of());
         when(userMapper.selectBatchIds(any())).thenReturn(List.of(
-                buildUser(1L, "提交者", "USER"), buildUser(2L, "协作者", "USER")
+                buildUser(1L, "提交者", "USER"), buildUser(2L, "管理员", "ADMIN")
         ));
 
         UpdateRequirementProgressRequest request = new UpdateRequirementProgressRequest();
@@ -241,7 +242,7 @@ class RequirementBoardServiceTest {
 
     @Test
     void updateProgressShouldRejectStaleVersion() {
-        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "提交者", "USER"));
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "管理员", "ADMIN"));
         when(requirementMapper.selectById(100L)).thenReturn(buildRequirement(100L, 1L, "待处理需求", "PENDING_REVIEW", 1L));
         when(requirementMapper.update(any(Requirement.class), any())).thenReturn(0);
 
@@ -257,8 +258,37 @@ class RequirementBoardServiceTest {
     }
 
     @Test
-    void updateProgressShouldRejectInvalidStatus() {
+    void updateProgressShouldRejectNonAdminEvenForOwnFeedback() {
         when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "提交者", "USER"));
+        UpdateRequirementProgressRequest request = new UpdateRequirementProgressRequest();
+        request.setStatus("PLANNED");
+        request.setVersion(1L);
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> requirementBoardService.updateProgress(1L, 100L, request));
+
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, error.getStatusCode());
+        org.mockito.Mockito.verifyNoInteractions(requirementMapper, requirementProgressLogMapper);
+    }
+
+    @Test
+    void updateProgressShouldRejectSkippingReviewAndPlanning() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "管理员", "ADMIN"));
+        when(requirementMapper.selectById(100L)).thenReturn(buildRequirement(100L, 1L, "待处理需求", "PENDING_REVIEW", 1L));
+        UpdateRequirementProgressRequest request = new UpdateRequirementProgressRequest();
+        request.setStatus("COMPLETED");
+        request.setVersion(1L);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> requirementBoardService.updateProgress(1L, 100L, request));
+
+        assertEquals("REQUIREMENT_STATUS_TRANSITION_INVALID", error.getCode());
+        verify(requirementMapper, never()).update(any(Requirement.class), any());
+    }
+
+    @Test
+    void updateProgressShouldRejectInvalidStatus() {
+        when(userMapper.selectById(1L)).thenReturn(buildUser(1L, "管理员", "ADMIN"));
 
         UpdateRequirementProgressRequest request = new UpdateRequirementProgressRequest();
         request.setStatus("ARCHIVED");

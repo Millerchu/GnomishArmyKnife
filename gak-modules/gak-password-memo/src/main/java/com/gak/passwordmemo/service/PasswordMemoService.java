@@ -1,5 +1,7 @@
 package com.gak.passwordmemo.service;
 
+import com.gak.framework.security.AttemptLimiter;
+import java.time.Duration;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
@@ -52,6 +54,7 @@ public class PasswordMemoService {
     private final PasswordMemoHistoryMapper passwordMemoHistoryMapper;
     private final PasswordMemoCryptoService passwordMemoCryptoService;
     private final UserMapper userMapper;
+    private final AttemptLimiter verificationAttempts = new AttemptLimiter(8, Duration.ofMinutes(10));
     private final PasswordEncoder passwordEncoder;
     private final DataDictionaryUsageSupport dataDictionaryUsageSupport;
 
@@ -257,6 +260,7 @@ public class PasswordMemoService {
     public VerifyAccessResponse verifyAccess(Long currentUserId, Long id, VerifyAccessRequest request, String ipAddress) {
         User currentUser = ensureCurrentUserExists(currentUserId);
         PasswordMemo memo = getOwnedMemoOrThrow(currentUserId, id);
+        verificationAttempts.acquire(currentUserId.toString());
         if (!passwordEncoder.matches(request.getLoginPassword(), currentUser.getPasswordHash())) {
             throw new BusinessException("LOGIN_PASSWORD_INVALID", "当前用户密码错误");
         }

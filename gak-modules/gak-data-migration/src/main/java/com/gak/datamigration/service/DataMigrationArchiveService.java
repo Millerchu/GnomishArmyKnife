@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -33,6 +34,12 @@ import static com.gak.datamigration.DataMigrationConstants.PACKAGE_VERSION;
 @Service
 public class DataMigrationArchiveService {
 
+    private static final int COPY_BUFFER_BYTES = 16 * 1024;
+    private static final int MAX_ENTRIES = 10_000;
+    private static final int MAX_PATH_DEPTH = 32;
+    private static final long MAX_ENTRY_BYTES = 64L * 1024 * 1024;
+    private static final long MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024;
+
     private final ObjectMapper objectMapper;
     private final DataMigrationPackageStorageService storageService;
 
@@ -46,17 +53,21 @@ public class DataMigrationArchiveService {
                                                  List<com.gak.datamigration.handler.MigrationResourceHandler.MigrationResourceExportData> exports)
             throws IOException {
         Path workspace = storageService.createTempDirectory("export-");
-        Path root = workspace.resolve(request.packageName());
-        Files.createDirectories(root);
-        List<AttachmentIndexItem> attachmentIndex = new ArrayList<>();
-
+        Path zipFile = null;
+        boolean complete = false;
         try {
+            Path root = MigrationPaths.resolveEntry(workspace, request.packageName());
+            if (!workspace.equals(root.getParent())) {
+                throw new BusinessException("DATA_MIGRATION_PATH_INVALID", "迁移包名称非法");
+            }
+            Files.createDirectories(root);
+            List<AttachmentIndexItem> attachmentIndex = new ArrayList<>();
             for (com.gak.datamigration.handler.MigrationResourceHandler.MigrationResourceExportData export : exports) {
-                Path entryPath = root.resolve(export.entryPath()).normalize();
+                Path entryPath = MigrationPaths.resolveEntry(root, export.entryPath());
                 Files.createDirectories(entryPath.getParent());
                 objectMapper.writerWithDefaultPrettyPrinter().writeValue(entryPath.toFile(), export.payload());
                 for (com.gak.datamigration.handler.MigrationResourceHandler.MigrationAttachment attachment : export.attachments()) {
-                    Path attachmentPath = root.resolve(attachment.entryPath()).normalize();
+                    Path attachmentPath = MigrationPaths.resolveEntry(root, attachment.entryPath());
                     Files.createDirectories(attachmentPath.getParent());
                     Files.copy(attachment.sourcePath(), attachmentPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                     attachmentIndex.add(new AttachmentIndexItem(export.resourceCode(), attachment.entryPath(), attachment.fileName()));
@@ -85,13 +96,15 @@ public class DataMigrationArchiveService {
                     resolveResourceVersions(exports)
             );
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(root.resolve(MANIFEST_FILE_NAME).toFile(), manifest);
-            Path zipFile = storageService.createTempFile(request.packageName() + "-", ".zip");
+            zipFile = storageService.createTempFile("export-package-", ".zip");
             zipDirectory(root, zipFile);
-            storageService.deleteQuietly(workspace);
+            complete = true;
             return new BuildPackageResult(zipFile, manifest);
-        } catch (IOException exception) {
+        } finally {
             storageService.deleteQuietly(workspace);
-            throw exception;
+            if (!complete && zipFile != null) {
+                storageService.deleteQuietly(zipFile);
+            }
         }
     }
 
@@ -100,30 +113,36 @@ public class DataMigrationArchiveService {
         try {
             return new ValidatedImportPackage(extractedPackage.manifest());
         } finally {
-            storageService.deleteQuietly(extractedPackage.root());
+            storageService.deleteQuietly(extractedPackage.workspace());
         }
     }
 
     public ExtractedPackage extractPackage(Path zipFile) throws IOException {
         Path workspace = storageService.createTempDirectory("import-");
-        unzip(zipFile, workspace);
-        Path manifestPath = findManifestPath(workspace);
-        if (manifestPath == null) {
-            storageService.deleteQuietly(workspace);
-            throw new BusinessException("DATA_MIGRATION_MANIFEST_MISSING", "迁移包缺少 manifest.json");
+        boolean complete = false;
+        try {
+            unzip(zipFile, workspace);
+            Path manifestPath = findManifestPath(workspace);
+            if (manifestPath == null) {
+                throw new BusinessException("DATA_MIGRATION_MANIFEST_MISSING", "迁移包缺少 manifest.json");
+            }
+            MigrationPackageManifest manifest = objectMapper.readValue(manifestPath.toFile(), MigrationPackageManifest.class);
+            validateManifest(manifest);
+            String actualChecksum = calculateChecksum(manifestPath.getParent());
+            if (!actualChecksum.equalsIgnoreCase(manifest.checksum())) {
+                throw new BusinessException("DATA_MIGRATION_CHECKSUM_INVALID", "迁移包校验失败");
+            }
+            complete = true;
+            return new ExtractedPackage(manifestPath.getParent(), workspace, manifest);
+        } finally {
+            if (!complete) {
+                storageService.deleteQuietly(workspace);
+            }
         }
-        MigrationPackageManifest manifest = objectMapper.readValue(manifestPath.toFile(), MigrationPackageManifest.class);
-        validateManifest(manifest);
-        String actualChecksum = calculateChecksum(manifestPath.getParent());
-        if (!actualChecksum.equalsIgnoreCase(manifest.checksum())) {
-            storageService.deleteQuietly(workspace);
-            throw new BusinessException("DATA_MIGRATION_CHECKSUM_INVALID", "迁移包校验失败");
-        }
-        return new ExtractedPackage(manifestPath.getParent(), manifest);
     }
 
     public <T> T readJson(Path packageRoot, String entryPath, Class<T> type) throws IOException {
-        return objectMapper.readValue(packageRoot.resolve(entryPath).toFile(), type);
+        return objectMapper.readValue(MigrationPaths.resolveEntry(packageRoot, entryPath).toFile(), type);
     }
 
     private void validateManifest(MigrationPackageManifest manifest) {
@@ -146,29 +165,47 @@ public class DataMigrationArchiveService {
 
     private Path findManifestPath(Path workspace) throws IOException {
         try (var stream = Files.walk(workspace)) {
-            return stream.filter(Files::isRegularFile)
-                    .filter(path -> MANIFEST_FILE_NAME.equals(path.getFileName().toString()))
-                    .findFirst()
-                    .orElse(null);
+            List<Path> manifests = stream.filter(Files::isRegularFile)
+                    .filter(path -> MANIFEST_FILE_NAME.equals(path.getFileName().toString())).limit(2).toList();
+            if (manifests.size() > 1) {
+                throw new BusinessException("DATA_MIGRATION_MANIFEST_INVALID", "迁移包包含多个 manifest.json");
+            }
+            return manifests.isEmpty() ? null : manifests.getFirst();
         }
     }
 
     private void unzip(Path zipFile, Path targetDir) throws IOException {
         try (InputStream inputStream = Files.newInputStream(zipFile);
              ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
+            byte[] buffer = new byte[COPY_BUFFER_BYTES];
+            int entries = 0;
+            long total = 0;
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
-                Path target = targetDir.resolve(entry.getName()).normalize();
-                if (!target.startsWith(targetDir)) {
-                    throw new BusinessException("DATA_MIGRATION_ZIP_INVALID", "迁移包目录结构非法");
+                Path target = MigrationPaths.resolveEntry(targetDir, entry.getName());
+                if (++entries > MAX_ENTRIES || entry.getSize() > MAX_ENTRY_BYTES
+                        || targetDir.relativize(target).getNameCount() > MAX_PATH_DEPTH) {
+                    throw archiveLimitExceeded();
                 }
                 if (entry.isDirectory()) {
+                    if (zipInputStream.read() != -1) {
+                        throw archiveLimitExceeded();
+                    }
                     Files.createDirectories(target);
                     continue;
                 }
+                long entryBytes = 0;
                 Files.createDirectories(target.getParent());
-                try (OutputStream outputStream = Files.newOutputStream(target)) {
-                    zipInputStream.transferTo(outputStream);
+                try (OutputStream output = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+                    int read;
+                    while ((read = zipInputStream.read(buffer)) != -1) {
+                        entryBytes += read;
+                        total += read;
+                        if (entryBytes > MAX_ENTRY_BYTES || total > MAX_ARCHIVE_BYTES) {
+                            throw archiveLimitExceeded();
+                        }
+                        output.write(buffer, 0, read);
+                    }
                 }
             }
         } catch (BusinessException exception) {
@@ -176,6 +213,10 @@ public class DataMigrationArchiveService {
         } catch (IOException exception) {
             throw new BusinessException("DATA_MIGRATION_ZIP_INVALID", "迁移包不是合法的 ZIP 文件");
         }
+    }
+
+    private BusinessException archiveLimitExceeded() {
+        return new BusinessException("DATA_MIGRATION_ZIP_LIMIT", "迁移包解压大小、目录深度或条目数量超限");
     }
 
     private void zipDirectory(Path sourceDir, Path zipFile) throws IOException {
@@ -207,10 +248,11 @@ public class DataMigrationArchiveService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (var stream = Files.walk(root)) {
-                stream.filter(Files::isRegularFile)
+                for (Path path : stream.filter(Files::isRegularFile)
                         .sorted(Comparator.naturalOrder())
-                        .filter(path -> !MANIFEST_FILE_NAME.equals(path.getFileName().toString()))
-                        .forEach(path -> updateDigest(digest, root, path));
+                        .filter(file -> !MANIFEST_FILE_NAME.equals(file.getFileName().toString())).toList()) {
+                    updateDigest(digest, root, path);
+                }
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
@@ -218,12 +260,10 @@ public class DataMigrationArchiveService {
         }
     }
 
-    private void updateDigest(MessageDigest digest, Path root, Path path) {
-        try {
-            digest.update(rootRelative(root, path).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            digest.update(Files.readAllBytes(path));
-        } catch (IOException exception) {
-            throw new IllegalStateException(exception);
+    private void updateDigest(MessageDigest digest, Path root, Path path) throws IOException {
+        digest.update(rootRelative(root, path).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try (InputStream input = new java.security.DigestInputStream(Files.newInputStream(path), digest)) {
+            input.transferTo(OutputStream.nullOutputStream());
         }
     }
 
@@ -260,7 +300,7 @@ public class DataMigrationArchiveService {
     /**
      * 已解压导入包。
      */
-    public record ExtractedPackage(Path root, MigrationPackageManifest manifest) {
+    public record ExtractedPackage(Path root, Path workspace, MigrationPackageManifest manifest) {
     }
 
     /**

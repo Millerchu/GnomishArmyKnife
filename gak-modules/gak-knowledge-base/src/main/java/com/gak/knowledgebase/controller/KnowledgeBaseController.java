@@ -1,5 +1,7 @@
 package com.gak.knowledgebase.controller;
 
+import com.gak.framework.security.PublicEndpoint;
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.knowledgebase.dto.KnowledgeEntryQueryRequest;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 经验库控制器。
  */
 @RestController
+@RequireAppPermission("APP_KNOWLEDGE_BASE")
 @RequestMapping("/knowledge-base")
 public class KnowledgeBaseController {
 
@@ -94,6 +97,7 @@ public class KnowledgeBaseController {
         return ApiResponse.success(knowledgeBaseService.highlights(currentUserId, request));
     }
 
+    @PublicEndpoint
     @GetMapping("/public-highlights")
     public ApiResponse<List<KnowledgeEntryVO>> publicHighlights(@Valid KnowledgeHighlightQueryRequest request) {
         return ApiResponse.success(knowledgeBaseService.publicHighlights(request));

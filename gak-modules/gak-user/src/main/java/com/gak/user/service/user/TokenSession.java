@@ -9,12 +9,14 @@ import java.time.Instant;
 final class TokenSession {
 
     private final Long userId;
+    private final boolean passwordChangeOnly;
     private final Instant issuedAt;
     private final Instant expiresAt;
     private volatile Instant lastAccessedAt;
 
-    TokenSession(Long userId, Instant issuedAt, Instant expiresAt, Instant lastAccessedAt) {
+    TokenSession(Long userId, Instant issuedAt, Instant expiresAt, Instant lastAccessedAt, boolean passwordChangeOnly) {
         this.userId = userId;
+        this.passwordChangeOnly = passwordChangeOnly;
         this.issuedAt = issuedAt;
         this.expiresAt = expiresAt;
         this.lastAccessedAt = lastAccessedAt;
@@ -22,6 +24,10 @@ final class TokenSession {
 
     Long userId() {
         return userId;
+    }
+
+    boolean passwordChangeOnly() {
+        return passwordChangeOnly;
     }
 
     Instant issuedAt() {

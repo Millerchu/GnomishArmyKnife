@@ -7,6 +7,7 @@ public class SaveInstrumentPracticeTakeResultVO {
 
     private InstrumentPracticeTakeVO take;
     private String overwrittenTakeId;
+    private java.util.List<String> overwrittenTakeIds;
 
     public InstrumentPracticeTakeVO getTake() {
         return take;
@@ -14,6 +15,14 @@ public class SaveInstrumentPracticeTakeResultVO {
 
     public void setTake(InstrumentPracticeTakeVO take) {
         this.take = take;
+    }
+
+    public java.util.List<String> getOverwrittenTakeIds() {
+        return overwrittenTakeIds;
+    }
+
+    public void setOverwrittenTakeIds(java.util.List<String> overwrittenTakeIds) {
+        this.overwrittenTakeIds = overwrittenTakeIds;
     }
 
     public String getOverwrittenTakeId() {

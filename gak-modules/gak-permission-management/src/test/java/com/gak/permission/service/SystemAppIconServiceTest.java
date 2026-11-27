@@ -46,7 +46,8 @@ class SystemAppIconServiceTest {
                 "file",
                 "todo.png",
                 "image/png",
-                new byte[]{1, 2, 3, 4}
+                java.util.Base64.getDecoder().decode(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
         );
 
         AppIconUploadVO result = service.upload(1L, file, "127.0.0.1", "JUnit");
@@ -71,7 +72,7 @@ class SystemAppIconServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.upload(1L, file, "127.0.0.1", "JUnit"));
-        assertEquals("APP_ICON_FILE_TYPE_INVALID", exception.getCode());
+        assertEquals("ATTACHMENT_IMAGE_TYPE_INVALID", exception.getCode());
     }
 
     @Test
@@ -109,6 +110,7 @@ class SystemAppIconServiceTest {
                 userMapper,
                 appAuditLogMapper,
                 new ObjectMapper(),
+                new com.gak.attachment.service.AttachmentFileProcessor(),
                 tempDir.toString(),
                 "/api/system/apps/icon-files/"
         );

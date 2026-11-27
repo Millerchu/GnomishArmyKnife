@@ -12,7 +12,9 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -42,7 +44,7 @@ public class GrokCostsClient {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("analyticsRequest", analytics))))
                     .build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<byte[]> response = http.send(request, ignored -> new BoundedCostResponse());
             int status = response.statusCode();
             if (status == 401 || status == 403) throw new AiSyncFailure("AUTH_REQUIRED", false, 0);
             if (status == 429) throw new AiSyncFailure("RATE_LIMITED", true,
@@ -53,8 +55,19 @@ public class GrokCostsClient {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new AiSyncFailure("INTERRUPTED", true, 60);
-        } catch (IOException ignored) {
+        } catch (IOException exception) {
+            if (exception.getCause() instanceof AiSyncFailure failure) {
+                throw failure;
+            }
             throw new AiSyncFailure("PROVIDER_TIMEOUT_OR_INVALID_RESPONSE", true, 60);
+        }
+    }
+
+    private OffsetDateTime parseTimestamp(String value) {
+        try {
+            return Instant.parse(value).atOffset(ZoneOffset.UTC);
+        } catch (DateTimeParseException exception) {
+            throw new AiSyncFailure("INVALID_PROVIDER_BUCKET", false, 0);
         }
     }
 
@@ -66,7 +79,7 @@ public class GrokCostsClient {
         for (JsonNode series : response.path("timeSeries")) {
             if (!series.path("dataPoints").isArray()) throw new AiSyncFailure("INVALID_PROVIDER_DATA", false, 0);
             for (JsonNode point : series.path("dataPoints")) {
-                var timestamp = Instant.parse(point.path("timestamp").asText()).atOffset(ZoneOffset.UTC);
+                var timestamp = parseTimestamp(point.path("timestamp").asText());
                 LocalDate date = timestamp.toLocalDate();
                 JsonNode amount = point.path("values").path(0);
                 if (date.isBefore(start) || !date.isBefore(end) || timestamp.toLocalTime().toSecondOfDay() != 0

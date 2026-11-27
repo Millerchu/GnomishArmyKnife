@@ -74,10 +74,13 @@ public class DataMigrationController {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         DataMigrationService.DownloadFile downloadFile = dataMigrationService.download(currentUserId, taskId);
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentDisposition(ContentDisposition.attachment().filename(downloadFile.fileName()).build());
+        headers.setContentDisposition(ContentDisposition.attachment()
+                .filename(downloadFile.fileName(), java.nio.charset.StandardCharsets.UTF_8).build());
         if (downloadFile.fileSize() != null) {
             headers.setContentLength(downloadFile.fileSize());
         }
+        headers.setCacheControl("no-store");
+        headers.set("X-Content-Type-Options", "nosniff");
         return ResponseEntity.ok()
                 .headers(headers)
                 .contentType(downloadFile.mediaType())

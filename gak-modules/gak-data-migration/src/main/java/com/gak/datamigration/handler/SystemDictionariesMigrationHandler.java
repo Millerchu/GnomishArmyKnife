@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.datamigration.DataMigrationConstants;
 import com.gak.datamigration.service.DataMigrationArchiveService;
 import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
+import com.gak.datadictionary.cache.DataDictionaryCacheSupport;
 import com.gak.datadictionary.domain.DataDictionary;
 import com.gak.datadictionary.domain.DataDictionaryItem;
 import com.gak.datadictionary.domain.DataDictionaryUsage;
@@ -26,15 +27,18 @@ public class SystemDictionariesMigrationHandler implements MigrationResourceHand
     private final DataDictionaryItemMapper itemMapper;
     private final DataDictionaryUsageMapper usageMapper;
     private final DataMigrationArchiveService archiveService;
+    private final DataDictionaryCacheSupport dictionaryCache;
 
     public SystemDictionariesMigrationHandler(DataDictionaryMapper dictionaryMapper,
                                               DataDictionaryItemMapper itemMapper,
                                               DataDictionaryUsageMapper usageMapper,
-                                              DataMigrationArchiveService archiveService) {
+                                              DataMigrationArchiveService archiveService,
+                                              DataDictionaryCacheSupport dictionaryCache) {
         this.dictionaryMapper = dictionaryMapper;
         this.itemMapper = itemMapper;
         this.usageMapper = usageMapper;
         this.archiveService = archiveService;
+        this.dictionaryCache = dictionaryCache;
     }
 
     @Override
@@ -206,6 +210,7 @@ public class SystemDictionariesMigrationHandler implements MigrationResourceHand
             importedCount++;
         }
 
+        dictionaryCache.evictAll();
         return MigrationResourceImportResult.success(importedCount, 0L, "数据字典导入完成");
     }
 

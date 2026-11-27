@@ -309,6 +309,7 @@ CREATE TABLE IF NOT EXISTS gak_instrument_practice_take (
     meter VARCHAR(8) NOT NULL,
     duration_ms BIGINT NOT NULL,
     events_json TEXT NOT NULL,
+    event_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
@@ -759,10 +760,18 @@ CREATE INDEX IF NOT EXISTS idx_attachment_owner_status_created
     ON gak_attachment (owner_user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_attachment_cleanup_deleted
     ON gak_attachment (status, deleted_at) WHERE status = 'DELETED';
+ALTER TABLE gak_instrument_practice_take ADD COLUMN IF NOT EXISTS event_count INTEGER;
+UPDATE gak_instrument_practice_take
+SET event_count = json_array_length(events_json::json)
+WHERE event_count IS NULL;
+ALTER TABLE gak_instrument_practice_take ALTER COLUMN event_count SET DEFAULT 0;
+ALTER TABLE gak_instrument_practice_take ALTER COLUMN event_count SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_instrument_practice_take_owner_instrument_created
     ON gak_instrument_practice_take (owner_user_id, instrument_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_updated_at ON gak_knowledge_entry (owner_user_id, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_category ON gak_knowledge_entry (owner_user_id, category_name, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entry_published_id ON gak_knowledge_entry (id) WHERE status = 'PUBLISHED';
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_status_updated_at ON gak_knowledge_entry (status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_entry_owner_status_updated_at ON gak_knowledge_entry (owner_user_id, status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_item_owner_sort ON gak_todo_item (owner_user_id, status, important, due_date, updated_at DESC);
@@ -965,7 +974,7 @@ VALUES (
     'ADMIN',
     'ENABLED',
     TRUE,
-    FALSE,
+    TRUE,
     NULL,
     'schema init',
     CURRENT_TIMESTAMP,

@@ -81,7 +81,8 @@ public class AttachmentFileProcessor {
         String contentType = detectContentType(content, extension);
         validateAllowedType(normalizedUsageType, extension, contentType);
         byte[] thumbnail = IMAGE_CONTENT_TYPES.contains(contentType) ? createThumbnail(content, contentType) : null;
-        return new ProcessedFile(normalizedFileName, extension, contentType, content, thumbnail, sha256(content));
+        return new ProcessedFile(normalizedFileName, CONTENT_TYPE_EXTENSIONS.get(contentType),
+                contentType, content, thumbnail, sha256(content));
     }
 
     private String normalizeUsageType(String usageType) {
@@ -159,7 +160,6 @@ public class AttachmentFileProcessor {
             if (!IMAGE_CONTENT_TYPES.contains(contentType)) {
                 throw new BusinessException("ATTACHMENT_IMAGE_TYPE_INVALID", "仅支持 JPEG、PNG、WebP、GIF 图片");
             }
-            return;
         }
         if (!IMAGE_CONTENT_TYPES.contains(contentType) && !DOCUMENT_EXTENSIONS.contains(extension)) {
             throw new BusinessException("ATTACHMENT_FILE_TYPE_INVALID", "附件文件类型不支持");

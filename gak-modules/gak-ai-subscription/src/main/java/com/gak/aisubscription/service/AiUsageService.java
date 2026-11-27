@@ -1,5 +1,7 @@
 package com.gak.aisubscription.service;
 import com.gak.aisubscription.domain.AiUsageRecord;
+import com.gak.aisubscription.sync.AiOfficialCost;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.gak.aisubscription.dto.SaveAiUsageRequest;
 import com.gak.aisubscription.enums.AiUsageKind;
 import com.gak.aisubscription.mapper.AiUsageRecordMapper;
@@ -9,6 +11,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,19 +31,63 @@ public class AiUsageService {
   AiUsageRecord u=new AiUsageRecord();u.setOwnerUserId(owner);u.setAccountId(r.accountId());u.setKind(r.kind().name());u.setMode(r.mode().name());u.setPeriodKey(r.periodKey().trim());u.setZoneId(r.zoneId());u.setStartDate(r.startDate());u.setEndDate(r.endDate());u.setMetric(r.metric().trim());u.setUnit(r.unit().trim());u.setDimension(r.dimension()==null?"":r.dimension().trim());u.setQuantity(r.quantity());u.setCost(r.cost());u.setCurrency(r.currency());u.setResolution("NORMAL");u.setSource(MANUAL);u.setStatus(INCLUDED);u.setReason("");u.setRecordedAt(LocalDateTime.now());
   mapper.insert(u);reconcile(owner);return toVO(mapper.selectById(u.getId()));
  }
- /** 仅供受控官方适配器调用；须与 worker 租约条件提交位于同一事务。 */
- @Transactional public void upsertOfficialCost(Long owner,Long accountId,String externalKey,LocalDate start,LocalDate end,BigDecimal cost,String currency,String zoneId){
-  access.lockOwner(owner);accounts.requireActive(owner,accountId);AiRules.interval(start,end);AiRules.zone(zoneId);AiRules.check(cost!=null&&cost.signum()>=0,"官方费用必须为非负值");
-  AiUsageRecord u=mapper.selectOne(new QueryWrapper<AiUsageRecord>().eq("owner_user_id",owner).eq("account_id",accountId).eq("external_key",externalKey).eq("source",OFFICIAL));
-  boolean fresh=u==null;if(fresh)u=new AiUsageRecord();
-  u.setOwnerUserId(owner);u.setAccountId(accountId);u.setKind("API");u.setMode(CUMULATIVE);u.setPeriodKey(externalKey);u.setZoneId(zoneId);u.setStartDate(start);u.setEndDate(end);u.setMetric("COST");u.setUnit(currency);u.setDimension("");u.setQuantity(BigDecimal.ZERO);u.setCost(cost);u.setCurrency(currency);u.setResolution("NORMAL");u.setSource(OFFICIAL);u.setExternalKey(externalKey);u.setStatus(INCLUDED);u.setReason("");u.setRecordedAt(LocalDateTime.now());
-  if(fresh)mapper.insert(u);else mapper.updateById(u);reconcile(owner);
- }
- /** 撤回官方完整回查窗口中已不存在的桶，保留原始值以供追溯。随后 upsert 会重新启用仍存在的桶。 */
- @Transactional public void supersedeOfficialCostWindow(Long owner,Long accountId,LocalDate start,LocalDate end){
-  access.lockOwner(owner);accounts.requireActive(owner,accountId);AiRules.interval(start,end);
-  List<AiUsageRecord> previous=mapper.selectList(new QueryWrapper<AiUsageRecord>().eq("owner_user_id",owner).eq("account_id",accountId).eq("source",OFFICIAL).ge("start_date",start).le("end_date",end));
-  for(AiUsageRecord record:previous){record.setStatus("WITHDRAWN");record.setReason("官方回查窗口已撤回该费用桶");mapper.updateById(record);}
+ /** 在同步事务内替换完整回查窗口，仅在全部桶写入后重新归类。 */
+ @Transactional
+ public void replaceOfficialCostWindow(Long owner, Long accountId, LocalDate start, LocalDate end,
+                                       String prefix, List<AiOfficialCost> costs) {
+  access.lockOwner(owner);
+  accounts.requireActive(owner, accountId);
+  AiRules.interval(start,end);
+  List<AiUsageRecord> previous = mapper.selectList(new QueryWrapper<AiUsageRecord>()
+          .eq("owner_user_id",owner).eq("account_id",accountId).eq("source",OFFICIAL)
+          .ge("start_date",start).le("end_date",end));
+  Map<String, AiUsageRecord> byKey = previous.stream()
+          .collect(Collectors.toMap(AiUsageRecord::getExternalKey, Function.identity()));
+  for (AiOfficialCost cost : costs) {
+   AiRules.interval(cost.startDate(),cost.endDate());
+   AiRules.check(!cost.startDate().isBefore(start) && !cost.endDate().isAfter(end)
+           && cost.amount() != null && cost.amount().signum() >= 0, "官方费用超出回查窗口或金额非法");
+   String key = prefix + cost.startDate() + ":" + cost.currency();
+   AiUsageRecord record = byKey.remove(key);
+   if (record == null) {
+    record = new AiUsageRecord();
+    record.setOwnerUserId(owner);
+    record.setAccountId(accountId);
+    record.setKind("API");
+    record.setMode(CUMULATIVE);
+    record.setPeriodKey(key);
+    record.setZoneId("UTC");
+    record.setStartDate(cost.startDate());
+    record.setMetric("COST");
+    record.setUnit(cost.currency());
+    record.setDimension("");
+    record.setQuantity(BigDecimal.ZERO);
+    record.setCurrency(cost.currency());
+    record.setResolution("NORMAL");
+    record.setSource(OFFICIAL);
+    record.setExternalKey(key);
+   } else if (record.getCost() != null && record.getCost().compareTo(cost.amount()) == 0
+           && Objects.equals(record.getEndDate(), cost.endDate()) && !"WITHDRAWN".equals(record.getStatus())) {
+    continue;
+   }
+   record.setEndDate(cost.endDate());
+   record.setCost(cost.amount());
+   record.setStatus(INCLUDED);
+   record.setReason("");
+   record.setRecordedAt(LocalDateTime.now());
+   if (record.getId() == null) {
+    mapper.insert(record);
+   } else {
+    mapper.updateById(record);
+   }
+  }
+  for (AiUsageRecord withdrawn : byKey.values()) {
+   if (!"WITHDRAWN".equals(withdrawn.getStatus())) {
+    withdrawn.setStatus("WITHDRAWN");
+    withdrawn.setReason("官方回查窗口已撤回该费用桶");
+    mapper.updateById(withdrawn);
+   }
+  }
   reconcile(owner);
  }
  @Transactional public AiUsageRecordVO resolve(Long owner,Long id,com.gak.aisubscription.enums.AiUsageResolution action){
@@ -47,8 +96,19 @@ public class AiUsageService {
   AiRules.check(MANUAL.equals(record.getSource()),"官方数据请通过重新同步修正");record.setResolution(action.name());mapper.updateById(record);reconcile(owner);return toVO(mapper.selectById(id));
  }
  private void reconcile(Long owner){
-  List<AiUsageRecord> records=records(owner);classify(records);
-  for(AiUsageRecord u:records)mapper.updateById(u);
+  List<AiUsageRecord> records = records(owner);
+  List<String> statuses = records.stream().map(AiUsageRecord::getStatus).toList();
+  List<String> reasons = records.stream().map(AiUsageRecord::getReason).toList();
+  classify(records);
+  for (int index = 0; index < records.size(); index++) {
+   AiUsageRecord record = records.get(index);
+   if (!Objects.equals(statuses.get(index), record.getStatus())
+           || !Objects.equals(reasons.get(index), record.getReason())) {
+    mapper.update(null, new UpdateWrapper<AiUsageRecord>()
+            .eq("id", record.getId()).eq("owner_user_id", owner)
+            .set("status", record.getStatus()).set("reason", record.getReason()));
+   }
+  }
  }
  /** 列表必须按观测时间、ID 降序排列；测试独立验证计量规则。 */
  public static void classify(List<AiUsageRecord> records){

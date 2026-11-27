@@ -21,6 +21,7 @@ public final class AttachmentConstants {
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_DELETED = "DELETED";
+    public static final String STATUS_PURGING = "PURGING";
     public static final String STATUS_PURGED = "PURGED";
     public static final String STORAGE_LOCAL_NAS = "LOCAL_NAS";
 

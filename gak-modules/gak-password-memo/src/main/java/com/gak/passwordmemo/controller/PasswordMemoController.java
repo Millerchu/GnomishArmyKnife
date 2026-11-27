@@ -1,5 +1,6 @@
 package com.gak.passwordmemo.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.passwordmemo.dto.PasswordMemoQueryRequest;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 密码备忘录控制器。
  */
 @RestController
+@RequireAppPermission("APP_PASSWORD_MEMO")
 @RequestMapping("/password-memos")
 public class PasswordMemoController {
 
@@ -120,15 +122,7 @@ public class PasswordMemoController {
                 currentUserId,
                 id,
                 request,
-                resolveClientIp(httpServletRequest)
+                httpServletRequest.getRemoteAddr()
         ));
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 }

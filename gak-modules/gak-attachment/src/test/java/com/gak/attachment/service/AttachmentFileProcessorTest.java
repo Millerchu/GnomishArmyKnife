@@ -17,6 +17,15 @@ class AttachmentFileProcessorTest {
     private final AttachmentFileProcessor processor = new AttachmentFileProcessor();
 
     @Test
+    void rejectsRasterContentWithNonImageExtensionForImageAndIcon() {
+        for (String usage : java.util.List.of("IMAGE", "ICON")) {
+            MockMultipartFile file = new MockMultipartFile("file", "receipt.txt", "image/png", ONE_PIXEL_PNG);
+            BusinessException error = assertThrows(BusinessException.class, () -> processor.process(file, usage));
+            assertEquals("ATTACHMENT_EXTENSION_MISMATCH", error.getCode());
+        }
+    }
+
+    @Test
     void shouldDetectImageAndGenerateThumbnail() {
         MockMultipartFile file = new MockMultipartFile("file", "receipt.png", "text/plain", ONE_PIXEL_PNG);
 

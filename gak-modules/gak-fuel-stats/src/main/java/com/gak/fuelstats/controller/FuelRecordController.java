@@ -1,5 +1,6 @@
 package com.gak.fuelstats.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.fuelstats.dto.FuelRecordQueryRequest;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 油耗统计控制器。
  */
 @RestController
+@RequireAppPermission("APP_FUEL_STATS")
 @RequestMapping("/fuel-records")
 public class FuelRecordController {
 

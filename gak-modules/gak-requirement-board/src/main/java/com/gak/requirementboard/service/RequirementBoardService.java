@@ -199,11 +199,18 @@ public class RequirementBoardService {
     public RequirementDetailVO updateProgress(Long currentUserId,
                                               Long id,
                                               UpdateRequirementProgressRequest request) {
-        ensureCurrentUserExists(currentUserId);
+        User operator = ensureCurrentUserExists(currentUserId);
+        if (!isAdmin(operator)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可更新反馈进度");
+        }
         String normalizedStatus = normalizeRequiredStatus(request.getStatus());
         Requirement current = getRequirementOrThrow(id);
         if (normalizedStatus.equals(current.getStatus())) {
             throw new BusinessException("REQUIREMENT_STATUS_UNCHANGED", "请选择与当前状态不同的反馈状态");
+        }
+        RequirementStatus previous = RequirementStatus.valueOf(current.getStatus());
+        if (!previous.canTransitionTo(RequirementStatus.valueOf(normalizedStatus))) {
+            throw new BusinessException("REQUIREMENT_STATUS_TRANSITION_INVALID", "当前状态不支持该流转");
         }
 
         LocalDateTime now = LocalDateTime.now();

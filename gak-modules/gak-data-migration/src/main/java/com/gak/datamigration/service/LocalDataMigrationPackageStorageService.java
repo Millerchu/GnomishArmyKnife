@@ -37,7 +37,7 @@ public class LocalDataMigrationPackageStorageService implements DataMigrationPac
     @Override
     public StoredPackageFile saveExportPackage(String fileName, Path tempFile) throws IOException {
         Files.createDirectories(packageDir);
-        Path target = packageDir.resolve(normalizeFileName(fileName));
+        Path target = MigrationPaths.resolveEntry(packageDir, normalizeFileName(fileName));
         Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
         return new StoredPackageFile(FILE_STORAGE_LOCAL, target.toString(), target.getFileName().toString(), Files.size(target), target);
     }
@@ -50,10 +50,12 @@ public class LocalDataMigrationPackageStorageService implements DataMigrationPac
         Files.createDirectories(importDir);
         String originalFileName = StringUtils.hasText(file.getOriginalFilename()) ? file.getOriginalFilename().trim() : "import.zip";
         String normalizedFileName = normalizeFileName(originalFileName);
-        String savedName = System.currentTimeMillis() + "-" + normalizedFileName;
-        Path target = importDir.resolve(savedName);
+        Path target = Files.createTempFile(importDir, "import-", ".zip");
         try (InputStream inputStream = file.getInputStream()) {
             Files.copy(inputStream, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException exception) {
+            deleteQuietly(target);
+            throw exception;
         }
         return new StoredPackageFile(FILE_STORAGE_LOCAL, target.toString(), normalizedFileName, Files.size(target), target);
     }
@@ -82,15 +84,27 @@ public class LocalDataMigrationPackageStorageService implements DataMigrationPac
 
     @Override
     public Path resolve(String storagePath) {
-        return Paths.get(storagePath).toAbsolutePath().normalize();
+        Path path = Paths.get(storagePath).toAbsolutePath().normalize();
+        Path base = path.startsWith(packageDir) ? packageDir : importDir;
+        if (path.equals(base) || !path.startsWith(base) || escapesRealPath(base, path)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.NOT_FOUND, "迁移包不存在");
+        }
+        return path;
     }
 
     @Override
     public void deleteQuietly(Path path) {
-        if (path == null || !Files.exists(path)) {
+        if (path == null) {
             return;
         }
-        try (var stream = Files.walk(path)) {
+        Path target = path.toAbsolutePath().normalize();
+        Path base = target.startsWith(workspaceDir) ? workspaceDir
+                : target.startsWith(packageDir) ? packageDir : importDir;
+        if (target.equals(base) || !target.startsWith(base) || !Files.exists(target) || escapesRealPath(base, target)) {
+            return;
+        }
+        try (var stream = Files.walk(target)) {
             stream.sorted((left, right) -> right.compareTo(left))
                     .forEach(current -> {
                         try {
@@ -99,6 +113,14 @@ public class LocalDataMigrationPackageStorageService implements DataMigrationPac
                         }
                     });
         } catch (IOException ignored) {
+        }
+    }
+
+    private boolean escapesRealPath(Path base, Path path) {
+        try {
+            return Files.exists(path) && !path.toRealPath().startsWith(base.toRealPath());
+        } catch (IOException exception) {
+            return true;
         }
     }
 

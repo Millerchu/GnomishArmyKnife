@@ -228,14 +228,6 @@ public class PermissionManagementService {
                 && UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(resolveRoleCode(currentUser))) {
             result = buildCurrentAdminFallbackPermissionVO(currentUserId);
         }
-        saveAuditLog(currentUserId,
-                currentUserId,
-                PermissionAuditActionType.QUERY_CURRENT_USER_APPS,
-                null,
-                result,
-                traceId,
-                ip,
-                userAgent);
         return result;
     }
 
@@ -575,8 +567,8 @@ public class PermissionManagementService {
         auditLog.setBeforeJson(toJsonSafely(before));
         auditLog.setAfterJson(toJsonSafely(after));
         auditLog.setTraceId(trimToNull(traceId));
-        auditLog.setIp(trimToNull(ip));
-        auditLog.setUserAgent(trimToNull(userAgent));
+        auditLog.setIp(PermissionAuditFields.ip(ip));
+        auditLog.setUserAgent(PermissionAuditFields.userAgent(userAgent));
         auditLog.setCreatedAt(LocalDateTime.now());
         permissionAuditLogMapper.insert(auditLog);
         return auditLog.getId();

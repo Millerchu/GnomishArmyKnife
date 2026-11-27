@@ -89,6 +89,9 @@ public class FuelRecordService {
         int fromIndex = Math.max(0, (pageNo - 1) * pageSize);
         int toIndex = Math.min(records.size(), fromIndex + pageSize);
         List<FuelRecordVO> list = fromIndex >= toIndex ? List.of() : records.subList(fromIndex, toIndex);
+        var attachments = attachmentService.listBusinessAttachmentsByIds(AttachmentConstants.BUSINESS_FUEL_RECORD,
+                list.stream().map(FuelRecordVO::getId).toList(), AttachmentConstants.USAGE_IMAGE);
+        list.forEach(item -> item.setAttachments(attachments.getOrDefault(item.getId(), List.of())));
         return new PagedResult<>(list, total);
     }
 
@@ -211,6 +214,8 @@ public class FuelRecordService {
     private FuelRecordVO findRecordVOById(Long currentUserId, Long id) {
         for (FuelRecordVO item : buildDerivedRecords(loadAllRecords(currentUserId))) {
             if (Objects.equals(item.getId(), id)) {
+                item.setAttachments(attachmentService.listBusinessAttachments(
+                        AttachmentConstants.BUSINESS_FUEL_RECORD, id, AttachmentConstants.USAGE_IMAGE));
                 return item;
             }
         }
@@ -320,8 +325,6 @@ public class FuelRecordService {
         vo.setDistanceKm(scaleOdometer(distanceKm));
         vo.setCreatedAt(item.getCreatedAt());
         vo.setUpdatedAt(item.getUpdatedAt());
-        vo.setAttachments(attachmentService.listBusinessAttachments(
-                AttachmentConstants.BUSINESS_FUEL_RECORD, item.getId(), AttachmentConstants.USAGE_IMAGE));
         return vo;
     }
 

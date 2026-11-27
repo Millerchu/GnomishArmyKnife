@@ -1,5 +1,6 @@
 package com.gak.healthrecord.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.healthrecord.dto.HealthRecordQueryRequest;
@@ -40,6 +41,7 @@ import org.springframework.web.multipart.MultipartFile;
  * 健康应用控制器。
  */
 @RestController
+@RequireAppPermission("APP_HEALTH_RECORD")
 @RequestMapping("/health-records")
 public class HealthRecordController {
 

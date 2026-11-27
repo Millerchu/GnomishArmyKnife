@@ -1,5 +1,7 @@
 package com.gak.worklog.service;
 
+import com.gak.framework.security.AttemptLimiter;
+import java.time.Duration;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.framework.dictionary.DataDictionaryUsageSupport;
 import com.gak.framework.dictionary.vo.DictionaryOptionVO;
@@ -42,6 +44,8 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
  */
 @Service
 public class WorkLogService {
+
+    private final AttemptLimiter projectCreationAttempts = new AttemptLimiter(10, Duration.ofMinutes(5));
 
     private static final String APP_CODE = "APP_WORK_LOG";
     private static final String MODULE_CODE = "WORK_LOG";
@@ -156,7 +160,8 @@ public class WorkLogService {
      * @return 新增或已存在的项目选项
      */
     @Transactional
-    public DictionaryOptionVO createProject(String projectName) {
+    public DictionaryOptionVO createProject(Long currentUserId, String projectName) {
+        projectCreationAttempts.acquire(currentUserId.toString());
         return dataDictionaryUsageSupport.createEnabledOptionByUsage(
                 APP_CODE,
                 MODULE_CODE,

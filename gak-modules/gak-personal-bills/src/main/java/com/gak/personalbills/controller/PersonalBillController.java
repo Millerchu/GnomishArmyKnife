@@ -1,5 +1,6 @@
 package com.gak.personalbills.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.framework.response.PagedResult;
 import com.gak.personalbills.dto.AnnualBudgetQueryRequest;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 个人账单控制器。
  */
 @RestController
+@RequireAppPermission("APP_PERSONAL_BILLS")
 @RequestMapping("/personal-bills")
 public class PersonalBillController {
 

@@ -101,8 +101,12 @@ public class DataMigrationTaskExecutionService {
                     ),
                     exports
             );
-            DataMigrationPackageStorageService.StoredPackageFile storedPackage =
-                    storageService.saveExportPackage(task.getPackageName() + ".zip", buildResult.zipFile());
+            DataMigrationPackageStorageService.StoredPackageFile storedPackage;
+            try {
+                storedPackage = storageService.saveExportPackage(task.getPackageName() + ".zip", buildResult.zipFile());
+            } finally {
+                storageService.deleteQuietly(buildResult.zipFile());
+            }
 
             markTaskFinished(taskId,
                     DataMigrationConstants.TASK_STATUS_SUCCESS,
@@ -171,7 +175,7 @@ public class DataMigrationTaskExecutionService {
             markTaskFinished(taskId, DataMigrationConstants.TASK_STATUS_FAILED, recordCount, attachmentCount, null, message, null);
         } finally {
             if (extractedPackage != null) {
-                storageService.deleteQuietly(extractedPackage.root());
+                storageService.deleteQuietly(extractedPackage.workspace());
             }
         }
     }

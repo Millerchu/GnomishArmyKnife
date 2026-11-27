@@ -14,6 +14,9 @@ import com.gak.framework.exception.BusinessException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
@@ -115,6 +118,29 @@ public class DataDictionarySupportImpl implements DataDictionarySupport {
         } catch (BusinessException exception) {
             return value;
         }
+    }
+
+    @Override
+    public Map<String, String> getLabelsByValue(String dictCode, Collection<String> values) {
+        Map<String, String> labels = new HashMap<>();
+        if (values.isEmpty()) {
+            return labels;
+        }
+        List<DictionaryOptionVO> options;
+        try {
+            options = loadSnapshot(dictCode).allOptions();
+        } catch (BusinessException exception) {
+            return labels;
+        }
+        for (String value : values) {
+            for (DictionaryOptionVO option : options) {
+                if (equalsIgnoreCase(option.getItemValue(), value)) {
+                    labels.put(value, option.getItemLabel());
+                    break;
+                }
+            }
+        }
+        return labels;
     }
 
     private DictionarySnapshot loadSnapshot(String dictCode) {

@@ -598,6 +598,10 @@ public class DataMigrationService {
         if (!StringUtils.hasText(normalized)) {
             throw new BusinessException("DATA_MIGRATION_PACKAGE_NAME_REQUIRED", "packageName 不能为空");
         }
+        if (".".equals(normalized) || normalized.contains("..")
+                || normalized.codePoints().anyMatch(Character::isISOControl)) {
+            throw new BusinessException("DATA_MIGRATION_PATH_INVALID", "迁移包名称非法");
+        }
         return normalized.replaceAll("[\\\\/:*?\"<>|]", "-");
     }
 

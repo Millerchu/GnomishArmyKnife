@@ -97,6 +97,7 @@ public class AttachmentController {
                 .cacheControl(CacheControl.noCache().cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", "default-src 'none'; sandbox")
                 .body(file.resource());
     }
 }

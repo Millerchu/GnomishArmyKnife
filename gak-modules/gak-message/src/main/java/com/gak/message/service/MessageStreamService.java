@@ -21,18 +21,27 @@ public class MessageStreamService {
     private static final int MAX_CONNECTIONS = 1000;
     private static final int MAX_USER_CONNECTIONS = 12;
     private final Map<Long, Set<Connection>> connections = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService writers = Executors.newVirtualThreadPerTaskExecutor();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("gak-message-sse-clock").factory());
+    private final ExecutorService writers = Executors.newThreadPerTaskExecutor(
+            Thread.ofVirtual().name("gak-message-sse-writer-", 0).factory());
     private final Semaphore capacity = new Semaphore(MAX_CONNECTIONS);
     private final AtomicLong failures = new AtomicLong();
+    private boolean stopping;
 
     public MessageStreamService() {
-        scheduler.scheduleAtFixedRate(() -> {
-            connections.values().forEach(group -> group.forEach(connection -> send(connection, "heartbeat", Map.of())));
-        }, HEARTBEAT_SECONDS, HEARTBEAT_SECONDS, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(this::heartbeat, HEARTBEAT_SECONDS, HEARTBEAT_SECONDS, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(() -> LOG.info("消息连接数={}, 推送失败数={}",
                 MAX_CONNECTIONS - capacity.availablePermits(), failures.get()),
                 METRIC_INTERVAL_SECONDS, METRIC_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private void heartbeat() {
+        try {
+            connections.values().forEach(group -> group.forEach(connection -> send(connection, "heartbeat", Map.of())));
+        } catch (RuntimeException exception) {
+            LOG.warn("SSE 心跳推送失败", exception);
+        }
     }
 
     public SseEmitter connect(Long userId) {
@@ -41,6 +50,11 @@ public class MessageStreamService {
         }
         Connection connection = new Connection(userId, new SseEmitter(CONNECTION_TIMEOUT_MS));
         synchronized (connections) {
+            if (stopping) {
+                capacity.release();
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "消息服务正在停止");
+            }
             Set<Connection> group = connections.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet());
             if (group.size() >= MAX_USER_CONNECTIONS) {
                 capacity.release();
@@ -70,17 +84,25 @@ public class MessageStreamService {
         if (connection.closed.get() || !connection.writing.compareAndSet(false, true)) { return; }
         try {
             writers.submit(() -> {
-                ScheduledFuture<?> timeout = scheduler.schedule(() -> {
-                    failures.incrementAndGet();
-                    close(connection);
-                }, SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                ScheduledFuture<?> timeout = null;
                 try {
+                    if (connection.closed.get()) {
+                        return;
+                    }
+                    Thread writer = Thread.currentThread();
+                    timeout = scheduler.schedule(() -> {
+                        failures.incrementAndGet();
+                        writer.interrupt();
+                        close(connection);
+                    }, SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     connection.emitter.send(SseEmitter.event().name(event).data(payload));
                 } catch (IOException | RuntimeException exception) {
                     failures.incrementAndGet();
                     close(connection);
                 } finally {
-                    timeout.cancel(false);
+                    if (timeout != null) {
+                        timeout.cancel(false);
+                    }
                     connection.writing.set(false);
                 }
             });
@@ -89,29 +111,54 @@ public class MessageStreamService {
         }
     }
 
-    private void remove(Connection connection) {
-        if (connection.closed.compareAndSet(false, true)) {
-            synchronized (connections) {
-                Set<Connection> group = connections.get(connection.userId);
-                if (group != null) {
-                    group.remove(connection);
-                    if (group.isEmpty()) { connections.remove(connection.userId); }
-                }
-                capacity.release();
-            }
+    private boolean remove(Connection connection) {
+        if (!connection.closed.compareAndSet(false, true)) {
+            return false;
         }
+
+        synchronized (connections) {
+            Set<Connection> group = connections.get(connection.userId);
+            if (group != null) {
+                group.remove(connection);
+                if (group.isEmpty()) {
+                    connections.remove(connection.userId);
+                }
+            }
+            capacity.release();
+        }
+        return true;
     }
 
     private void close(Connection connection) {
-        remove(connection);
-        connection.emitter.complete();
+        if (!remove(connection)) {
+            return;
+        }
+        try {
+            writers.execute(() -> complete(connection));
+        } catch (RejectedExecutionException exception) {
+            LOG.debug("SSE 执行器已关闭", exception);
+        }
+    }
+
+    private void complete(Connection connection) {
+        try {
+            connection.emitter.complete();
+        } catch (RuntimeException exception) {
+            LOG.debug("关闭 SSE 连接失败", exception);
+        }
     }
 
     @PreDestroy
     public void shutdown() {
-        connections.values().forEach(group -> group.forEach(this::close));
-        scheduler.shutdownNow();
-        writers.shutdownNow();
+        synchronized (connections) {
+            stopping = true;
+        }
+        try {
+            connections.values().forEach(group -> group.forEach(this::close));
+        } finally {
+            scheduler.shutdownNow();
+            writers.shutdown();
+        }
     }
 
     private static final class Connection {

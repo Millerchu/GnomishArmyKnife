@@ -5,6 +5,7 @@ import com.gak.framework.exception.SystemExceptionCapture;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import com.gak.user.service.user.AuthService;
+import com.gak.user.service.user.LoginCaptchaService;
 import com.gak.user.service.user.PasswordCryptoService;
 import com.gak.user.service.user.TokenService;
 import org.junit.jupiter.api.Test;
@@ -41,7 +42,7 @@ class AuthControllerLogoutTest {
         TokenService tokenService = new TokenService(
                 userMapper, Duration.ofHours(24), Duration.ofHours(2), 100);
         AuthController controller = new AuthController(
-                mock(AuthService.class), mock(PasswordCryptoService.class), tokenService);
+                mock(AuthService.class), mock(PasswordCryptoService.class), tokenService, new LoginCaptchaService());
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler(
                         new StaticListableBeanFactory().getBeanProvider(SystemExceptionCapture.class)))

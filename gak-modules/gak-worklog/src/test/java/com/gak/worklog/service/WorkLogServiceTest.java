@@ -176,7 +176,7 @@ class WorkLogServiceTest {
                 "新建交付项目"
         )).thenReturn(option);
 
-        DictionaryOptionVO result = workLogService.createProject("新建交付项目");
+        DictionaryOptionVO result = workLogService.createProject(1L, "新建交付项目");
 
         assertEquals("新建交付项目", result.getItemLabel());
         assertEquals("新建交付项目", result.getItemValue());

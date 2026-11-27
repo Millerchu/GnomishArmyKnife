@@ -1,5 +1,6 @@
 package com.gak.aisubscription.sync;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -32,7 +33,7 @@ public class OpenAiCostsClient {
     private final ObjectMapper json;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER).build();
-    public OpenAiCostsClient(ObjectMapper json) { this.json = json; }
+    public OpenAiCostsClient(ObjectMapper json) { this.json = json.copy().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS); }
     public List<AiOfficialCost> fetch(String apiKey, LocalDate start, LocalDate end) {
         List<AiOfficialCost> costs = new ArrayList<>();
         Set<String> seenPages = new HashSet<>();
@@ -53,7 +54,7 @@ public class OpenAiCostsClient {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(ENDPOINT + query))
                     .timeout(Duration.ofSeconds(20)).header("Authorization", "Bearer " + key).GET().build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<byte[]> response = http.send(request, ignored -> new BoundedCostResponse());
             int status = response.statusCode();
             if (status == 401 || status == 403) throw new AiSyncFailure("AUTH_REQUIRED", false, 0);
             if (status == 429) throw new AiSyncFailure("RATE_LIMITED", true,
@@ -61,14 +62,19 @@ public class OpenAiCostsClient {
             if (status >= 500) throw new AiSyncFailure("PROVIDER_UNAVAILABLE", true, 60);
             if (status != 200) throw new AiSyncFailure("PROVIDER_REQUEST_REJECTED", false, 0);
             return json.readTree(response.body());
-        } catch (AiSyncFailure failure) { throw failure; }
-        catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt(); throw new AiSyncFailure("INTERRUPTED", true, 60);
-        } catch (Exception ignored) { throw new AiSyncFailure("PROVIDER_TIMEOUT_OR_INVALID_RESPONSE", true, 60); }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AiSyncFailure("INTERRUPTED", true, 60);
+        } catch (java.io.IOException exception) {
+            if (exception.getCause() instanceof AiSyncFailure failure) {
+                throw failure;
+            }
+            throw new AiSyncFailure("PROVIDER_TIMEOUT_OR_INVALID_RESPONSE", true, 60);
+        }
     }
     /** 合并同一桶内的币种，稳定快照键为账号+UTC日+币种。未知结构必须失败，不能伪造零费用。 */
     List<AiOfficialCost> parse(JsonNode response, LocalDate start, LocalDate end) {
-        if (!response.path("data").isArray()) throw new AiSyncFailure("INVALID_PROVIDER_DATA", false, 0);
+        if (response == null || !response.path("data").isArray()) throw new AiSyncFailure("INVALID_PROVIDER_DATA", false, 0);
         List<AiOfficialCost> result = new ArrayList<>();
         for (JsonNode bucket : response.path("data")) {
             long from = bucket.path("start_time").asLong(-1), to = bucket.path("end_time").asLong(-1);
@@ -81,7 +87,8 @@ public class OpenAiCostsClient {
             for (JsonNode entry : bucket.path("results")) {
                 JsonNode amount = entry.path("amount");
                 String currency = amount.path("currency").asText("").toUpperCase(Locale.ROOT);
-                if (!currency.matches("[A-Z]{3}") || !amount.path("value").isNumber()) {
+                if (!currency.matches("[A-Z]{3}") || !amount.path("value").isNumber()
+                        || amount.path("value").decimalValue().signum() < 0) {
                     throw new AiSyncFailure("INVALID_PROVIDER_AMOUNT", false, 0);
                 }
                 amounts.merge(currency, amount.path("value").decimalValue(), BigDecimal::add);

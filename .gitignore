@@ -22,3 +22,6 @@
 /data/db-migrations/
 gak-start/src/main/resources/application.properties
 gak-start/src/main/resources/application.properties
+
+# Workstation-only datasource override
+/config/application-local-private.properties

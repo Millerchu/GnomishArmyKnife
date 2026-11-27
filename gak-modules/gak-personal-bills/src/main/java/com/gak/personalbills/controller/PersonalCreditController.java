@@ -1,5 +1,6 @@
 package com.gak.personalbills.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.personalbills.dto.SaveCreditAccountRequest;
 import com.gak.personalbills.service.PersonalBillAccessService;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 /** 个人信用统计接口，所有操作绑定登录用户。 */
 @RestController
+@RequireAppPermission("APP_PERSONAL_BILLS")
 @RequestMapping("/personal-bills/credit-accounts")
 public class PersonalCreditController {
     private final PersonalCreditService service;

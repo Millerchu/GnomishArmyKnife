@@ -46,8 +46,9 @@ class AiSyncWorkerTest {
     @Test void currentLeaseWritesSnapshotAndCompletion() {
         when(repository.complete(job)).thenReturn(true);
         worker.run(job);
-        verify(usage).upsertOfficialCost(1L, 2L, "OPENAI_COST:2026-11-01:USD", LocalDate.of(2026,11,1),
-                LocalDate.of(2026,11,2), new BigDecimal("1.23"), "USD", "UTC");
+        verify(usage).replaceOfficialCostWindow(eq(1L), eq(2L), any(), any(), eq("OPENAI_COST:"),
+                eq(List.of(new AiOfficialCost(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 2),
+                        "USD", new BigDecimal("1.23")))));
         verify(repository).markSuccess(job);
     }
     @Test void oldWorkerAuthenticationFailureCannotRevokeNewAuthorization() {

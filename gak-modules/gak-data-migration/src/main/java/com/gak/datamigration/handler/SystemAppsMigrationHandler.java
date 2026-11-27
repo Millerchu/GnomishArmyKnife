@@ -3,6 +3,7 @@ package com.gak.datamigration.handler;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.gak.datamigration.DataMigrationConstants;
 import com.gak.datamigration.service.DataMigrationArchiveService;
+import com.gak.datamigration.service.MigrationPaths;
 import com.gak.datamigration.service.DataMigrationBeanMergeSupport;
 import com.gak.datamigration.service.AttachmentMigrationSupport;
 import com.gak.datamigration.service.AttachmentMigrationSupport.ExportBundle;
@@ -171,12 +172,16 @@ public class SystemAppsMigrationHandler implements MigrationResourceHandler {
         if (!StringUtils.hasText(app.getIconFileName())) {
             return 0L;
         }
+        Path target = MigrationPaths.resolveEntry(iconStorageDir, app.getIconFileName());
+        if (!iconStorageDir.equals(target.getParent())) {
+            throw new BusinessException("DATA_MIGRATION_PATH_INVALID", "图标文件名非法");
+        }
         Path attachment = context.attachmentPath(DataMigrationConstants.APP_ICON_ATTACHMENT_DIR + "/" + app.getIconFileName());
         if (!Files.exists(attachment) || !Files.isRegularFile(attachment)) {
             throw new BusinessException("DATA_MIGRATION_ATTACHMENT_MISSING", "缺少应用图标附件: " + app.getIconFileName());
         }
         Files.createDirectories(iconStorageDir);
-        Files.copy(attachment, iconStorageDir.resolve(app.getIconFileName()), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(attachment, target, StandardCopyOption.REPLACE_EXISTING);
         app.setIconStorageType(AppIconStorageType.FILE_SERVER.name());
         app.setIconUrl(publicUrlPrefix + app.getIconFileName());
         return 1L;

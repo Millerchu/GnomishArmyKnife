@@ -175,6 +175,8 @@ class DataDictionaryServiceTest {
         User user = new User();
         user.setId(2L);
         user.setRoleCode("USER");
+        user.setEnabled(true);
+        user.setStatus("ENABLED");
         when(userMapper.selectById(2L)).thenReturn(user);
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
@@ -188,6 +190,8 @@ class DataDictionaryServiceTest {
         user.setUsername("admin");
         user.setDisplayName("系统管理员");
         user.setRoleCode("ADMIN");
+        user.setEnabled(true);
+        user.setStatus("ENABLED");
         return user;
     }
 

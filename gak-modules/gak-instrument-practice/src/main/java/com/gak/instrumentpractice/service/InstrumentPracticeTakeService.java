@@ -58,11 +58,18 @@ public class InstrumentPracticeTakeService {
     }
 
     /**
-     * 查询当前用户的全部事件录音，按创建时间正序返回以便客户端稳定回放和排序。
+     * 按创建时间正序返回元数据，演奏事件由详情按需读取。
      */
     public List<InstrumentPracticeTakeVO> list(Long currentUserId) {
         ensureCurrentUserExists(currentUserId);
-        return loadTakes(currentUserId, null).stream().map(this::toTakeVO).toList();
+        return instrumentPracticeTakeMapper.selectList(ownedTakes(currentUserId)
+                .select("id", "instrument_id", "tuning_id", "bpm", "meter", "duration_ms", "event_count", "created_at"))
+                .stream().map(this::toTakeVO).toList();
+    }
+
+    public InstrumentPracticeTakeVO detail(Long currentUserId, Long takeId) {
+        ensureCurrentUserExists(currentUserId);
+        return toTakeVO(requireOwnedTake(currentUserId, takeId));
     }
 
     /**
@@ -72,12 +79,17 @@ public class InstrumentPracticeTakeService {
     public SaveInstrumentPracticeTakeResultVO create(Long currentUserId, SaveInstrumentPracticeTakeRequest request) {
         ensureCurrentUserExists(currentUserId);
         validateTakeRequest(request);
-        List<InstrumentPracticeTake> existingTakes = loadTakes(currentUserId, request.getInstrumentId());
-        Long overwrittenTakeId = null;
-        if (existingTakes.size() >= MAX_TAKES_PER_INSTRUMENT) {
-            InstrumentPracticeTake oldestTake = existingTakes.get(0);
-            overwrittenTakeId = oldestTake.getId();
-            instrumentPracticeTakeMapper.deleteById(overwrittenTakeId);
+        // 同一用户的并发创建先串行化，避免同时读取容量后重复插入。
+        if (userMapper.lockUser(currentUserId) == null) {
+            throw new BusinessException("INSTRUMENT_OWNER_NOT_FOUND", "当前用户不存在");
+        }
+        List<InstrumentPracticeTake> existingTakes = instrumentPracticeTakeMapper.selectList(ownedTakes(currentUserId)
+                .eq("instrument_id", request.getInstrumentId().trim()).select("id"));
+        int overflow = Math.max(0, existingTakes.size() - MAX_TAKES_PER_INSTRUMENT + 1);
+        List<Long> overwritten = existingTakes.subList(0, overflow).stream()
+                .map(InstrumentPracticeTake::getId).toList();
+        if (!overwritten.isEmpty()) {
+            instrumentPracticeTakeMapper.deleteByIds(overwritten);
         }
 
         InstrumentPracticeTake take = new InstrumentPracticeTake();
@@ -88,6 +100,7 @@ public class InstrumentPracticeTakeService {
         take.setMeter(request.getMeter().trim());
         take.setDurationMs(request.getDurationMs());
         take.setEventsJson(writeEvents(request.getEvents()));
+        take.setEventCount(request.getEvents().size());
         LocalDateTime now = LocalDateTime.now();
         take.setCreatedAt(now);
         take.setUpdatedAt(now);
@@ -95,7 +108,8 @@ public class InstrumentPracticeTakeService {
 
         SaveInstrumentPracticeTakeResultVO result = new SaveInstrumentPracticeTakeResultVO();
         result.setTake(toTakeVO(take));
-        result.setOverwrittenTakeId(overwrittenTakeId == null ? null : String.valueOf(overwrittenTakeId));
+        result.setOverwrittenTakeIds(overwritten.stream().map(String::valueOf).toList());
+        result.setOverwrittenTakeId(overwritten.isEmpty() ? null : String.valueOf(overwritten.getFirst()));
         return result;
     }
 
@@ -105,21 +119,25 @@ public class InstrumentPracticeTakeService {
     @Transactional
     public void delete(Long currentUserId, Long takeId) {
         ensureCurrentUserExists(currentUserId);
-        InstrumentPracticeTake take = instrumentPracticeTakeMapper.selectById(takeId);
-        if (take == null || !currentUserId.equals(take.getOwnerUserId())) {
+        int deleted = instrumentPracticeTakeMapper.delete(new QueryWrapper<InstrumentPracticeTake>()
+                .eq("owner_user_id", currentUserId).eq("id", takeId));
+        if (deleted == 0) {
             throw new BusinessException("INSTRUMENT_TAKE_NOT_FOUND", "练习片段不存在或无权访问");
         }
-        instrumentPracticeTakeMapper.deleteById(takeId);
     }
 
-    private List<InstrumentPracticeTake> loadTakes(Long currentUserId, String instrumentId) {
-        QueryWrapper<InstrumentPracticeTake> wrapper = new QueryWrapper<>();
-        wrapper.eq("owner_user_id", currentUserId);
-        if (StringUtils.hasText(instrumentId)) {
-            wrapper.eq("instrument_id", instrumentId.trim());
+    private InstrumentPracticeTake requireOwnedTake(Long currentUserId, Long takeId) {
+        InstrumentPracticeTake take = instrumentPracticeTakeMapper.selectOne(new QueryWrapper<InstrumentPracticeTake>()
+                .eq("owner_user_id", currentUserId).eq("id", takeId));
+        if (take == null) {
+            throw new BusinessException("INSTRUMENT_TAKE_NOT_FOUND", "练习片段不存在或无权访问");
         }
-        wrapper.orderByAsc("created_at").orderByAsc("id");
-        return instrumentPracticeTakeMapper.selectList(wrapper);
+        return take;
+    }
+
+    private QueryWrapper<InstrumentPracticeTake> ownedTakes(Long currentUserId) {
+        return new QueryWrapper<InstrumentPracticeTake>().eq("owner_user_id", currentUserId)
+                .orderByAsc("created_at").orderByAsc("id");
     }
 
     private void ensureCurrentUserExists(Long currentUserId) {
@@ -191,7 +209,10 @@ public class InstrumentPracticeTakeService {
         view.setBpm(take.getBpm());
         view.setMeter(take.getMeter());
         view.setDurationMs(take.getDurationMs());
-        view.setEvents(readEvents(take.getEventsJson()));
+        view.setEventCount(take.getEventCount());
+        if (take.getEventsJson() != null) {
+            view.setEvents(readEvents(take.getEventsJson()));
+        }
         view.setCreatedAt(take.getCreatedAt()
                 .atZone(ZoneId.systemDefault())
                 .toInstant()

@@ -1,5 +1,6 @@
 package com.gak.healthrecord.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.healthrecord.dto.SaveDentalCleaningRequest;
 import com.gak.healthrecord.dto.SaveDentalReminderRequest;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 健康应用的洁牙记录及个人提醒设置。 */
 @RestController
+@RequireAppPermission("APP_HEALTH_RECORD")
 @RequestMapping("/health-records/dental-cleanings")
 public class DentalCleaningController {
     private final DentalCleaningService service;

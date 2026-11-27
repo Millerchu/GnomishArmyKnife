@@ -33,6 +33,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -118,8 +119,7 @@ class WowCharacterServiceTest {
                 (String) invocation.getArgument(3),
                 invocation.getArgument(4)
         ));
-        lenient().when(dataDictionarySupport.getLabelByValue(eq("WOW_PRIMARY_PROFESSION"), any()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
+        lenient().when(userMapper.lockUser(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(wowCharacterMythicRunMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterWeeklyVaultMapper.selectList(any())).thenReturn(List.of());
         lenient().when(wowCharacterKeybindingMapper.selectList(any())).thenReturn(List.of());
@@ -137,6 +137,16 @@ class WowCharacterServiceTest {
             character.setId(101L);
             return 1;
         }).when(wowCharacterMapper).insert(any(WowCharacter.class));
+
+        doAnswer(invocation -> {
+            WowCharacterWeeklyVault vault = invocation.getArgument(0);
+            vault.setId(17L);
+            return 1;
+        }).when(wowCharacterWeeklyVaultMapper).insert(any(WowCharacterWeeklyVault.class));
+        var attachment = new com.gak.attachment.vo.AttachmentVO();
+        attachment.setId(71L);
+        when(attachmentService.listBusinessAttachmentsByIds("WOW_WEEKLY_VAULT", List.of(17L), "ATTACHMENT"))
+                .thenReturn(Map.of(17L, List.of(attachment)));
 
         SaveWowCharacterRequest request = buildSaveRequest();
         request.setMythicRuns(List.of(
@@ -170,6 +180,8 @@ class WowCharacterServiceTest {
                 .orElseThrow()
                 .getBestTimedLevel());
         assertEquals(1, result.getWeeklyVaults().size());
+        assertEquals(17L, result.getWeeklyVaults().getFirst().getId());
+        assertEquals(List.of(attachment), result.getWeeklyVaults().getFirst().getAttachments());
         assertEquals(2, result.getWeeklyVaults().get(0).getRaidUnlockedCount());
         assertEquals(2, result.getKeybindings().size());
         assertEquals("团本治疗", result.getKeybindings().get(0).getBindingName());
@@ -516,15 +528,12 @@ class WowCharacterServiceTest {
         long resetCount = wowCharacterService.resetAllWeeklyProgress(1L);
 
         assertEquals(1L, resetCount);
-        assertEquals(0, maxLevelCharacter.getMythicBestLevel());
-        assertNull(maxLevelCharacter.getMythicDungeonName());
         assertEquals(12, levelingCharacter.getMythicBestLevel());
-        verify(wowCharacterMapper).updateById(maxLevelCharacter);
+        verify(wowCharacterMapper).update(org.mockito.ArgumentMatchers.isNull(), any());
         verify(wowCharacterWeeklyVaultMapper, org.mockito.Mockito.never()).delete(any());
-        ArgumentCaptor<WowCharacterWeeklyVault> vaultCaptor = ArgumentCaptor.forClass(WowCharacterWeeklyVault.class);
-        verify(wowCharacterWeeklyVaultMapper).insert(vaultCaptor.capture());
-        assertEquals(1L, vaultCaptor.getValue().getCharacterId());
-        assertEquals(0, vaultCaptor.getValue().getMythicProgressCount());
+        verify(wowCharacterWeeklyVaultMapper).insert(org.mockito.ArgumentMatchers.<java.util.Collection<WowCharacterWeeklyVault>>argThat(
+                vaults -> vaults.size() == 1 && Long.valueOf(1L).equals(vaults.iterator().next().getCharacterId())
+                        && vaults.iterator().next().getMythicProgressCount() == 0));
     }
 
     private SaveWowCharacterRequest buildSaveRequest() {

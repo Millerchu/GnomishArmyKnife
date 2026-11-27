@@ -85,8 +85,8 @@ class KnowledgeBaseServiceTest {
     @Test
     void shouldPageOnlyPublishedEntriesByDefault() {
         KnowledgeEntry first = buildEntry(11L, 2L, "第一条", "PUBLISHED", LocalDateTime.of(2026, 5, 10, 12, 0));
-        KnowledgeEntry second = buildEntry(12L, 1L, "第二条", "PENDING", LocalDateTime.of(2026, 5, 9, 12, 0));
-        when(knowledgeEntryMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(knowledgeEntryMapper.selectCount(any())).thenReturn(1L);
+        when(knowledgeEntryMapper.selectList(any())).thenReturn(List.of(first));
 
         KnowledgeEntryQueryRequest request = new KnowledgeEntryQueryRequest();
         request.setPageNo(1);
@@ -101,6 +101,7 @@ class KnowledgeBaseServiceTest {
 
     @Test
     void shouldReturnLimitedHighlights() {
+        when(knowledgeEntryMapper.selectPublishedBounds()).thenReturn(List.of(11L, 14L));
         when(knowledgeEntryMapper.selectList(any())).thenReturn(List.of(
                 buildEntry(11L, 2L, "A", "PUBLISHED", LocalDateTime.now()),
                 buildEntry(12L, 2L, "B", "PUBLISHED", LocalDateTime.now()),
@@ -116,6 +117,7 @@ class KnowledgeBaseServiceTest {
 
     @Test
     void shouldReturnPublicHighlightsWithoutLoginUser() {
+        when(knowledgeEntryMapper.selectPublishedBounds()).thenReturn(List.of(51L, 52L));
         when(knowledgeEntryMapper.selectList(any())).thenReturn(List.of(
                 buildEntry(51L, 2L, "公共经验A", "PUBLISHED", LocalDateTime.now()),
                 buildEntry(52L, 3L, "公共经验B", "PUBLISHED", LocalDateTime.now())
@@ -127,6 +129,7 @@ class KnowledgeBaseServiceTest {
 
         assertThat(result).hasSize(2);
         assertThat(result).extracting(KnowledgeEntryVO::getStatus).containsOnly("PUBLISHED");
+        org.mockito.Mockito.verifyNoInteractions(attachmentService);
     }
 
     @Test
@@ -139,6 +142,7 @@ class KnowledgeBaseServiceTest {
 
     @Test
     void shouldReturnPendingReviewEntriesForAdmin() {
+        when(knowledgeEntryMapper.selectCount(any())).thenReturn(2L);
         when(knowledgeEntryMapper.selectList(any())).thenReturn(List.of(
                 buildEntry(31L, 1L, "我的待审核", "PENDING", LocalDateTime.now()),
                 buildEntry(32L, 2L, "他人的待审核", "PENDING", LocalDateTime.now())
@@ -156,6 +160,7 @@ class KnowledgeBaseServiceTest {
 
     @Test
     void shouldPublishPendingEntryThroughAdminReview() {
+        when(knowledgeEntryMapper.selectPublishedBounds()).thenReturn(List.of(41L, 41L));
         KnowledgeEntry pendingEntry = buildEntry(41L, 1L, "待发布经验", "PENDING", LocalDateTime.now());
         when(knowledgeEntryMapper.selectById(41L)).thenReturn(pendingEntry);
         when(knowledgeEntryMapper.selectList(any())).thenReturn(List.of(

@@ -203,7 +203,7 @@ class PermissionManagementServiceTest {
     }
 
     @Test
-    void getCurrentUserAppsShouldReturnEnabledGrantedAppsAndWriteAudit() {
+    void getCurrentUserAppsShouldReturnEnabledGrantedAppsWithoutAudit() {
         when(userMapper.selectById(2L)).thenReturn(buildUser(2L, "alice", "USER"));
         when(userAppPermissionMapper.selectList(any())).thenReturn(List.of(
                 buildPermission(301L, 2L, 2001L, "APP_CALCULATOR"),
@@ -220,12 +220,10 @@ class PermissionManagementServiceTest {
                 "JUnit"
         );
 
-        ArgumentCaptor<PermissionAuditLog> captor = ArgumentCaptor.forClass(PermissionAuditLog.class);
-        verify(permissionAuditLogMapper).insert(captor.capture());
+        org.mockito.Mockito.verifyNoInteractions(permissionAuditLogMapper);
         assertEquals(2L, result.getUserId());
         assertIterableEquals(List.of("APP_CALCULATOR"), result.getGrantedFeatureCodes());
         assertEquals("DIRECT", result.getPermissionSource());
-        assertEquals("QUERY_CURRENT_USER_APPS", captor.getValue().getActionType());
     }
 
     @Test

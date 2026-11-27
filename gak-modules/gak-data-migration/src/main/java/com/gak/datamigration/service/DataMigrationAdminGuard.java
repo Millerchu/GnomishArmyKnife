@@ -25,6 +25,10 @@ public class DataMigrationAdminGuard {
         if (currentUser == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
         }
+        if (!Boolean.TRUE.equals(currentUser.getEnabled())
+                || !UserSecurityConstants.ENABLED_STATUS.equalsIgnoreCase(currentUser.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户已失效，请重新登录");
+        }
         if (!UserSecurityConstants.ADMIN_ROLE_CODE.equalsIgnoreCase(resolveRoleCode(currentUser))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可执行数据迁移");
         }

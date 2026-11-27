@@ -20,6 +20,7 @@ public class InstrumentPracticeTake {
     private String meter;
     private Long durationMs;
     private String eventsJson;
+    private Integer eventCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -85,6 +86,14 @@ public class InstrumentPracticeTake {
 
     public void setEventsJson(String eventsJson) {
         this.eventsJson = eventsJson;
+    }
+
+    public Integer getEventCount() {
+        return eventCount;
+    }
+
+    public void setEventCount(Integer eventCount) {
+        this.eventCount = eventCount;
     }
 
     public LocalDateTime getCreatedAt() {

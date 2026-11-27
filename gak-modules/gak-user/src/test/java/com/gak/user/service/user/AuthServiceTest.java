@@ -108,11 +108,10 @@ class AuthServiceTest {
         when(passwordEncoder.encode("NewPass123")).thenReturn("NEW_HASH");
 
         ChangePasswordRequest request = new ChangePasswordRequest();
-        request.setUsername("zhangsan");
         request.setOldEncryptedPassword("oldEnc");
         request.setNewEncryptedPassword("newEnc");
 
-        authService.changePassword(request);
+        authService.changePassword(8L, request);
 
         verify(userMapper).updateById(any(User.class));
         verify(tokenService).revokeByUserId(8L);
@@ -126,13 +125,13 @@ class AuthServiceTest {
         user.setStatus("DISABLED");
         user.setEnabled(false);
         when(userMapper.selectOne(any())).thenReturn(user);
+        when(passwordCryptoService.decrypt("oldEnc")).thenReturn("OldPass123");
 
         ChangePasswordRequest request = new ChangePasswordRequest();
-        request.setUsername("zhangsan");
         request.setOldEncryptedPassword("oldEnc");
         request.setNewEncryptedPassword("newEnc");
 
-        BusinessException exception = assertThrows(BusinessException.class, () -> authService.changePassword(request));
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.changePassword(8L, request));
         assertEquals("USER_DISABLED", exception.getCode());
     }
 }

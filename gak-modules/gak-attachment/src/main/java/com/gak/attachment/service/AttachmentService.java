@@ -1,11 +1,15 @@
 package com.gak.attachment.service;
 
+import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.Collection;
 import static com.gak.attachment.constant.AttachmentConstants.STATUS_ACTIVE;
 import static com.gak.attachment.constant.AttachmentConstants.STATUS_DELETED;
 import static com.gak.attachment.constant.AttachmentConstants.STATUS_PENDING;
 import static com.gak.attachment.constant.AttachmentConstants.STORAGE_LOCAL_NAS;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.gak.attachment.domain.Attachment;
 import com.gak.attachment.mapper.AttachmentMapper;
 import com.gak.attachment.policy.AttachmentPolicyRegistry;
@@ -22,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,6 +48,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class AttachmentService {
 
     private static final DateTimeFormatter OBJECT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM");
+    private static final Set<String> INLINE_CONTENT_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf");
 
     private final AttachmentMapper attachmentMapper;
     private final AttachmentStorage attachmentStorage;
@@ -201,6 +208,18 @@ public class AttachmentService {
         return attachmentMapper.selectList(wrapper).stream().map(this::toVO).toList();
     }
 
+    public Map<Long, List<AttachmentVO>> listBusinessAttachmentsByIds(
+            String businessType, Collection<Long> businessIds, String usageType) {
+        if (businessIds.isEmpty()) {
+            return Map.of();
+        }
+        QueryWrapper<Attachment> query = new QueryWrapper<Attachment>()
+                .eq("business_type", businessType).in("business_id", businessIds).eq("status", STATUS_ACTIVE)
+                .eq(usageType != null, "usage_type", usageType).orderByAsc("sort_no", "id");
+        return attachmentMapper.selectList(query).stream().collect(Collectors.groupingBy(
+                Attachment::getBusinessId, Collectors.mapping(this::toVO, Collectors.toList())));
+    }
+
     public ResourceFile loadContent(Long currentUserId, Long attachmentId, boolean thumbnail) {
         Attachment attachment = getReadableAttachment(currentUserId, attachmentId);
         String objectKey = thumbnail ? attachment.getThumbnailKey() : attachment.getObjectKey();
@@ -216,7 +235,8 @@ public class AttachmentService {
 
     @Transactional
     public void delete(Long currentUserId, Long attachmentId) {
-        Attachment attachment = attachmentMapper.selectById(attachmentId);
+        Attachment attachment = attachmentMapper.selectOne(new QueryWrapper<Attachment>()
+                .eq("id", attachmentId).last("FOR UPDATE"));
         if (attachment == null || STATUS_DELETED.equals(attachment.getStatus())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "附件不存在");
         }
@@ -236,6 +256,15 @@ public class AttachmentService {
         LocalDateTime now = LocalDateTime.now();
         for (Attachment attachment : listActiveEntities(businessType, businessId, null)) {
             markDeleted(attachment, now);
+        }
+    }
+
+    @Transactional
+    public void deleteByBusinessIds(String businessType, Collection<Long> businessIds) {
+        if (!businessIds.isEmpty()) {
+            attachmentMapper.update(null, new UpdateWrapper<Attachment>()
+                    .eq("business_type", businessType).in("business_id", businessIds).eq("status", STATUS_ACTIVE)
+                    .set("status", STATUS_DELETED).set("deleted_at", LocalDateTime.now()));
         }
     }
 
@@ -286,7 +315,7 @@ public class AttachmentService {
     private List<Attachment> loadSubmittedAttachments(List<Long> ids) {
         if (ids.isEmpty()) return List.of();
         QueryWrapper<Attachment> wrapper = new QueryWrapper<>();
-        wrapper.in("id", ids);
+        wrapper.in("id", ids).orderByAsc("id").last("FOR UPDATE");
         return attachmentMapper.selectList(wrapper);
     }
 
@@ -332,7 +361,7 @@ public class AttachmentService {
     }
 
     private boolean isInlineContent(String contentType) {
-        return contentType != null && (contentType.startsWith("image/") || "application/pdf".equals(contentType));
+        return contentType != null && INLINE_CONTENT_TYPES.contains(contentType);
     }
 
     private void deletePhysicalFilesQuietly(Attachment attachment) {

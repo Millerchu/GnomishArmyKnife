@@ -15,4 +15,6 @@ public interface DataDictionaryCacheSupport {
     void evictDictionary(String dictCode);
 
     void evictAllUsageBindings();
+
+    void evictAll();
 }

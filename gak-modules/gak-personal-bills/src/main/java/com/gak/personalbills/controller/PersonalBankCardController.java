@@ -1,5 +1,6 @@
 package com.gak.personalbills.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.personalbills.dto.SaveBankCardRequest;
 import com.gak.personalbills.service.PersonalBankCardService;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 管理当前用户的银行卡。 */
 @RestController
+@RequireAppPermission("APP_PERSONAL_BILLS")
 @RequestMapping("/personal-bills/bank-cards")
 public class PersonalBankCardController {
     private final PersonalBankCardService service;

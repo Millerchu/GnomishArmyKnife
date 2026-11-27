@@ -556,8 +556,8 @@ public class SystemAppService {
         auditLog.setActionType(actionType.name());
         auditLog.setBeforeJson(toJsonSafely(before));
         auditLog.setAfterJson(toJsonSafely(after));
-        auditLog.setIp(trimToNull(ip));
-        auditLog.setUserAgent(trimToNull(userAgent));
+        auditLog.setIp(PermissionAuditFields.ip(ip));
+        auditLog.setUserAgent(PermissionAuditFields.userAgent(userAgent));
         auditLog.setCreatedAt(LocalDateTime.now());
         appAuditLogMapper.insert(auditLog);
     }

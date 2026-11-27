@@ -1,6 +1,8 @@
 package com.gak.permission.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.gak.attachment.constant.AttachmentConstants;
+import com.gak.attachment.service.AttachmentFileProcessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gak.framework.exception.BusinessException;
 import com.gak.permission.domain.AppAuditLog;
@@ -12,15 +14,12 @@ import com.gak.user.constant.UserSecurityConstants;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -38,15 +37,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class SystemAppIconService {
 
-    private static final long MAX_FILE_SIZE = 2L * 1024L * 1024L;
-    private static final Map<String, String> CONTENT_TYPE_EXTENSION_MAP = Map.of(
-            "image/png", ".png",
-            "image/jpeg", ".jpg",
-            "image/gif", ".gif",
-            "image/webp", ".webp",
-            "image/svg+xml", ".svg"
-    );
-
+    private final AttachmentFileProcessor fileProcessor;
     private final UserMapper userMapper;
     private final AppAuditLogMapper appAuditLogMapper;
     private final ObjectMapper objectMapper;
@@ -56,9 +47,11 @@ public class SystemAppIconService {
     public SystemAppIconService(UserMapper userMapper,
                                 AppAuditLogMapper appAuditLogMapper,
                                 ObjectMapper objectMapper,
+                                AttachmentFileProcessor fileProcessor,
                                 @Value("${gak.app.icon.local-dir:./data/app-icons}") String localDir,
                                 @Value("${gak.app.icon.public-url-prefix:/api/system/apps/icon-files/}") String publicUrlPrefix) {
         this.userMapper = userMapper;
+        this.fileProcessor = fileProcessor;
         this.appAuditLogMapper = appAuditLogMapper;
         this.objectMapper = objectMapper;
         this.localStorageDir = Paths.get(localDir).toAbsolutePath().normalize();
@@ -67,10 +60,8 @@ public class SystemAppIconService {
 
     public AppIconUploadVO upload(Long currentUserId, MultipartFile file, String ip, String userAgent) {
         requireAdminUser(currentUserId);
-        validateFile(file);
-
-        String extension = resolveExtension(file);
-        String storedFileName = UUID.randomUUID().toString().replace("-", "") + extension;
+        AttachmentFileProcessor.ProcessedFile icon = fileProcessor.process(file, AttachmentConstants.USAGE_ICON);
+        String storedFileName = UUID.randomUUID().toString().replace("-", "") + icon.extension();
         Path target = localStorageDir.resolve(storedFileName).normalize();
         if (!target.startsWith(localStorageDir)) {
             throw new BusinessException("APP_ICON_PATH_INVALID", "图标保存路径非法");
@@ -78,9 +69,7 @@ public class SystemAppIconService {
 
         try {
             Files.createDirectories(localStorageDir);
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, target, StandardCopyOption.REPLACE_EXISTING);
-            }
+            Files.write(target, icon.content(), java.nio.file.StandardOpenOption.CREATE_NEW);
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "图标上传失败");
         }
@@ -107,37 +96,7 @@ public class SystemAppIconService {
             return new IconResource(resource, mediaType);
         } catch (MalformedURLException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "图标不存在");
-        } catch (IOException exception) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "图标读取失败");
         }
-    }
-
-    private void validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new BusinessException("APP_ICON_FILE_REQUIRED", "上传文件不能为空");
-        }
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new BusinessException("APP_ICON_FILE_TOO_LARGE", "图标文件不能超过 2MB");
-        }
-        String contentType = file.getContentType();
-        if (!StringUtils.hasText(contentType) || !CONTENT_TYPE_EXTENSION_MAP.containsKey(contentType.toLowerCase(Locale.ROOT))) {
-            throw new BusinessException("APP_ICON_FILE_TYPE_INVALID", "仅允许上传图片类型文件");
-        }
-    }
-
-    private String resolveExtension(MultipartFile file) {
-        String contentType = file.getContentType();
-        if (StringUtils.hasText(contentType)) {
-            String byContentType = CONTENT_TYPE_EXTENSION_MAP.get(contentType.toLowerCase(Locale.ROOT));
-            if (byContentType != null) {
-                return byContentType;
-            }
-        }
-        String originalFilename = file.getOriginalFilename();
-        if (StringUtils.hasText(originalFilename) && originalFilename.contains(".")) {
-            return originalFilename.substring(originalFilename.lastIndexOf('.')).toLowerCase(Locale.ROOT);
-        }
-        throw new BusinessException("APP_ICON_FILE_TYPE_INVALID", "无法识别图标文件类型");
     }
 
     private String normalizeFileName(String fileName) {
@@ -148,12 +107,7 @@ public class SystemAppIconService {
         return normalized;
     }
 
-    private MediaType resolveMediaType(Path path) throws IOException {
-        String contentType = Files.probeContentType(path);
-        if (StringUtils.hasText(contentType)) {
-            return MediaType.parseMediaType(contentType);
-        }
-
+    private MediaType resolveMediaType(Path path) {
         String fileName = path.getFileName().toString().toLowerCase(Locale.ROOT);
         if (fileName.endsWith(".png")) {
             return MediaType.IMAGE_PNG;
@@ -166,9 +120,6 @@ public class SystemAppIconService {
         }
         if (fileName.endsWith(".webp")) {
             return MediaType.parseMediaType("image/webp");
-        }
-        if (fileName.endsWith(".svg")) {
-            return MediaType.parseMediaType("image/svg+xml");
         }
         return MediaType.APPLICATION_OCTET_STREAM;
     }
@@ -193,8 +144,8 @@ public class SystemAppIconService {
         auditLog.setAppId(null);
         auditLog.setActionType(actionType.name());
         auditLog.setAfterJson(toJsonSafely(after));
-        auditLog.setIp(StringUtils.hasText(ip) ? ip.trim() : null);
-        auditLog.setUserAgent(StringUtils.hasText(userAgent) ? userAgent.trim() : null);
+        auditLog.setIp(PermissionAuditFields.ip(ip));
+        auditLog.setUserAgent(PermissionAuditFields.userAgent(userAgent));
         auditLog.setCreatedAt(LocalDateTime.now());
         appAuditLogMapper.insert(auditLog);
     }

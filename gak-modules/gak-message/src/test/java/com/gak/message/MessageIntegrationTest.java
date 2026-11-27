@@ -82,7 +82,9 @@ class MessageIntegrationTest {
         jdbc.execute("CREATE TABLE gak_user(id BIGINT PRIMARY KEY,username VARCHAR(60),display_name VARCHAR(60),enabled BOOLEAN,status VARCHAR(20))");
         jdbc.execute("CREATE TABLE gak_permission_audit_log(id BIGINT, target_user_id BIGINT,action_type VARCHAR(40))");
         String schema = Files.readString(Path.of("../../gak-start/src/main/resources/schema.sql"));
-        String messageSchema = schema.substring(schema.indexOf("-- 站内消息先持久化"));
+        int start = schema.indexOf("-- 站内消息先持久化");
+        int end = schema.indexOf("-- 历史预算兼容", start);
+        String messageSchema = schema.substring(start, end);
         jdbc.execute(messageSchema);
         jdbc.execute(messageSchema);
         service = context.getBean(MessageService.class);

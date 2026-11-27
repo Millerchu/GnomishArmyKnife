@@ -1,5 +1,6 @@
 package com.gak.wowcharacter.controller;
 
+import com.gak.framework.security.RequireAppPermission;
 import com.gak.framework.response.ApiResponse;
 import com.gak.user.service.user.TokenService;
 import com.gak.wowcharacter.dto.SaveWowSpecializationGuideRequest;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * WoW 赛季职业专精指南控制器。
  */
 @RestController
+@RequireAppPermission("APP_WOW_CHARACTER")
 @RequestMapping("/wow-specialization-guides")
 public class WowSpecializationGuideController {
 
