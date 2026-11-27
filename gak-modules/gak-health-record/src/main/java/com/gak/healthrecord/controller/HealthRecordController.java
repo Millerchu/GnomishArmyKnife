@@ -8,11 +8,14 @@ import com.gak.healthrecord.dto.HealthReportQueryRequest;
 import com.gak.healthrecord.dto.HealthTrendQueryRequest;
 import com.gak.healthrecord.dto.HealthVisitQueryRequest;
 import com.gak.healthrecord.dto.SaveHealthRecordRequest;
+import com.gak.healthrecord.dto.SaveHealthReportDetailsRequest;
 import com.gak.healthrecord.dto.SaveHealthReportRequest;
 import com.gak.healthrecord.dto.SaveHealthVisitRequest;
 import com.gak.healthrecord.service.HealthRecordService;
+import com.gak.healthrecord.service.HealthReportDetailService;
 import com.gak.healthrecord.vo.HealthFileUploadVO;
 import com.gak.healthrecord.vo.HealthRecordVO;
+import com.gak.healthrecord.vo.HealthReportDetailsVO;
 import com.gak.healthrecord.vo.HealthReportFileResource;
 import com.gak.healthrecord.vo.HealthReportVO;
 import com.gak.healthrecord.vo.HealthSummaryVO;
@@ -46,10 +49,14 @@ import org.springframework.web.multipart.MultipartFile;
 public class HealthRecordController {
 
     private final HealthRecordService healthRecordService;
+    private final HealthReportDetailService healthReportDetailService;
     private final TokenService tokenService;
 
-    public HealthRecordController(HealthRecordService healthRecordService, TokenService tokenService) {
+    public HealthRecordController(HealthRecordService healthRecordService,
+                                  HealthReportDetailService healthReportDetailService,
+                                  TokenService tokenService) {
         this.healthRecordService = healthRecordService;
+        this.healthReportDetailService = healthReportDetailService;
         this.tokenService = tokenService;
     }
 
@@ -58,6 +65,13 @@ public class HealthRecordController {
                                                          HttpServletRequest httpServletRequest) {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         return ApiResponse.success(healthRecordService.pageRecords(currentUserId, request));
+    }
+
+    @GetMapping("/{recordId}")
+    public ApiResponse<HealthRecordVO> getRecord(@PathVariable Long recordId,
+                                                 HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(healthRecordService.getRecord(currentUserId, recordId));
     }
 
     @PostMapping
@@ -122,6 +136,21 @@ public class HealthRecordController {
         Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
         healthRecordService.deleteReport(currentUserId, id);
         return ApiResponse.success();
+    }
+
+    @GetMapping("/reports/{reportId}/details")
+    public ApiResponse<HealthReportDetailsVO> getReportDetails(@PathVariable Long reportId,
+                                                               HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(healthReportDetailService.getDetails(currentUserId, reportId));
+    }
+
+    @PutMapping("/reports/{reportId}/details")
+    public ApiResponse<HealthReportDetailsVO> saveReportDetails(@PathVariable Long reportId,
+                                                                @Valid @RequestBody SaveHealthReportDetailsRequest request,
+                                                                HttpServletRequest httpServletRequest) {
+        Long currentUserId = tokenService.requireCurrentUserId(httpServletRequest);
+        return ApiResponse.success(healthReportDetailService.saveDetails(currentUserId, reportId, request));
     }
 
     @PostMapping("/reports/upload")

@@ -3,19 +3,28 @@ package com.gak.healthrecord.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.gak.attachment.service.AttachmentService;
+import com.gak.framework.exception.BusinessException;
+import com.gak.framework.response.PagedResult;
 import com.gak.healthrecord.domain.HealthRecord;
 import com.gak.healthrecord.domain.HealthReport;
+import com.gak.healthrecord.domain.HealthReportDetail;
 import com.gak.healthrecord.domain.HealthVisit;
+import com.gak.healthrecord.dto.HealthRecordQueryRequest;
+import com.gak.healthrecord.dto.HealthReportQueryRequest;
 import com.gak.healthrecord.dto.HealthTrendQueryRequest;
 import com.gak.healthrecord.dto.SaveHealthRecordRequest;
 import com.gak.healthrecord.mapper.HealthRecordMapper;
+import com.gak.healthrecord.mapper.HealthReportDetailMapper;
 import com.gak.healthrecord.mapper.HealthReportMapper;
 import com.gak.healthrecord.mapper.HealthVisitMapper;
 import com.gak.healthrecord.vo.HealthRecordVO;
 import com.gak.healthrecord.vo.HealthReportFileResource;
+import com.gak.healthrecord.vo.HealthReportVO;
 import com.gak.healthrecord.vo.HealthSummaryVO;
 import com.gak.healthrecord.vo.HealthTrendVO;
 import com.gak.user.domain.user.User;
@@ -26,6 +35,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +61,9 @@ class HealthRecordServiceTest {
     private HealthReportMapper healthReportMapper;
 
     @Mock
+    private HealthReportDetailMapper healthReportDetailMapper;
+
+    @Mock
     private UserMapper userMapper;
 
     @Mock
@@ -67,6 +80,7 @@ class HealthRecordServiceTest {
                 healthRecordMapper,
                 healthVisitMapper,
                 healthReportMapper,
+                healthReportDetailMapper,
                 userMapper,
                 attachmentService,
                 visitBillSyncService,
@@ -96,27 +110,96 @@ class HealthRecordServiceTest {
     }
 
     @Test
-    void shouldReturnTrendPointsForMetric() {
-        when(healthRecordMapper.selectList(any())).thenReturn(List.of(
-                buildRecord(101L, LocalDate.of(2026, 5, 8)),
-                buildRecord(102L, LocalDate.of(2026, 5, 6))
-        ));
+    void shouldReturnTrendPointsForMetricWithRecordIdAndSkipNullsKeepingZeroAndDuplicates() {
+        List<HealthRecord> records = new ArrayList<>();
+        // 模拟倒序查询结果：共 14 条，其中 1 条为空、2 条同日同值、1 条为 0
+        LocalDate baseDate = LocalDate.of(2026, 5, 1);
+        for (int i = 13; i >= 0; i--) {
+            HealthRecord rec = buildRecord(1000L + i, i == 5 ? baseDate.plusDays(4) : baseDate.plusDays(i));
+            if (i == 7) {
+                rec.setTriglycerides(null);
+            } else if (i == 2) {
+                rec.setTriglycerides(BigDecimal.ZERO);
+            } else {
+                rec.setTriglycerides(new BigDecimal("1.25"));
+            }
+            records.add(rec);
+        }
+        when(healthRecordMapper.selectList(any())).thenReturn(records);
 
         HealthTrendQueryRequest request = new HealthTrendQueryRequest();
-        request.setMetricKey("weightKg");
+        request.setMetricKey("triglycerides");
         request.setLimit(12);
 
         HealthTrendVO trend = healthRecordService.getTrends(1L, request);
-        assertThat(trend.getMetricKey()).isEqualTo("weightKg");
-        assertThat(trend.getPoints()).hasSize(2);
-        assertThat(trend.getPoints().get(0).getMeasureDate()).isEqualTo(LocalDate.of(2026, 5, 6));
+        assertThat(trend.getMetricKey()).isEqualTo("triglycerides");
+        assertThat(trend.getPoints()).hasSize(12);
+        assertThat(trend.getPoints().get(0).getRecordId()).isEqualTo(1001L);
+        assertThat(trend.getPoints().stream().anyMatch(p -> p.getRecordId().equals(1007L))).isFalse();
+        assertThat(trend.getPoints().stream().filter(p -> p.getRecordId().equals(1002L)).findFirst().orElseThrow().getValue())
+                .isEqualByComparingTo("0");
+        assertThat(trend.getPoints().stream().filter(p -> p.getMeasureDate().equals(baseDate.plusDays(4))).count())
+                .isEqualTo(2);
     }
 
     @Test
-    void shouldCreateRecordWithScaledValues() {
+    void shouldCalculateBmiInRecordAndTrendAndSkipInvalidHeightOrWeight() {
+        HealthRecord valid = buildRecord(201L, LocalDate.of(2026, 5, 10));
+        valid.setHeightCm(new BigDecimal("176.0"));
+        valid.setWeightKg(new BigDecimal("78.0"));
+
+        HealthRecord zeroHeight = buildRecord(202L, LocalDate.of(2026, 5, 9));
+        zeroHeight.setHeightCm(BigDecimal.ZERO);
+        zeroHeight.setWeightKg(new BigDecimal("78.0"));
+
+        HealthRecord missingWeight = buildRecord(203L, LocalDate.of(2026, 5, 8));
+        missingWeight.setHeightCm(new BigDecimal("176.0"));
+        missingWeight.setWeightKg(null);
+
+        when(healthRecordMapper.selectById(201L)).thenReturn(valid);
+        when(healthRecordMapper.selectById(202L)).thenReturn(zeroHeight);
+        when(healthRecordMapper.selectList(any())).thenReturn(List.of(valid, zeroHeight, missingWeight));
+
+        assertThat(healthRecordService.getRecord(1L, 201L).getBmi()).isEqualByComparingTo("25.18");
+        assertThat(healthRecordService.getRecord(1L, 202L).getBmi()).isNull();
+
+        HealthTrendQueryRequest request = new HealthTrendQueryRequest();
+        request.setMetricKey("bmi");
+        request.setLimit(12);
+        HealthTrendVO trend = healthRecordService.getTrends(1L, request);
+        assertThat(trend.getPoints()).hasSize(1);
+        assertThat(trend.getPoints().get(0).getRecordId()).isEqualTo(201L);
+        assertThat(trend.getPoints().get(0).getValue()).isEqualByComparingTo("25.18");
+    }
+
+    @Test
+    void shouldSupportHdlLdlAstGgtTrendKeysAndRejectInvalidKey() {
+        HealthRecord rec = buildRecord(301L, LocalDate.of(2026, 5, 10));
+        rec.setHdlCholesterol(new BigDecimal("1.35"));
+        rec.setLdlCholesterol(new BigDecimal("2.80"));
+        rec.setAspartateAminotransferase(24);
+        rec.setGammaGlutamylTransferase(31);
+        when(healthRecordMapper.selectList(any())).thenReturn(List.of(rec));
+
+        for (String key : List.of("hdlCholesterol", "ldlCholesterol", "aspartateAminotransferase", "gammaGlutamylTransferase")) {
+            HealthTrendQueryRequest req = new HealthTrendQueryRequest();
+            req.setMetricKey(key);
+            assertThat(healthRecordService.getTrends(1L, req).getPoints()).hasSize(1);
+        }
+
+        HealthTrendQueryRequest invalid = new HealthTrendQueryRequest();
+        invalid.setMetricKey("unknownKey");
+        assertThatThrownBy(() -> healthRecordService.getTrends(1L, invalid))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "HEALTH_METRIC_KEY_INVALID");
+    }
+
+    @Test
+    void shouldCreateRecordWithScaledValuesAndBmi() {
         SaveHealthRecordRequest request = new SaveHealthRecordRequest();
         request.setMeasureDate(LocalDate.of(2026, 5, 10));
-        request.setWeightKg(new BigDecimal("73.26"));
+        request.setHeightCm(new BigDecimal("176.0"));
+        request.setWeightKg(new BigDecimal("78.0"));
         request.setBodyFatRate(new BigDecimal("19.24"));
 
         when(healthRecordMapper.insert(any(HealthRecord.class))).thenAnswer(invocation -> {
@@ -127,8 +210,49 @@ class HealthRecordServiceTest {
 
         HealthRecordVO result = healthRecordService.createRecord(1L, request);
         assertThat(result.getId()).isEqualTo(101L);
-        assertThat(result.getWeightKg()).isEqualByComparingTo("73.3");
+        assertThat(result.getWeightKg()).isEqualByComparingTo("78.0");
         assertThat(result.getBodyFatRate()).isEqualByComparingTo("19.2");
+        assertThat(result.getBmi()).isEqualByComparingTo("25.18");
+    }
+
+    @Test
+    void shouldPopulateSourceReportIdAndLinkedRecordIdInBatchPages() {
+        HealthRecord rec = buildRecord(101L, LocalDate.of(2026, 5, 10));
+        HealthReport rep = buildReport(301L, LocalDate.of(2026, 5, 10));
+        HealthReportDetail link = new HealthReportDetail();
+        link.setReportId(301L);
+        link.setRecordId(101L);
+
+        when(healthRecordMapper.selectList(any())).thenReturn(List.of(rec));
+        when(healthReportDetailMapper.findLinksByRecordIds(List.of(101L))).thenReturn(List.of(link));
+        when(healthReportMapper.selectList(any())).thenReturn(List.of(rep));
+        when(healthReportDetailMapper.findLinksByReportIds(List.of(301L))).thenReturn(List.of(link));
+        when(attachmentService.listBusinessAttachments(any(), any(), any())).thenReturn(List.of());
+
+        HealthRecordQueryRequest recQuery = new HealthRecordQueryRequest();
+        recQuery.setMeasureDate(LocalDate.of(2026, 5, 10));
+        PagedResult<HealthRecordVO> recPage = healthRecordService.pageRecords(1L, recQuery);
+        assertThat(recPage.list()).hasSize(1);
+        assertThat(recPage.list().get(0).getSourceReportId()).isEqualTo(301L);
+
+        PagedResult<HealthReportVO> repPage = healthRecordService.pageReports(1L, new HealthReportQueryRequest());
+        assertThat(repPage.list()).hasSize(1);
+        assertThat(repPage.list().get(0).getLinkedRecordId()).isEqualTo(101L);
+    }
+
+    @Test
+    void shouldRejectDeletingLinkedHealthRecord() {
+        HealthRecord rec = buildRecord(101L, LocalDate.of(2026, 5, 10));
+        HealthReportDetail link = new HealthReportDetail();
+        link.setReportId(301L);
+        link.setRecordId(101L);
+        when(healthRecordMapper.selectById(101L)).thenReturn(rec);
+        when(healthReportDetailMapper.findByRecordId(101L)).thenReturn(link);
+
+        assertThatThrownBy(() -> healthRecordService.deleteRecord(1L, 101L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "HEALTH_RECORD_LINKED");
+        verify(healthRecordMapper, never()).deleteById(101L);
     }
 
     @Test

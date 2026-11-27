@@ -4,9 +4,11 @@ import com.gak.attachment.service.AttachmentService;
 import com.gak.framework.exception.GlobalExceptionHandler;
 import com.gak.framework.exception.SystemExceptionCapture;
 import com.gak.healthrecord.mapper.HealthRecordMapper;
+import com.gak.healthrecord.mapper.HealthReportDetailMapper;
 import com.gak.healthrecord.mapper.HealthReportMapper;
 import com.gak.healthrecord.mapper.HealthVisitMapper;
 import com.gak.healthrecord.service.HealthRecordService;
+import com.gak.healthrecord.service.HealthReportDetailService;
 import com.gak.healthrecord.service.HealthVisitBillSyncService;
 import com.gak.user.domain.user.User;
 import com.gak.user.mapper.user.UserMapper;
@@ -54,17 +56,20 @@ class HealthRecordReportFileControllerTest {
 
         Files.writeString(tempDir.resolve("report-1.pdf"), "mock-pdf");
 
+        HealthReportDetailMapper healthReportDetailMapper = mock(HealthReportDetailMapper.class);
+        HealthReportDetailService detailService = mock(HealthReportDetailService.class);
         HealthRecordService service = new HealthRecordService(
                 healthRecordMapper,
                 healthVisitMapper,
                 healthReportMapper,
+                healthReportDetailMapper,
                 userMapper,
                 attachmentService,
                 visitBillSyncService,
                 tempDir.toString(),
                 "/api/health-records/report-files/"
         );
-        HealthRecordController controller = new HealthRecordController(service, tokenService);
+        HealthRecordController controller = new HealthRecordController(service, detailService, tokenService);
         GlobalExceptionHandler exceptionHandler = new GlobalExceptionHandler(
                 new StaticListableBeanFactory().getBeanProvider(SystemExceptionCapture.class));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)

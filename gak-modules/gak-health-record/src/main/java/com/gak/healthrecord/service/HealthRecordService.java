@@ -8,6 +8,7 @@ import com.gak.framework.exception.BusinessException;
 import com.gak.framework.response.PagedResult;
 import com.gak.healthrecord.domain.HealthRecord;
 import com.gak.healthrecord.domain.HealthReport;
+import com.gak.healthrecord.domain.HealthReportDetail;
 import com.gak.healthrecord.domain.HealthVisit;
 import com.gak.healthrecord.dto.HealthRecordQueryRequest;
 import com.gak.healthrecord.dto.HealthReportQueryRequest;
@@ -17,6 +18,7 @@ import com.gak.healthrecord.dto.SaveHealthRecordRequest;
 import com.gak.healthrecord.dto.SaveHealthReportRequest;
 import com.gak.healthrecord.dto.SaveHealthVisitRequest;
 import com.gak.healthrecord.mapper.HealthRecordMapper;
+import com.gak.healthrecord.mapper.HealthReportDetailMapper;
 import com.gak.healthrecord.mapper.HealthReportMapper;
 import com.gak.healthrecord.mapper.HealthVisitMapper;
 import com.gak.healthrecord.vo.HealthFileUploadVO;
@@ -39,8 +41,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -51,6 +55,7 @@ import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -66,6 +71,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class HealthRecordService {
 
     private static final int MONEY_SCALE = 2;
+    private static final int BMI_SCALE = 2;
+    private static final BigDecimal BMI_HEIGHT_FACTOR = BigDecimal.valueOf(10000);
     private static final BigDecimal MAX_VISIT_AMOUNT = new BigDecimal("9999999999.99");
     private static final BigDecimal ZERO_DECIMAL = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final long MAX_FILE_SIZE = 10L * 1024L * 1024L;
@@ -83,6 +90,7 @@ public class HealthRecordService {
     private final HealthVisitMapper healthVisitMapper;
     private final HealthVisitBillSyncService visitBillSyncService;
     private final HealthReportMapper healthReportMapper;
+    private final HealthReportDetailMapper healthReportDetailMapper;
     private final UserMapper userMapper;
     private final AttachmentService attachmentService;
     private final Path localStorageDir;
@@ -91,6 +99,7 @@ public class HealthRecordService {
     public HealthRecordService(HealthRecordMapper healthRecordMapper,
                                HealthVisitMapper healthVisitMapper,
                                HealthReportMapper healthReportMapper,
+                               HealthReportDetailMapper healthReportDetailMapper,
                                UserMapper userMapper,
                                AttachmentService attachmentService,
                                HealthVisitBillSyncService visitBillSyncService,
@@ -99,6 +108,7 @@ public class HealthRecordService {
         this.healthRecordMapper = healthRecordMapper;
         this.healthVisitMapper = healthVisitMapper;
         this.healthReportMapper = healthReportMapper;
+        this.healthReportDetailMapper = healthReportDetailMapper;
         this.userMapper = userMapper;
         this.attachmentService = attachmentService;
         this.visitBillSyncService = visitBillSyncService;
@@ -108,8 +118,20 @@ public class HealthRecordService {
 
     public PagedResult<HealthRecordVO> pageRecords(Long currentUserId, HealthRecordQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
-        List<HealthRecord> allRecords = listOwnedRecords(currentUserId);
-        return buildPageResult(allRecords, request.getPageNo(), request.getPageSize(), this::toRecordVO);
+        List<HealthRecord> allRecords = listOwnedRecords(currentUserId, request.getMeasureDate());
+        List<HealthRecord> pageItems = slicePage(allRecords, request.getPageNo(), request.getPageSize());
+        Map<Long, Long> sourceReportMap = findSourceReportIds(pageItems.stream().map(HealthRecord::getId).toList());
+        List<HealthRecordVO> list = pageItems.stream()
+                .map(item -> toRecordVO(item, sourceReportMap.get(item.getId())))
+                .toList();
+        return new PagedResult<>(list, allRecords.size());
+    }
+
+    /** 按 ID 查询当前用户的核心指标记录，用于从报告单直达。 */
+    public HealthRecordVO getRecord(Long currentUserId, Long id) {
+        ensureCurrentUserExists(currentUserId);
+        HealthRecord current = getOwnedRecordOrThrow(currentUserId, id);
+        return toRecordVO(current, findSourceReportId(current.getId()));
     }
 
     @Transactional
@@ -122,7 +144,7 @@ public class HealthRecordService {
         record.setCreatedAt(now);
         record.setUpdatedAt(now);
         healthRecordMapper.insert(record);
-        return toRecordVO(record);
+        return toRecordVO(record, null);
     }
 
     @Transactional
@@ -132,14 +154,21 @@ public class HealthRecordService {
         applyRecordRequest(current, request);
         current.setUpdatedAt(LocalDateTime.now());
         healthRecordMapper.updateById(current);
-        return toRecordVO(current);
+        return toRecordVO(current, findSourceReportId(current.getId()));
     }
 
     @Transactional
     public void deleteRecord(Long currentUserId, Long id) {
         ensureCurrentUserExists(currentUserId);
         HealthRecord current = getOwnedRecordOrThrow(currentUserId, id);
-        healthRecordMapper.deleteById(current.getId());
+        if (findSourceReportId(current.getId()) != null) {
+            throw new BusinessException("HEALTH_RECORD_LINKED", "该核心指标记录已关联体检报告，请先解除关联后再删除");
+        }
+        try {
+            healthRecordMapper.deleteById(current.getId());
+        } catch (DataIntegrityViolationException exception) {
+            throw new BusinessException("HEALTH_RECORD_LINKED", "该核心指标记录已关联体检报告，请先解除关联后再删除");
+        }
     }
 
     public HealthSummaryVO getSummary(Long currentUserId) {
@@ -171,12 +200,14 @@ public class HealthRecordService {
                 continue;
             }
             HealthTrendPointVO point = new HealthTrendPointVO();
+            point.setRecordId(record.getId());
             point.setMeasureDate(record.getMeasureDate());
             point.setValue(value);
             points.add(point);
         }
-        if (points.size() > request.getLimit()) {
-            points = points.subList(points.size() - request.getLimit(), points.size());
+        int limit = request.getLimit() == null ? 12 : request.getLimit();
+        if (points.size() > limit) {
+            points = new ArrayList<>(points.subList(points.size() - limit, points.size()));
         }
         HealthTrendVO trend = new HealthTrendVO();
         trend.setMetricKey(metricKey);
@@ -190,7 +221,12 @@ public class HealthRecordService {
             getOwnedVisitOrThrow(currentUserId, request.getVisitId());
         }
         List<HealthReport> reports = listOwnedReports(currentUserId, request.getVisitId());
-        return buildPageResult(reports, request.getPageNo(), request.getPageSize(), this::toReportVO);
+        List<HealthReport> pageItems = slicePage(reports, request.getPageNo(), request.getPageSize());
+        Map<Long, Long> linkedRecordMap = findLinkedRecordIds(pageItems.stream().map(HealthReport::getId).toList());
+        List<HealthReportVO> list = pageItems.stream()
+                .map(item -> toReportVO(item, linkedRecordMap.get(item.getId())))
+                .toList();
+        return new PagedResult<>(list, reports.size());
     }
 
     @Transactional
@@ -206,7 +242,7 @@ public class HealthRecordService {
         attachmentService.syncBusinessAttachments(currentUserId,
                 AttachmentConstants.BUSINESS_HEALTH_REPORT, report.getId(), AttachmentConstants.USAGE_ATTACHMENT,
                 request.getAttachmentIds(), 10);
-        return toReportVO(report);
+        return toReportVO(report, null);
     }
 
     @Transactional
@@ -219,7 +255,7 @@ public class HealthRecordService {
         attachmentService.syncBusinessAttachments(currentUserId,
                 AttachmentConstants.BUSINESS_HEALTH_REPORT, current.getId(), AttachmentConstants.USAGE_ATTACHMENT,
                 request.getAttachmentIds(), 10);
-        return toReportVO(current);
+        return toReportVO(current, findLinkedRecordId(current.getId()));
     }
 
     @Transactional
@@ -407,9 +443,16 @@ public class HealthRecordService {
     }
 
     private List<HealthRecord> listOwnedRecords(Long currentUserId) {
+        return listOwnedRecords(currentUserId, null);
+    }
+
+    private List<HealthRecord> listOwnedRecords(Long currentUserId, LocalDate measureDate) {
         QueryWrapper<HealthRecord> wrapper = new QueryWrapper<>();
-        wrapper.eq("owner_user_id", currentUserId)
-                .orderByDesc("measure_date")
+        wrapper.eq("owner_user_id", currentUserId);
+        if (measureDate != null) {
+            wrapper.eq("measure_date", measureDate);
+        }
+        wrapper.orderByDesc("measure_date")
                 .orderByDesc("updated_at")
                 .orderByDesc("id");
         return healthRecordMapper.selectList(wrapper);
@@ -487,12 +530,14 @@ public class HealthRecordService {
         return current;
     }
 
-    private HealthRecordVO toRecordVO(HealthRecord record) {
+    private HealthRecordVO toRecordVO(HealthRecord record, Long sourceReportId) {
         HealthRecordVO vo = new HealthRecordVO();
         vo.setId(record.getId());
+        vo.setSourceReportId(sourceReportId);
         vo.setMeasureDate(record.getMeasureDate());
         vo.setHeightCm(record.getHeightCm());
         vo.setWeightKg(record.getWeightKg());
+        vo.setBmi(calculateBmi(record));
         vo.setBodyFatRate(record.getBodyFatRate());
         vo.setSystolicPressure(record.getSystolicPressure());
         vo.setDiastolicPressure(record.getDiastolicPressure());
@@ -536,10 +581,11 @@ public class HealthRecordService {
         return vo;
     }
 
-    private HealthReportVO toReportVO(HealthReport report) {
+    private HealthReportVO toReportVO(HealthReport report, Long linkedRecordId) {
         HealthReportVO vo = new HealthReportVO();
         vo.setId(report.getId());
         vo.setVisitId(report.getVisitId());
+        vo.setLinkedRecordId(linkedRecordId);
         vo.setExamDate(report.getExamDate());
         vo.setHospitalName(report.getHospitalName());
         vo.setReportTitle(report.getReportTitle());
@@ -567,6 +613,12 @@ public class HealthRecordService {
 
     private <T, R> PagedResult<R> buildPageResult(List<T> allItems, Integer requestPageNo, Integer requestPageSize,
                                                   Function<T, R> mapper) {
+        List<T> pageItems = slicePage(allItems, requestPageNo, requestPageSize);
+        List<R> list = pageItems.stream().map(mapper).toList();
+        return new PagedResult<>(list, allItems.size());
+    }
+
+    private <T> List<T> slicePage(List<T> allItems, Integer requestPageNo, Integer requestPageSize) {
         int pageSize = requestPageSize == null ? 20 : requestPageSize;
         long total = allItems.size();
         long maxPageNo = Math.max(1, (total + pageSize - 1) / pageSize);
@@ -574,10 +626,57 @@ public class HealthRecordService {
         pageNo = (int) Math.min(Math.max(pageNo, 1), maxPageNo);
         int fromIndex = Math.max(0, (pageNo - 1) * pageSize);
         int toIndex = Math.min(allItems.size(), fromIndex + pageSize);
-        List<R> list = fromIndex >= toIndex
-                ? List.of()
-                : allItems.subList(fromIndex, toIndex).stream().map(mapper).toList();
-        return new PagedResult<>(list, total);
+        return fromIndex >= toIndex ? List.of() : allItems.subList(fromIndex, toIndex);
+    }
+
+    private Long findSourceReportId(Long recordId) {
+        if (recordId == null) {
+            return null;
+        }
+        HealthReportDetail detail = healthReportDetailMapper.findByRecordId(recordId);
+        return detail == null ? null : detail.getReportId();
+    }
+
+    private Long findLinkedRecordId(Long reportId) {
+        if (reportId == null) {
+            return null;
+        }
+        HealthReportDetail detail = healthReportDetailMapper.findByReportId(reportId);
+        return detail == null ? null : detail.getRecordId();
+    }
+
+    private Map<Long, Long> findSourceReportIds(List<Long> recordIds) {
+        if (recordIds == null || recordIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<HealthReportDetail> links = healthReportDetailMapper.findLinksByRecordIds(recordIds);
+        if (links == null || links.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Long> map = new HashMap<>();
+        for (HealthReportDetail link : links) {
+            if (link.getRecordId() != null && link.getReportId() != null) {
+                map.put(link.getRecordId(), link.getReportId());
+            }
+        }
+        return map;
+    }
+
+    private Map<Long, Long> findLinkedRecordIds(List<Long> reportIds) {
+        if (reportIds == null || reportIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<HealthReportDetail> links = healthReportDetailMapper.findLinksByReportIds(reportIds);
+        if (links == null || links.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Long> map = new HashMap<>();
+        for (HealthReportDetail link : links) {
+            if (link.getReportId() != null && link.getRecordId() != null) {
+                map.put(link.getReportId(), link.getRecordId());
+            }
+        }
+        return map;
     }
 
     private void ensureCurrentUserExists(Long currentUserId) {
@@ -685,10 +784,13 @@ public class HealthRecordService {
     private static Map<String, Function<HealthRecord, BigDecimal>> createTrendValueGetterMap() {
         Map<String, Function<HealthRecord, BigDecimal>> mapping = new HashMap<>();
         mapping.put("weightKg", HealthRecord::getWeightKg);
+        mapping.put("bmi", HealthRecordService::calculateBmi);
         mapping.put("bodyFatRate", HealthRecord::getBodyFatRate);
         mapping.put("systolicPressure", record -> integerToDecimal(record.getSystolicPressure()));
         mapping.put("diastolicPressure", record -> integerToDecimal(record.getDiastolicPressure()));
         mapping.put("totalCholesterol", HealthRecord::getTotalCholesterol);
+        mapping.put("triglycerides", HealthRecord::getTriglycerides);
+        mapping.put("hdlCholesterol", HealthRecord::getHdlCholesterol);
         mapping.put("ldlCholesterol", HealthRecord::getLdlCholesterol);
         mapping.put("fastingGlucose", HealthRecord::getFastingGlucose);
         mapping.put("uricAcid", record -> integerToDecimal(record.getUricAcid()));
@@ -696,6 +798,23 @@ public class HealthRecordService {
         mapping.put("aspartateAminotransferase", record -> integerToDecimal(record.getAspartateAminotransferase()));
         mapping.put("gammaGlutamylTransferase", record -> integerToDecimal(record.getGammaGlutamylTransferase()));
         return mapping;
+    }
+
+    /** 按同一条核心记录的身高(cm)与体重(kg)派生 BMI，任一为空或非正数时返回 null。 */
+    public static BigDecimal calculateBmi(HealthRecord record) {
+        if (record == null) {
+            return null;
+        }
+        return calculateBmi(record.getHeightCm(), record.getWeightKg());
+    }
+
+    public static BigDecimal calculateBmi(BigDecimal heightCm, BigDecimal weightKg) {
+        if (heightCm == null || weightKg == null || heightCm.signum() <= 0 || weightKg.signum() <= 0) {
+            return null;
+        }
+        BigDecimal numerator = weightKg.multiply(BMI_HEIGHT_FACTOR);
+        BigDecimal denominator = heightCm.multiply(heightCm);
+        return numerator.divide(denominator, BMI_SCALE, RoundingMode.HALF_UP);
     }
 
     private static BigDecimal integerToDecimal(Integer value) {

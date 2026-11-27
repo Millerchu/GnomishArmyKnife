@@ -8,8 +8,17 @@ import java.time.LocalDate;
  */
 public class HealthTrendPointVO {
 
+    private Long recordId;
     private LocalDate measureDate;
     private BigDecimal value;
+
+    public Long getRecordId() {
+        return recordId;
+    }
+
+    public void setRecordId(Long recordId) {
+        this.recordId = recordId;
+    }
 
     public LocalDate getMeasureDate() {
         return measureDate;

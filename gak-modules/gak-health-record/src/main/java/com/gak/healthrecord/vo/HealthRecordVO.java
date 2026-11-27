@@ -10,9 +10,11 @@ import java.time.LocalDateTime;
 public class HealthRecordVO {
 
     private Long id;
+    private Long sourceReportId;
     private LocalDate measureDate;
     private BigDecimal heightCm;
     private BigDecimal weightKg;
+    private BigDecimal bmi;
     private BigDecimal bodyFatRate;
     private Integer systolicPressure;
     private Integer diastolicPressure;
@@ -38,6 +40,14 @@ public class HealthRecordVO {
         this.id = id;
     }
 
+    public Long getSourceReportId() {
+        return sourceReportId;
+    }
+
+    public void setSourceReportId(Long sourceReportId) {
+        this.sourceReportId = sourceReportId;
+    }
+
     public LocalDate getMeasureDate() {
         return measureDate;
     }
@@ -60,6 +70,14 @@ public class HealthRecordVO {
 
     public void setWeightKg(BigDecimal weightKg) {
         this.weightKg = weightKg;
+    }
+
+    public BigDecimal getBmi() {
+        return bmi;
+    }
+
+    public void setBmi(BigDecimal bmi) {
+        this.bmi = bmi;
     }
 
     public BigDecimal getBodyFatRate() {

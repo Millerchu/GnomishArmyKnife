@@ -12,6 +12,7 @@ public class HealthReportVO {
 
     private Long id;
     private Long visitId;
+    private Long linkedRecordId;
     private LocalDate examDate;
     private String hospitalName;
     private String reportTitle;
@@ -37,6 +38,14 @@ public class HealthReportVO {
 
     public void setVisitId(Long visitId) {
         this.visitId = visitId;
+    }
+
+    public Long getLinkedRecordId() {
+        return linkedRecordId;
+    }
+
+    public void setLinkedRecordId(Long linkedRecordId) {
+        this.linkedRecordId = linkedRecordId;
     }
 
     public LocalDate getExamDate() {

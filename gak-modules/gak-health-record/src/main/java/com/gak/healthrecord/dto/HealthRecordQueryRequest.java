@@ -2,6 +2,7 @@ package com.gak.healthrecord.dto;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.time.LocalDate;
 
 /**
  * 健康指标分页查询参数。
@@ -16,6 +17,8 @@ public class HealthRecordQueryRequest {
     private Integer pageSize = 200;
 
     private String metricKey;
+
+    private LocalDate measureDate;
 
     public Integer getPageNo() {
         return pageNo;
@@ -39,5 +42,13 @@ public class HealthRecordQueryRequest {
 
     public void setMetricKey(String metricKey) {
         this.metricKey = metricKey;
+    }
+
+    public LocalDate getMeasureDate() {
+        return measureDate;
+    }
+
+    public void setMeasureDate(LocalDate measureDate) {
+        this.measureDate = measureDate;
     }
 }
