@@ -11,6 +11,7 @@ public class HealthTrendPointVO {
     private Long recordId;
     private LocalDate measureDate;
     private BigDecimal value;
+    private BigDecimal secondaryValue;
 
     public Long getRecordId() {
         return recordId;
@@ -34,5 +35,13 @@ public class HealthTrendPointVO {
 
     public void setValue(BigDecimal value) {
         this.value = value;
+    }
+
+    public BigDecimal getSecondaryValue() {
+        return secondaryValue;
+    }
+
+    public void setSecondaryValue(BigDecimal secondaryValue) {
+        this.secondaryValue = secondaryValue;
     }
 }

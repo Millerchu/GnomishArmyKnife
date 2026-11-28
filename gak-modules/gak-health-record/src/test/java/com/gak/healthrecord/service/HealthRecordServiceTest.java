@@ -195,6 +195,35 @@ class HealthRecordServiceTest {
     }
 
     @Test
+    void shouldReturnDualValueBloodPressureTrendAndIosMetricTrends() {
+        HealthRecord rec = buildRecord(401L, LocalDate.of(2026, 11, 14));
+        rec.setHeightCm(new BigDecimal("176.0"));
+        rec.setSystolicPressure(119);
+        rec.setDiastolicPressure(81);
+        rec.setHeartRate(62);
+        rec.setWaistCm(new BigDecimal("91.5"));
+        rec.setSteps(8640);
+        rec.setSleepHours(new BigDecimal("7.2"));
+        rec.setBloodOxygen(new BigDecimal("98.2"));
+        rec.setHrvMs(48);
+        rec.setVo2Max(new BigDecimal("41.5"));
+        when(healthRecordMapper.selectList(any())).thenReturn(List.of(rec));
+
+        HealthTrendQueryRequest bpReq = new HealthTrendQueryRequest();
+        bpReq.setMetricKey("bloodPressure");
+        HealthTrendVO bpTrend = healthRecordService.getTrends(1L, bpReq);
+        assertThat(bpTrend.getPoints()).hasSize(1);
+        assertThat(bpTrend.getPoints().get(0).getValue()).isEqualByComparingTo("119");
+        assertThat(bpTrend.getPoints().get(0).getSecondaryValue()).isEqualByComparingTo("81");
+
+        for (String key : List.of("heightCm", "heartRate", "waistCm", "steps", "sleepHours", "bloodOxygen", "hrvMs", "vo2Max")) {
+            HealthTrendQueryRequest req = new HealthTrendQueryRequest();
+            req.setMetricKey(key);
+            assertThat(healthRecordService.getTrends(1L, req).getPoints()).hasSize(1);
+        }
+    }
+
+    @Test
     void shouldCreateRecordWithScaledValuesAndBmi() {
         SaveHealthRecordRequest request = new SaveHealthRecordRequest();
         request.setMeasureDate(LocalDate.of(2026, 5, 10));

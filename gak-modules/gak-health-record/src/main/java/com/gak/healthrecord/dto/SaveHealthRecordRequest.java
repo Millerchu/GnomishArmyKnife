@@ -28,6 +28,18 @@ public class SaveHealthRecordRequest {
     private Integer alanineAminotransferase;
     private Integer aspartateAminotransferase;
     private Integer gammaGlutamylTransferase;
+    private BigDecimal waistCm;
+    private Integer steps;
+    private Integer activeEnergyKcal;
+    private Integer exerciseMinutes;
+    private BigDecimal distanceKm;
+    private BigDecimal sleepHours;
+    private BigDecimal bloodOxygen;
+    private Integer hrvMs;
+    private BigDecimal vo2Max;
+
+    @Size(max = 24, message = "sourceType 长度不能超过 24")
+    private String sourceType;
 
     @Size(max = 255, message = "note 长度不能超过 255")
     private String note;
@@ -48,7 +60,16 @@ public class SaveHealthRecordRequest {
                 || uricAcid != null
                 || alanineAminotransferase != null
                 || aspartateAminotransferase != null
-                || gammaGlutamylTransferase != null;
+                || gammaGlutamylTransferase != null
+                || waistCm != null
+                || steps != null
+                || activeEnergyKcal != null
+                || exerciseMinutes != null
+                || distanceKm != null
+                || sleepHours != null
+                || bloodOxygen != null
+                || hrvMs != null
+                || vo2Max != null;
     }
 
     public LocalDate getMeasureDate() {
@@ -177,6 +198,86 @@ public class SaveHealthRecordRequest {
 
     public void setGammaGlutamylTransferase(Integer gammaGlutamylTransferase) {
         this.gammaGlutamylTransferase = gammaGlutamylTransferase;
+    }
+
+    public BigDecimal getWaistCm() {
+        return waistCm;
+    }
+
+    public void setWaistCm(BigDecimal waistCm) {
+        this.waistCm = waistCm;
+    }
+
+    public Integer getSteps() {
+        return steps;
+    }
+
+    public void setSteps(Integer steps) {
+        this.steps = steps;
+    }
+
+    public Integer getActiveEnergyKcal() {
+        return activeEnergyKcal;
+    }
+
+    public void setActiveEnergyKcal(Integer activeEnergyKcal) {
+        this.activeEnergyKcal = activeEnergyKcal;
+    }
+
+    public Integer getExerciseMinutes() {
+        return exerciseMinutes;
+    }
+
+    public void setExerciseMinutes(Integer exerciseMinutes) {
+        this.exerciseMinutes = exerciseMinutes;
+    }
+
+    public BigDecimal getDistanceKm() {
+        return distanceKm;
+    }
+
+    public void setDistanceKm(BigDecimal distanceKm) {
+        this.distanceKm = distanceKm;
+    }
+
+    public BigDecimal getSleepHours() {
+        return sleepHours;
+    }
+
+    public void setSleepHours(BigDecimal sleepHours) {
+        this.sleepHours = sleepHours;
+    }
+
+    public BigDecimal getBloodOxygen() {
+        return bloodOxygen;
+    }
+
+    public void setBloodOxygen(BigDecimal bloodOxygen) {
+        this.bloodOxygen = bloodOxygen;
+    }
+
+    public Integer getHrvMs() {
+        return hrvMs;
+    }
+
+    public void setHrvMs(Integer hrvMs) {
+        this.hrvMs = hrvMs;
+    }
+
+    public BigDecimal getVo2Max() {
+        return vo2Max;
+    }
+
+    public void setVo2Max(BigDecimal vo2Max) {
+        this.vo2Max = vo2Max;
+    }
+
+    public String getSourceType() {
+        return sourceType;
+    }
+
+    public void setSourceType(String sourceType) {
+        this.sourceType = sourceType;
     }
 
     public String getNote() {

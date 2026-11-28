@@ -84,6 +84,9 @@ public class HealthRecordService {
             "image/jpeg", ".jpg",
             "image/webp", ".webp"
     );
+    private static final String METRIC_BLOOD_PRESSURE = "bloodPressure";
+    private static final BigDecimal MAX_BLOOD_OXYGEN = new BigDecimal("100");
+    private static final BigDecimal MAX_SLEEP_HOURS = new BigDecimal("24");
     private static final Map<String, Function<HealthRecord, BigDecimal>> TREND_VALUE_GETTER_MAP = createTrendValueGetterMap();
 
     private final HealthRecordMapper healthRecordMapper;
@@ -190,20 +193,37 @@ public class HealthRecordService {
     public HealthTrendVO getTrends(Long currentUserId, HealthTrendQueryRequest request) {
         ensureCurrentUserExists(currentUserId);
         String metricKey = normalizeMetricKey(request.getMetricKey());
-        Function<HealthRecord, BigDecimal> valueGetter = TREND_VALUE_GETTER_MAP.get(metricKey);
         List<HealthRecord> records = listOwnedRecords(currentUserId);
         List<HealthTrendPointVO> points = new ArrayList<>();
-        for (int index = records.size() - 1; index >= 0; index -= 1) {
-            HealthRecord record = records.get(index);
-            BigDecimal value = valueGetter.apply(record);
-            if (value == null) {
-                continue;
+        if (METRIC_BLOOD_PRESSURE.equals(metricKey)) {
+            for (int index = records.size() - 1; index >= 0; index -= 1) {
+                HealthRecord record = records.get(index);
+                BigDecimal systolic = integerToDecimal(record.getSystolicPressure());
+                BigDecimal diastolic = integerToDecimal(record.getDiastolicPressure());
+                if (systolic == null && diastolic == null) {
+                    continue;
+                }
+                HealthTrendPointVO point = new HealthTrendPointVO();
+                point.setRecordId(record.getId());
+                point.setMeasureDate(record.getMeasureDate());
+                point.setValue(systolic);
+                point.setSecondaryValue(diastolic);
+                points.add(point);
             }
-            HealthTrendPointVO point = new HealthTrendPointVO();
-            point.setRecordId(record.getId());
-            point.setMeasureDate(record.getMeasureDate());
-            point.setValue(value);
-            points.add(point);
+        } else {
+            Function<HealthRecord, BigDecimal> valueGetter = TREND_VALUE_GETTER_MAP.get(metricKey);
+            for (int index = records.size() - 1; index >= 0; index -= 1) {
+                HealthRecord record = records.get(index);
+                BigDecimal value = valueGetter.apply(record);
+                if (value == null) {
+                    continue;
+                }
+                HealthTrendPointVO point = new HealthTrendPointVO();
+                point.setRecordId(record.getId());
+                point.setMeasureDate(record.getMeasureDate());
+                point.setValue(value);
+                points.add(point);
+            }
         }
         int limit = request.getLimit() == null ? 12 : request.getLimit();
         if (points.size() > limit) {
@@ -387,6 +407,21 @@ public class HealthRecordService {
         validateNonNegative(request.getAlanineAminotransferase(), "alanineAminotransferase");
         validateNonNegative(request.getAspartateAminotransferase(), "aspartateAminotransferase");
         validateNonNegative(request.getGammaGlutamylTransferase(), "gammaGlutamylTransferase");
+        validateNonNegative(request.getWaistCm(), "waistCm");
+        validateNonNegative(request.getSteps(), "steps");
+        validateNonNegative(request.getActiveEnergyKcal(), "activeEnergyKcal");
+        validateNonNegative(request.getExerciseMinutes(), "exerciseMinutes");
+        validateNonNegative(request.getDistanceKm(), "distanceKm");
+        validateNonNegative(request.getSleepHours(), "sleepHours");
+        validateNonNegative(request.getBloodOxygen(), "bloodOxygen");
+        validateNonNegative(request.getHrvMs(), "hrvMs");
+        validateNonNegative(request.getVo2Max(), "vo2Max");
+        if (request.getBloodOxygen() != null && request.getBloodOxygen().compareTo(MAX_BLOOD_OXYGEN) > 0) {
+            throw new BusinessException("HEALTH_VALUE_INVALID", "bloodOxygen 不能大于 100");
+        }
+        if (request.getSleepHours() != null && request.getSleepHours().compareTo(MAX_SLEEP_HOURS) > 0) {
+            throw new BusinessException("HEALTH_VALUE_INVALID", "sleepHours 不能大于 24");
+        }
 
         record.setMeasureDate(request.getMeasureDate());
         record.setHeightCm(scaleNullable(request.getHeightCm(), 1));
@@ -404,6 +439,21 @@ public class HealthRecordService {
         record.setAlanineAminotransferase(request.getAlanineAminotransferase());
         record.setAspartateAminotransferase(request.getAspartateAminotransferase());
         record.setGammaGlutamylTransferase(request.getGammaGlutamylTransferase());
+        record.setWaistCm(scaleNullable(request.getWaistCm(), 1));
+        record.setSteps(request.getSteps());
+        record.setActiveEnergyKcal(request.getActiveEnergyKcal());
+        record.setExerciseMinutes(request.getExerciseMinutes());
+        record.setDistanceKm(scaleNullable(request.getDistanceKm(), 2));
+        record.setSleepHours(scaleNullable(request.getSleepHours(), 1));
+        record.setBloodOxygen(scaleNullable(request.getBloodOxygen(), 1));
+        record.setHrvMs(request.getHrvMs());
+        record.setVo2Max(scaleNullable(request.getVo2Max(), 1));
+        String sourceType = trimToNull(request.getSourceType());
+        if (sourceType != null) {
+            record.setSourceType(sourceType.toUpperCase(Locale.ROOT));
+        } else if (record.getSourceType() == null) {
+            record.setSourceType("MANUAL");
+        }
         record.setNote(trimToNull(request.getNote()));
     }
 
@@ -551,6 +601,16 @@ public class HealthRecordService {
         vo.setAlanineAminotransferase(record.getAlanineAminotransferase());
         vo.setAspartateAminotransferase(record.getAspartateAminotransferase());
         vo.setGammaGlutamylTransferase(record.getGammaGlutamylTransferase());
+        vo.setWaistCm(record.getWaistCm());
+        vo.setSteps(record.getSteps());
+        vo.setActiveEnergyKcal(record.getActiveEnergyKcal());
+        vo.setExerciseMinutes(record.getExerciseMinutes());
+        vo.setDistanceKm(record.getDistanceKm());
+        vo.setSleepHours(record.getSleepHours());
+        vo.setBloodOxygen(record.getBloodOxygen());
+        vo.setHrvMs(record.getHrvMs());
+        vo.setVo2Max(record.getVo2Max());
+        vo.setSourceType(record.getSourceType());
         vo.setNote(record.getNote());
         vo.setCreatedAt(record.getCreatedAt());
         vo.setUpdatedAt(record.getUpdatedAt());
@@ -719,7 +779,7 @@ public class HealthRecordService {
         if (normalized == null) {
             return "weightKg";
         }
-        if (!TREND_VALUE_GETTER_MAP.containsKey(normalized)) {
+        if (!METRIC_BLOOD_PRESSURE.equals(normalized) && !TREND_VALUE_GETTER_MAP.containsKey(normalized)) {
             throw new BusinessException("HEALTH_METRIC_KEY_INVALID", "不支持的趋势指标");
         }
         return normalized;
@@ -783,11 +843,13 @@ public class HealthRecordService {
 
     private static Map<String, Function<HealthRecord, BigDecimal>> createTrendValueGetterMap() {
         Map<String, Function<HealthRecord, BigDecimal>> mapping = new HashMap<>();
+        mapping.put("heightCm", HealthRecord::getHeightCm);
         mapping.put("weightKg", HealthRecord::getWeightKg);
         mapping.put("bmi", HealthRecordService::calculateBmi);
         mapping.put("bodyFatRate", HealthRecord::getBodyFatRate);
         mapping.put("systolicPressure", record -> integerToDecimal(record.getSystolicPressure()));
         mapping.put("diastolicPressure", record -> integerToDecimal(record.getDiastolicPressure()));
+        mapping.put("heartRate", record -> integerToDecimal(record.getHeartRate()));
         mapping.put("totalCholesterol", HealthRecord::getTotalCholesterol);
         mapping.put("triglycerides", HealthRecord::getTriglycerides);
         mapping.put("hdlCholesterol", HealthRecord::getHdlCholesterol);
@@ -797,6 +859,15 @@ public class HealthRecordService {
         mapping.put("alanineAminotransferase", record -> integerToDecimal(record.getAlanineAminotransferase()));
         mapping.put("aspartateAminotransferase", record -> integerToDecimal(record.getAspartateAminotransferase()));
         mapping.put("gammaGlutamylTransferase", record -> integerToDecimal(record.getGammaGlutamylTransferase()));
+        mapping.put("waistCm", HealthRecord::getWaistCm);
+        mapping.put("steps", record -> integerToDecimal(record.getSteps()));
+        mapping.put("activeEnergyKcal", record -> integerToDecimal(record.getActiveEnergyKcal()));
+        mapping.put("exerciseMinutes", record -> integerToDecimal(record.getExerciseMinutes()));
+        mapping.put("distanceKm", HealthRecord::getDistanceKm);
+        mapping.put("sleepHours", HealthRecord::getSleepHours);
+        mapping.put("bloodOxygen", HealthRecord::getBloodOxygen);
+        mapping.put("hrvMs", record -> integerToDecimal(record.getHrvMs()));
+        mapping.put("vo2Max", HealthRecord::getVo2Max);
         return mapping;
     }
 
